@@ -54,6 +54,8 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/GitHubClient.swift \
     Sources/WorkTime/JiraLogic.swift \
     Sources/WorkTime/JiraClient.swift \
+    Sources/WorkTime/JiraTickets.swift \
+    Sources/WorkTime/JiraAgents.swift \
     Sources/WorkTime/SlackLogic.swift \
     Sources/WorkTime/SlackClient.swift \
     Sources/WorkTime/ClaudeProcess.swift \

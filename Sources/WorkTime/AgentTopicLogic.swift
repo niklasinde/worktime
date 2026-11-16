@@ -35,7 +35,7 @@ enum TopicAgentError: Error, Equatable {
         case .noName: return "Give the agent a name."
         case .badJiraKey(let text): return "\u{201C}\(text)\u{201D} is not a Jira key like ISD-123."
         case .badSlackLink(let text): return "\u{201C}\(text)\u{201D} is not a Slack message link (https://<workspace>.slack.com/archives/\u{2026})."
-        case .unknown(let text): return "No agent matches \u{201C}\(text)\u{201D}: give a pull request url, a topic agent's key (topic:<id>) or its name, or an assistant's role name."
+        case .unknown(let text): return "No agent matches \u{201C}\(text)\u{201D}: give a pull request url, a Jira ticket key, a topic agent's key (topic:<id>) or its name, or an assistant's role name."
         case .ambiguous(let text, let names): return "\u{201C}\(text)\u{201D} matches several topic agents: \(names.joined(separator: ", ")). Use its key."
         case .archived(let name): return "The topic agent \(name) is archived; unarchive it in WorkTime first."
         }
@@ -73,8 +73,8 @@ enum TopicAgents {
     }
 
     /// A new topic from what the New agent sheet was given, its folder under `root`, or why it cannot be made.
-    static func make(name: String, jira: String, slack: String, root: URL, taken: Set<String>, id: String = UUID().uuidString,
-                     now: Date) -> Result<TopicAgent, TopicAgentError> {
+    static func make(name: String, jira: String, slack: String, root: URL, taken: Set<String>, folder: String? = nil,
+                     id: String = UUID().uuidString, now: Date) -> Result<TopicAgent, TopicAgentError> {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let jira = jira.trimmingCharacters(in: .whitespacesAndNewlines), slack = slack.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return .failure(.noName) }
@@ -82,7 +82,7 @@ enum TopicAgents {
         if !jira.isEmpty, key == nil { return .failure(.badJiraKey(jira)) }
         let link = slack.isEmpty ? nil : SlackLogic.threadLink(slack)
         if !slack.isEmpty, link == nil { return .failure(.badSlackLink(slack)) }
-        let folder = root.appendingPathComponent(uniqueSlug(name, taken: taken), isDirectory: true).path
+        let folder = folder ?? root.appendingPathComponent(uniqueSlug(name, taken: taken), isDirectory: true).path
         return .success(TopicAgent(id: id, name: String(name.prefix(nameLimit)), jiraKey: key, slackURL: link?.url, folder: folder, created: now))
     }
 
@@ -108,6 +108,12 @@ enum TopicAgents {
     static func resolve(_ input: String, topics: [TopicAgent]) -> Result<AgentTarget, TopicAgentError> {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if GitHubLink.pullRequest(at: text) != nil { return .success(AgentTarget(key: text, title: AgentOverview.prTitle(text))) }
+        if let key = JiraLogic.issueKey(text) {
+            let matching = topics.filter { $0.jiraKey == key }
+            if let topic = matching.first(where: { !$0.archived }) ?? matching.first {
+                return topic.archived ? .failure(.archived(topic.name)) : .success(AgentTarget(key: topic.key, title: topic.name))
+            }
+        }
         let id = text.hasPrefix(prefix) ? String(text.dropFirst(prefix.count)) : text
         let lowered = text.lowercased()
         var found = topics.filter { $0.id.caseInsensitiveCompare(id) == .orderedSame }
@@ -137,7 +143,7 @@ enum TopicAgents {
 
     /// The name of a topic opened from a Jira ticket.
     static func name(ticket key: String, summary: String) -> String {
-        ActivityLogic.truncate(summary.isEmpty ? key : "\(key) \(summary)", to: 60)
+        ActivityLogic.truncate(summary.isEmpty ? key : "\(key) \u{00B7} \(summary)", to: 60)
     }
 
     /// The name of a topic opened from a Slack message.
@@ -150,6 +156,7 @@ enum TopicAgents {
             return "You are continuing a Claude Code session in WorkTime for \u{201C}\(topic.name)\u{201D}, in its original working folder "
                 + "\(topic.folder). Carry on where the conversation left off."
         }
+        if let key = topic.jiraKey, topic.slackURL == nil { return JiraAgents.systemPrompt(ticket: key, name: topic.name, folder: topic.folder) }
         var links: [String] = []
         if let key = topic.jiraKey { links.append("Linked Jira ticket: \(key). Read it first with the worktime jira_issue tool.") }
         if let url = topic.slackURL { links.append("Linked Slack thread: \(url). Read it first with the worktime slack_thread tool.") }

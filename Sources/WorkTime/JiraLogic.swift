@@ -1,13 +1,22 @@
 import Foundation
 
-struct JiraTicket: Equatable, Identifiable, Sendable {
+struct JiraTicket: Equatable, Identifiable, Sendable, Codable {
     let key: String
     let summary: String
     let status: String
     let priority: String?
     let updated: Date?
+    var type: String?
+    var assignee: String?
+    var category: JiraStatusCategory?
+    var labels: [String] = []
 
     var id: String { key }
+}
+
+/// Jira's own grouping of statuses, as `status.statusCategory.key` names it.
+enum JiraStatusCategory: String, Codable, Sendable {
+    case todo = "new", inProgress = "indeterminate", done
 }
 
 /// One issue as the agents' `jira_issue` tool shows it.
@@ -106,6 +115,7 @@ enum JiraLogic {
     static let legacySearchPath = "/rest/api/3/search"
     static let countPath = "/rest/api/3/search/approximate-count"
     static let myselfPath = "/rest/api/3/myself"
+    static let listFields = fields + ["issuetype", "assignee", "labels"]
     static let issueFields = ["summary", "status", "issuetype", "priority", "assignee", "reporter", "created", "updated", "description",
                               "comment", "issuelinks"]
     static let commentLimit = 10
@@ -162,13 +172,18 @@ enum JiraLogic {
 
     static var searchBody: [String: Any] { searchBody(jql: jql) }
 
-    static func searchBody(jql: String, max: Int = maxResults) -> [String: Any] { ["jql": jql, "fields": fields, "maxResults": max] }
+    static func searchBody(jql: String, max: Int = maxResults, fields: [String] = fields) -> [String: Any] {
+        ["jql": jql, "fields": fields, "maxResults": max]
+    }
 
     static func parseSearch(_ data: Data) throws -> JiraSearch {
         let response = try JSONDecoder().decode(SearchResponse.self, from: data)
         let tickets = response.issues.map { issue in
             JiraTicket(key: issue.key, summary: issue.fields.summary ?? "", status: issue.fields.status?.name ?? "",
-                       priority: issue.fields.priority?.name, updated: issue.fields.updated.flatMap(date))
+                       priority: issue.fields.priority?.name, updated: issue.fields.updated.flatMap(date), type: issue.fields.issuetype?.name,
+                       assignee: issue.fields.assignee?.displayName,
+                       category: issue.fields.status?.statusCategory?.key.flatMap(JiraStatusCategory.init(rawValue:)),
+                       labels: issue.fields.labels ?? [])
         }
         let complete = response.isLast ?? (response.nextPageToken == nil && response.total == nil)
         return JiraSearch(tickets: tickets, total: response.total ?? (complete ? tickets.count : nil))
@@ -283,13 +298,26 @@ enum JiraLogic {
 
     private struct Fields: Decodable {
         let summary: String?
-        let status: Named?
+        let status: Status?
         let priority: Named?
         let updated: String?
+        let issuetype: Named?
+        let assignee: Person?
+        let labels: [String]?
+    }
+
+    private struct Status: Decodable {
+        struct Category: Decodable { let key: String? }
+        let name: String
+        let statusCategory: Category?
     }
 
     private struct Named: Decodable {
         let name: String
+    }
+
+    private struct Person: Decodable {
+        let displayName: String?
     }
 
     private struct CountResponse: Decodable {

@@ -534,7 +534,7 @@ struct StatusMark: View {
     }
 }
 
-private struct GitHubEmptyState<Actions: View>: View {
+struct GitHubEmptyState<Actions: View>: View {
     let icon: String
     let title: String
     let text: String?

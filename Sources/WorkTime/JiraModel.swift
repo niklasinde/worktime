@@ -97,6 +97,15 @@ final class JiraModel: ObservableObject {
         site.flatMap { JiraLogic.browseURL(site: $0, key: ticket.key) }
     }
 
+    #if DEBUG
+    /// Shows Jira as set up or not, for the previews.
+    func showSample(configured: Bool) {
+        site = configured ? "acme.atlassian.net" : nil
+        email = configured ? "me@acme.com" : nil
+        hasToken = configured
+    }
+    #endif
+
     private func clear() {
         tickets = []
         total = nil

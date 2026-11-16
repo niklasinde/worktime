@@ -459,6 +459,7 @@ struct MainView: View {
         switch library.section {
         case .activity: ActivityView(model: activity, tracker: activity.tracker)
         case .gitHub: GitHubView(model: .shared)
+        case .jira: JiraView(model: .shared)
         case .agent: AgentsPage(hub: .shared)
         case .settings: settings
         default: MeetingsView(recorder: recorder, processor: processor, library: library, playback: playback) { newMeeting() }

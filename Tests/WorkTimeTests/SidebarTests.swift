@@ -4,8 +4,8 @@ import Foundation
 #endif
 
 let sidebarTests: [(name: String, run: () throws -> Void)] = [
-    ("sidebar lists Meetings above Activity, GitHub, Chat and Agent, with no Claude API row", {
-        check(SidebarLogic.pages(showChat: true).map(\.title) == ["Meetings", "Activity", "GitHub", "Chat", "Main"],
+    ("sidebar lists Meetings above Activity, GitHub, Jira, Chat and Agent, with no Claude API row", {
+        check(SidebarLogic.pages(showChat: true).map(\.title) == ["Meetings", "Activity", "GitHub", "Jira", "Chat", "Main"],
               "order \(SidebarLogic.pages(showChat: true).map(\.title))")
         check(SidebarLogic.pinned == [.settings], "Settings sits at the bottom")
         check(SidebarSection.allCases.filter(\.opensWindow) == [.chat], "chat opens its window, Main and Settings are pages")
@@ -32,14 +32,14 @@ let sidebarTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("hiding Chat drops its row, falls back to Meetings and leaves it out of the sidebar detail", {
-        check(SidebarLogic.pages(showChat: false).map(\.title) == ["Meetings", "Activity", "GitHub", "Main"],
+        check(SidebarLogic.pages(showChat: false).map(\.title) == ["Meetings", "Activity", "GitHub", "Jira", "Main"],
               "order \(SidebarLogic.pages(showChat: false).map(\.title))")
         check(SidebarLogic.visibleSection(.chat, showChat: false) == .meetings, "Chat falls back to Meetings")
         check(SidebarLogic.visibleSection(.chat, showChat: true) == .chat, "shown Chat stays")
         check(SidebarLogic.visibleSection(.gitHub, showChat: false) == .gitHub, "other pages stay")
-        check(SidebarLogic.sidebarDetail(showChat: true) == "Meetings, Activity, GitHub, Chat and Main (\u{2303}\u{2318}S)",
+        check(SidebarLogic.sidebarDetail(showChat: true) == "Meetings, Activity, GitHub, Jira, Chat and Main (\u{2303}\u{2318}S)",
               SidebarLogic.sidebarDetail(showChat: true))
-        check(SidebarLogic.sidebarDetail(showChat: false) == "Meetings, Activity, GitHub and Main (\u{2303}\u{2318}S)",
+        check(SidebarLogic.sidebarDetail(showChat: false) == "Meetings, Activity, GitHub, Jira and Main (\u{2303}\u{2318}S)",
               SidebarLogic.sidebarDetail(showChat: false))
     }),
 

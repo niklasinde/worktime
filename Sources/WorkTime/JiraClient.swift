@@ -29,8 +29,8 @@ struct JiraClient: Sendable {
         return search
     }
 
-    func search(jql: String, max: Int) async throws -> JiraSearch {
-        try await search(body: JiraLogic.searchBody(jql: jql, max: max))
+    func search(jql: String, max: Int, fields: [String] = JiraLogic.fields) async throws -> JiraSearch {
+        try await search(body: JiraLogic.searchBody(jql: jql, max: max, fields: fields))
     }
 
     func issue(_ key: String) async throws -> JiraIssue {

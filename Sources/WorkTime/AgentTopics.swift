@@ -25,12 +25,12 @@ final class TopicAgentStore: ObservableObject {
     func topic(_ key: String) -> TopicAgent? { topics.first { $0.key == key } }
 
     /// Makes the topic and its folder, or says what is wrong with what was typed.
-    func make(name: String, jira: String, slack: String) -> Result<TopicAgent, TopicAgentError> {
+    func make(name: String, jira: String, slack: String, folder: URL? = nil) -> Result<TopicAgent, TopicAgentError> {
         let folders = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         let taken = Set(topics.map { URL(fileURLWithPath: $0.folder).lastPathComponent } + folders)
-        let made = TopicAgents.make(name: name, jira: jira, slack: slack, root: root, taken: taken, now: Date())
+        let made = TopicAgents.make(name: name, jira: jira, slack: slack, root: root, taken: taken, folder: folder?.path, now: Date())
         if case .success(let topic) = made {
-            try? FileManager.default.createDirectory(atPath: topic.folder, withIntermediateDirectories: true)
+            if folder == nil { try? FileManager.default.createDirectory(atPath: topic.folder, withIntermediateDirectories: true) }
             topics.append(topic)
             save()
         }
@@ -47,12 +47,18 @@ final class TopicAgentStore: ObservableObject {
 
     func show(_ key: String) { AgentHub.shared.show(key) }
 
-    /// Open in Agent on a Jira ticket: its topic agent, made the first time with the prompt to read the ticket waiting.
-    func open(ticket: JiraTicket) {
-        if let topic = TopicAgents.existing(jiraKey: ticket.key, in: topics) { return reopen(topic) }
-        if case .success(let topic) = make(name: TopicAgents.name(ticket: ticket.key, summary: ticket.summary), jira: ticket.key, slack: "") {
-            show(topic.key)
+    /// Open in Agent on a Jira ticket: its topic agent, made the first time with the prompt to read the ticket waiting, in
+    /// `folder` when given instead of a folder of its own. `isNew` says whether it was made now.
+    @discardableResult
+    func open(ticket: JiraTicket, folder: URL? = nil) -> (topic: TopicAgent, isNew: Bool)? {
+        if let topic = TopicAgents.existing(jiraKey: ticket.key, in: topics) {
+            reopen(topic)
+            return (topic, false)
         }
+        guard case .success(let topic) = make(name: TopicAgents.name(ticket: ticket.key, summary: ticket.summary), jira: ticket.key, slack: "",
+                                               folder: folder) else { return nil }
+        show(topic.key)
+        return (topic, true)
     }
 
     /// Open in Agent on a Slack message: the topic agent for its thread, made the first time.

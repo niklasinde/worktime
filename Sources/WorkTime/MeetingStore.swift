@@ -30,6 +30,8 @@ enum AppPaths {
     static var topicAgents: URL { support.appendingPathComponent("topic-agents.json") }
     /// Each topic agent's own working folder.
     static var topicFolders: URL { support.appendingPathComponent("Agents", isDirectory: true) }
+    /// The tickets the Jira page listed last, so it opens at once.
+    static var jiraTickets: URL { support.appendingPathComponent("jira-tickets.json") }
 
     /// The workspaces and the folders holding each one's MAIN.md.
     static var workspaceFile: URL { support.appendingPathComponent("workspaces.json") }

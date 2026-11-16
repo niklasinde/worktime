@@ -120,10 +120,16 @@ let mcpFilterTests: [(name: String, run: () throws -> Void)] = [
         check(try kept([:]).count == 5, "no filter")
         check(try kept(["kind": "main"]) == ["main:work"] && kept(["kind": "topic"]) == [topic] && kept(["kind": "assistant"]) == ["assistant:work:dev"], "kinds")
         check(try kept(["kind": "pr"]).count == 2, "pull request agents")
+        var ticket = state("topic:\(UUID().uuidString)")
+        ticket.jiraKey = "QDLY-8332"
+        let withTicket = agents + [ticket]
+        check(try withTicket.filter(AgentFilter(["kind": "ticket"]).matches).map(\.key) == [ticket.key], "ticket agents")
+        check(try withTicket.filter(AgentFilter(["kind": "topic"]).matches).map(\.key) == [topic], "a ticket agent is not a plain topic")
+        check(try AgentFilter(["kind": "ticket"]).applied == ["kind \u{201C}ticket\u{201D}"], "applied")
         check(try kept(["status": "waiting"]) == [pr], "status")
         check(try kept(["needs_me": true]).count == 2 && kept(["needs_me": false]).count == 3, "needs me: waiting or unseen result")
         check(try kept(["kind": "pr", "needs_me": true, "query": "BUILD"]) == ["https://github.com/acme/api/pull/8"], "combined with text")
-        check(failure { try AgentFilter(["kind": "robot"]) } == "kind must be one of main, pr, topic, assistant, not robot.", "kinds named")
+        check(failure { try AgentFilter(["kind": "robot"]) } == "kind must be one of main, pr, ticket, topic, assistant, not robot.", "kinds named")
         check(try AgentFilter(["kind": "pr", "workspace": "work"], names: ["status"]).applied == [], "only the named arguments")
     }),
 

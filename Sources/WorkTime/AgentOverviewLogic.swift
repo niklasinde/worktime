@@ -177,7 +177,7 @@ enum AgentOverview {
         if let url = state.prURL { lines.append("  \(url) \u{00B7} agent: \(GitHubLink.agentLink(for: url))") }
         if state.isAssistant { lines.append("  assistant \(state.role ?? state.title) \u{00B7} key \(state.key)") }
         if state.isTopic {
-            lines.append("  topic agent \(state.key)" + [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }]
+            lines.append("  \(state.jiraKey == nil ? "topic" : "ticket") agent \(state.key)" + [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }]
                 .compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
         }
         if let folder = state.folder { lines.append("  folder: \(folder)") }

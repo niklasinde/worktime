@@ -211,11 +211,11 @@ struct AgentFilter: Equatable {
     var needsMe: Bool?
     var query: String?
 
-    static let kinds = ["main", "pr", "topic", "assistant"]
+    static let kinds = ["main", "pr", "ticket", "topic", "assistant"]
     static let statuses = ["working", "waiting", "idle", "error", "signed_out"]
 
     static let properties: [String: [String: Any]] = [
-        "kind": ["type": "string", "enum": kinds, "description": "Only this kind of agent: Main, a pull request's, a topic agent or an assistant."],
+        "kind": ["type": "string", "enum": kinds, "description": "Only this kind of agent: Main, a pull request's, a Jira ticket's, another topic agent or an assistant."],
         "status": ["type": "string", "enum": statuses, "description": "Only agents in this state."],
         "needs_me": ["type": "boolean", "description": "true: only agents waiting for a permission, finished with an unseen result or errored; false: the others."],
         "query": ["type": "string", "description": "Only agents whose title, folder, last prompt or last result contain this."],
@@ -238,7 +238,8 @@ struct AgentFilter: Equatable {
     static func kind(of state: AgentState) -> String {
         if Workspaces.isMainKey(state.key) { return "main" }
         if state.isAssistant { return "assistant" }
-        return state.isTopic ? "topic" : "pr"
+        guard state.isTopic else { return "pr" }
+        return state.jiraKey == nil ? "topic" : "ticket"
     }
 
     func matches(_ state: AgentState) -> Bool {
@@ -315,10 +316,13 @@ enum JQLFilter {
         "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 
+    /// The comma-separated values of a filter argument.
+    static func list(_ text: String?) -> [String] {
+        (text ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
     static func clauses(_ args: [String: Any]) throws -> [String] {
-        func values(_ name: String) -> [String] {
-            (FilterLogic.text(args, name) ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        }
+        func values(_ name: String) -> [String] { list(FilterLogic.text(args, name)) }
         func match(_ field: String, _ name: String) -> String? {
             let list = values(name)
             return list.isEmpty ? nil : list.count == 1 ? "\(field) = \(quote(list[0]))" : "\(field) in (\(list.map(quote).joined(separator: ", ")))"

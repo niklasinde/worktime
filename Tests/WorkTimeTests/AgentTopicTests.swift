@@ -85,7 +85,7 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
         check(TopicAgents.prompt(topic("Free")).isEmpty, "nothing to look at")
         let system = TopicAgents.systemPrompt(both)
         check(system.contains("ISD-1") && system.contains("jira_issue") && system.contains("slack_thread") && system.contains("never claim"), system)
-        check(TopicAgents.name(ticket: "ISD-1", summary: "Login fails") == "ISD-1 Login fails", "ticket name")
+        check(TopicAgents.name(ticket: "ISD-1", summary: "Login fails") == "ISD-1 \u{00B7} Login fails", "ticket name")
         check(TopicAgents.name(slackPlace: "#support", author: "Anna") == "Slack: #support \u{00B7} Anna", "slack name")
         check(AgentLogic.mainBasePrompt.contains("topic agents"), "Main knows it can delegate to them")
     }),
@@ -120,7 +120,7 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
         let state = AgentState.topic(made, loaded: nil, sessionID: "s1")
         check(state.key == made.key && !state.loaded && state.jiraKey == "ISD-1" && state.slackURL == threadURL && state.isTopic, "\(state)")
         let line = AgentOverview.line(state, now: now)
-        check(line.contains("topic agent \(made.key)") && line.contains("Jira ISD-1") && line.contains("Slack \(threadURL)"), line)
+        check(line.contains("ticket agent \(made.key)") && line.contains("Jira ISD-1") && line.contains("Slack \(threadURL)"), line)
         let listed = AgentOverview.withPersisted([state], sessions: [made.key: "s1", "https://github.com/acme/api/pull/7": "s2"], known: [made.key])
         check(listed.map(\.key) == [made.key, "https://github.com/acme/api/pull/7"], "\(listed.map(\.key))")
     }),
