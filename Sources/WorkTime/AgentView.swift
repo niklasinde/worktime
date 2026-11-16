@@ -622,6 +622,11 @@ struct AgentPanel: View {
 
     private var isMain: Bool { model.isMain && model.prURL == nil }
 
+    private func row(_ item: AgentItem) -> AgentItemRow {
+        AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1) },
+                     move: { if let folder = $0 { model.move(to: folder) } else { model.changeFolder() } })
+    }
+
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -641,9 +646,11 @@ struct AgentPanel: View {
                                 .help(AgentLogic.catchUpPrompt)
                         }
                     }
-                    ForEach(model.items) { item in
-                        AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1) },
-                                     move: { if let folder = $0 { model.move(to: folder) } else { model.changeFolder() } })
+                    ForEach(AgentToolGroups.blocks(model.items)) { block in
+                        switch block {
+                        case .item(let item): row(item)
+                        case .tools(_, let items, let label): AgentToolGroup(label: label, items: items, row: row)
+                        }
                     }
                     if model.busy {
                         HStack(spacing: 8) {
@@ -811,6 +818,31 @@ private struct AgentItemRow: View {
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.1)))
+        }
+    }
+}
+
+private struct AgentToolGroup: View {
+    let label: String
+    let items: [AgentItem]
+    let row: (AgentItem) -> AgentItemRow
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { expanded.toggle() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption2).frame(width: 10)
+                    Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+                    Text(label).foregroundStyle(.secondary)
+                }
+                .font(.callout)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                VStack(alignment: .leading, spacing: 6) { ForEach(items) { row($0) } }.padding(.leading, 16)
+            }
         }
     }
 }

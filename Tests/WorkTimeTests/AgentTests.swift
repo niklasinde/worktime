@@ -8,6 +8,25 @@ private let existing: Set<String> = ["/repo/Sources/App.swift", "/repo/README.md
 private let exists = { (path: String) in existing.contains(path) }
 
 let agentTests: [(name: String, run: () throws -> Void)] = [
+    ("agent: finished tool calls fold into one labelled group and the rest stays visible", {
+        func tool(_ id: String, _ name: String, result: String? = "ok", isError: Bool = false) -> AgentItem {
+            AgentItem(id: id, kind: .tool(name: name, summary: id, detail: "", result: result, isError: isError, auto: true))
+        }
+        let items = [
+            AgentItem(id: "u", kind: .user("go")),
+            tool("a", "Bash"), tool("b", "Bash"), tool("c", "Read"),
+            AgentItem(id: "t", kind: .text("update")),
+            tool("d", "Bash"),
+            tool("e", "Grep"), tool("f", "Bash", isError: true), tool("g", "Bash"), tool("h", "Bash", result: nil),
+            AgentItem(id: "p", kind: .permission(tool: "Bash", summary: "", detail: "", allowed: nil)),
+        ]
+        let blocks = AgentToolGroups.blocks(items)
+        check(blocks.map(\.id) == ["u", "tools-a", "t", "tools-d", "f", "g", "h", "p"], "ids \(blocks.map(\.id))")
+        check(blocks[1] == .tools(id: "tools-a", items: Array(items[1...3]), label: "Ran 2 commands, read 1 file"), "label and members")
+        let mixed = [tool("x", "Bash"), tool("y", "Grep"), tool("z", "mcp__worktime__attention")]
+        check(AgentToolGroups.blocks(mixed) == [.tools(id: "tools-x", items: mixed, label: "Ran 1 command, searched 1 time, made 1 other call")], "mixed label")
+        check(AgentToolGroups.blocks([]).isEmpty, "empty")
+    }),
     ("agent: streamed text grows one item that the complete text replaces without duplicating", {
         var items: [AgentItem] = [AgentItem(id: "user-0", kind: .user("hi"))]
         AgentLogic.apply(.textDelta("Hel"), to: &items)
