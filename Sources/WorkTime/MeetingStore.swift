@@ -30,6 +30,8 @@ enum AppPaths {
     static var briefed: URL { support.appendingPathComponent(MeetingBriefLogic.fileName) }
     /// The topic agents, read by the MCP server to find one by name.
     static var topicAgents: URL { support.appendingPathComponent("topic-agents.json") }
+    /// The routines that run agents on a schedule.
+    static var routines: URL { support.appendingPathComponent("routines.json") }
     /// Each topic agent's own working folder.
     static var topicFolders: URL { support.appendingPathComponent("Agents", isDirectory: true) }
     /// The tickets the Jira page listed last, so it opens at once.

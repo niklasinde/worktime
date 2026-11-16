@@ -63,6 +63,8 @@ struct AgentsPage: View {
                     AgentTopicPage(key: hub.selected, listHidden: $listHidden)
                 } else if Assistants.isKey(hub.selected) {
                     AgentAssistantPage(key: hub.selected, listHidden: $listHidden)
+                } else if Routines.isKey(hub.selected) {
+                    AgentRoutinePage(key: hub.selected, listHidden: $listHidden)
                 } else {
                     AgentPRPage(key: hub.selected, listHidden: $listHidden)
                 }
@@ -100,6 +102,7 @@ struct AgentList: View {
                         if !collapsedIDs.contains(group.workspace.id) {
                             if let main = group.main { rowButton(main, now: now) }
                             assistantSection(group, now: now)
+                            RoutineSection(workspace: group.workspace, hub: hub)
                             ForEach(group.agents, id: \.key) { rowButton($0, now: now) }
                         }
                     }
@@ -405,6 +408,8 @@ struct AgentView: View {
                 AgentTopicHeader(topic: topic)
             } else if let assistant = model.assistant {
                 AgentAssistantHeader(entry: assistant)
+            } else if let routine = model.routine {
+                AgentRoutineHeader(routine: routine)
             } else {
                 Text(isMain ? "Main" : "Agent").font(.system(size: 20, weight: .medium)).fixedSize()
                 if isMain { MainWorkspaceBadge(workspace: model.workspace) }
@@ -636,6 +641,8 @@ struct AgentPanel: View {
                                 + "Ask what needs you, or have it hand a prompt to a pull request\u{2019}s agent. It only reads unless you ask for more."
                              : model.assistant != nil ? "\(model.assistant?.role.summary ?? "") It follows the instructions in its Markdown file "
                                 + "(Edit instructions, above); Main can hand it work, and it cannot post to Jira, Slack or GitHub."
+                             : model.routine != nil ? "This routine runs its prompt on a schedule while WorkTime is open, in a fresh session each time. "
+                                + "Run now starts one; earlier runs are under Sessions. Calls that need approval are refused when nobody is here."
                              : model.topic != nil ? "This agent works on one topic in its own folder. It reads the linked Jira ticket and Slack "
                                 + "thread and searches both, and drafts replies for you to copy; it cannot post anywhere."
                              : "Ask the agent to read, search or change code in this folder. Type @ to reference a file. Edits and commands ask first.")
@@ -730,7 +737,7 @@ struct AgentPanel: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(.background).shadow(radius: 2))
             } else if model.draft.isEmpty && model.items.isEmpty {
                 HStack {
-                    ForEach(isMain || model.topic != nil || model.assistant != nil ? [] : AgentLogic.quickActions, id: \.title) { action in
+                    ForEach(isMain || model.topic != nil || model.assistant != nil || model.routine != nil ? [] : AgentLogic.quickActions, id: \.title) { action in
                         Button(action.title) { model.draft = action.prompt }.buttonStyle(SuggestionStyle())
                     }
                 }

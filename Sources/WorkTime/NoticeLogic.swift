@@ -183,7 +183,7 @@ enum NoticeLogic {
     static func link(_ text: String) -> NoticeLink? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let target = GitHubLink.pullRequest(at: text) { return .pullRequest(target) }
-        if TopicAgents.isKey(text) || Assistants.isKey(text) || Workspaces.isMainKey(text) { return .agent(text) }
+        if TopicAgents.isKey(text) || Assistants.isKey(text) || Routines.isKey(text) || Workspaces.isMainKey(text) { return .agent(text) }
         if !text.contains("://"), let key = JiraLogic.issueKey(text) { return .jira(key) }
         guard let url = URL(string: text), url.scheme?.lowercased() == "https", url.host?.isEmpty == false else { return nil }
         return .web(url)

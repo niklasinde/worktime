@@ -70,6 +70,8 @@ final class AgentModel: ObservableObject {
     @Published private(set) var topic: TopicAgent?
     /// The role this agent is for, when it is an assistant under a Main.
     @Published private(set) var assistant: AssistantEntry?
+    /// The routine this agent runs, when it is a routine's.
+    @Published private(set) var routine: Routine?
     private var loadingDefaults = false
     /// Whether the user has seen the latest reply: false when a turn ends while no pane shows this agent.
     @Published private(set) var resultSeen = true {
@@ -86,7 +88,8 @@ final class AgentModel: ObservableObject {
     @Published var model = AgentLogic.storedModel(AgentModel.defaults.string(forKey: AgentLogic.modelKey)) {
         didSet {
             guard !loadingDefaults else { return }
-            if assistant != nil { saveAssistantModel() } else { Self.defaults.set(model, forKey: AgentLogic.modelKey) }
+            if let routine { RoutineStore.shared.setModel(model, for: routine.key) }
+            else if assistant != nil { saveAssistantModel() } else { Self.defaults.set(model, forKey: AgentLogic.modelKey) }
         }
     }
     /// How this agent's calls are approved, saved per agent; a change reaches a turn already running too.
@@ -94,7 +97,7 @@ final class AgentModel: ObservableObject {
         didSet {
             guard oldValue != permissionMode, !loadingDefaults else { return }
             var modes = Self.defaults.dictionary(forKey: AgentPermissionMode.storageKey) ?? [:]
-            modes[historyKey] = permissionMode == .ask && assistant == nil ? nil : permissionMode.rawValue
+            modes[historyKey] = permissionMode == .ask && assistant == nil && routine == nil ? nil : permissionMode.rawValue
             Self.defaults.set(modes, forKey: AgentPermissionMode.storageKey)
             if busy { client?.send(.mode(permissionMode)) }
         }
@@ -146,7 +149,10 @@ final class AgentModel: ObservableObject {
     }
 
     /// The pull request url, topic key or assistant key the agent is saved under; nil for Main and a plain folder.
-    var agentKey: String? { prURL ?? topic?.key ?? assistant?.key }
+    var agentKey: String? { prURL ?? topic?.key ?? assistant?.key ?? routine?.key }
+
+    /// The assistant whose instructions, tools and permissions this agent follows: its own, or the one its routine runs as.
+    private var actingAs: AssistantEntry? { assistant ?? routine?.assistant.flatMap(AssistantStore.shared.entry) }
 
     var historyKey: String { AgentSessions.key(agent: agentKey, isMain: isMain, folder: folder, workspace: workspace) }
 
@@ -333,7 +339,7 @@ final class AgentModel: ObservableObject {
     func open(pr target: GitHubLink.Target, checkout: URL?) {
         guard prURL != target.url || (items.isEmpty && !busy) else { return }
         let moved = Self.movedFolders[target.url]
-        point(prURL: target.url, topic: nil, assistant: nil, folder: moved ?? checkout?.path ?? NSHomeDirectory())
+        point(prURL: target.url, topic: nil, assistant: nil, routine: nil, folder: moved ?? checkout?.path ?? NSHomeDirectory())
         draft = sessionID == nil ? AgentLogic.reviewPrompt(url: target.url, repo: target.repo, hasCheckout: moved != nil || checkout != nil) : ""
     }
 
@@ -341,26 +347,40 @@ final class AgentModel: ObservableObject {
     /// when there is no session yet. A renamed topic only updates the name.
     func open(topic: TopicAgent) {
         guard self.topic?.id != topic.id || (items.isEmpty && !busy) else { return self.topic = topic }
-        point(prURL: nil, topic: topic, assistant: nil, folder: topic.folder)
+        point(prURL: nil, topic: topic, assistant: nil, routine: nil, folder: topic.folder)
         draft = sessionID == nil ? TopicAgents.prompt(topic) : ""
     }
 
     /// Points the agent at an assistant: its folder and the session it had before. A renamed role only updates the entry.
     func open(assistant entry: AssistantEntry, folder: String) {
         guard assistant?.key != entry.key || (items.isEmpty && !busy) else { return assistant = entry }
-        point(prURL: nil, topic: nil, assistant: entry, folder: folder)
+        point(prURL: nil, topic: nil, assistant: entry, routine: nil, folder: folder)
         draft = ""
+    }
+
+    /// Points the agent at a routine: its folder and the session of its last run. An edited routine only updates the settings.
+    func open(routine: Routine, folder: String) {
+        guard self.routine?.id != routine.id || (items.isEmpty && !busy) else { return update(routine: routine) }
+        point(prURL: nil, topic: nil, assistant: nil, routine: routine, folder: folder)
+        draft = ""
+    }
+
+    func update(routine updated: Routine) {
+        guard routine != updated else { return }
+        routine = updated
+        if !busy { loadMode() }
     }
 
     func update(assistant entry: AssistantEntry) {
         if assistant != entry { assistant = entry }
     }
 
-    private func point(prURL: String?, topic: TopicAgent?, assistant: AssistantEntry?, folder: String) {
+    private func point(prURL: String?, topic: TopicAgent?, assistant: AssistantEntry?, routine: Routine?, folder: String) {
         if busy { stop() }
         self.prURL = prURL
         self.topic = topic
         self.assistant = assistant
+        self.routine = routine
         self.folder = folder
         lastModel = nil
         problem = nil
@@ -377,10 +397,12 @@ final class AgentModel: ObservableObject {
         loadingDefaults = true
         defer { loadingDefaults = false }
         permissionMode = AgentPermissionMode.stored(Self.defaults.dictionary(forKey: AgentPermissionMode.storageKey), key: historyKey,
-                                                    fallback: assistant.map { Assistants.permissionMode($0.role.permissionMode) } ?? .ask)
+                                                    fallback: actingAs.map { Assistants.permissionMode($0.role.permissionMode) } ?? .ask)
         if let assistant {
             let saved = (Self.defaults.dictionary(forKey: Assistants.storedModelsKey) as? [String: String])?[historyKey]
             model = saved.map { AgentLogic.storedModel($0) } ?? Assistants.modelID(assistant.role.model)
+        } else if let routine {
+            model = routine.model.map { AgentLogic.storedModel($0) } ?? actingAs.map { Assistants.modelID($0.role.model) } ?? AgentLogic.defaultModel
         }
         chrome = AgentLogic.chromeEnabled(Self.defaults.dictionary(forKey: AgentLogic.chromeKey), key: historyKey)
         chromeProblem = nil
@@ -413,6 +435,9 @@ final class AgentModel: ObservableObject {
 
     private var systemPrompt: String? {
         if let assistant { return AssistantStore.shared.systemPrompt(assistant.role, workspace: assistant.workspace, folder: folder) }
+        if let routine {
+            return Routines.systemPrompt(routine, base: actingAs.map { AssistantStore.shared.systemPrompt($0.role, workspace: $0.workspace, folder: folder) })
+        }
         return workspace.flatMap { self.prURL == nil ? WorkspaceStore.shared.mainPrompt(for: $0) : nil } ?? topic.map(TopicAgents.systemPrompt)
     }
 
@@ -478,7 +503,7 @@ final class AgentModel: ObservableObject {
         workMap.prompt(model: model, at: Date())
         let prompt = AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }
         busy = true
-        let system = systemPrompt, allowedTools = assistant.map { Assistants.allowedTools($0.role) }, delegateFrom = isMain ? workspace : nil
+        let system = systemPrompt, allowedTools = actingAs.map { Assistants.allowedTools($0.role) }, delegateFrom = isMain ? workspace : nil
         lastModel = model
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
@@ -550,7 +575,7 @@ final class AgentModel: ObservableObject {
             return nil
         }
         let childEnvironment = AgentLogic.childEnvironment(environment, nodeFolder: node.deletingLastPathComponent().path,
-                                                           mcpCommand: Bundle.main.executablePath, workspace: workspace ?? assistant?.workspace,
+                                                           mcpCommand: Bundle.main.executablePath, workspace: workspace ?? assistant?.workspace ?? routine?.workspace,
                                                            agent: isMain ? workspace.map(Workspaces.mainKey) : agentKey)
         do {
             let client = try AgentClient(node: node, script: script, environment: childEnvironment, onLine: { [weak self] line in
@@ -582,6 +607,7 @@ final class AgentModel: ObservableObject {
         }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
+        if routine != nil, case .permissionRequest = event, let asked = items.last { answer(asked, allow: false) }
         if case .idle = event { finishTurn() }
     }
 

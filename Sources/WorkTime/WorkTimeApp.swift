@@ -238,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentModel.openPullRequestLink = { [weak self] in self?.openPullRequest($0) }
         TranscriptPullRequestMenu.shared.start()
         AssistantStore.shared.start()
+        RoutineStore.shared.start()
         AgentStateWriter.shared.start()
         NoticeCenter.shared.start()
         AgentInboxWatcher.shared.start()
@@ -269,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PRAgents.shared.stopAll()
         TopicAgentStore.shared.stopAll()
         AssistantStore.shared.stopAll()
+        RoutineStore.shared.stopAll()
         AgentHub.shared.mains.values.forEach { $0.stopClient() }
         LocalLLM.shared.unload(wait: true)
         tracker.flush()
