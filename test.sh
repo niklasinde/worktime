@@ -107,6 +107,8 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/ReminderLogic.swift \
     Sources/WorkTime/ReminderSuggestionLogic.swift \
     Sources/WorkTime/MCPReminders.swift \
+    Sources/WorkTime/RoutineRequestLogic.swift \
+    Sources/WorkTime/MCPRoutines.swift \
     Sources/WorkTime/MCPFilters.swift \
     Sources/WorkTime/InCallLogic.swift \
     Sources/WorkTime/MeetingBriefLogic.swift \

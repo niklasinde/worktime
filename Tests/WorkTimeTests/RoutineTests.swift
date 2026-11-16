@@ -158,4 +158,81 @@ let routineTests: [(name: String, run: () throws -> Void)] = [
         check(Routines.decode(Routines.encode([saved])) == [saved], "round trip")
         check(Routines.decode(Data("not json".utf8)).isEmpty && Routines.decode(nil).isEmpty, "unreadable file")
     }),
+
+    ("routine tools: a draft reads the schedule, time and weekday, and says what is missing", {
+        func draft(_ args: [String: Any]) -> RoutineDraft? { try? RoutineRequests.draft(["name": "Brief", "prompt": "Go"].merging(args) { $1 }) }
+        check(draft(["schedule": "weekdays", "time": "08:30"])?.schedule == RoutineSchedule(kind: .weekdays, hour: 8, minute: 30), "weekdays")
+        check(draft(["schedule": "weekly", "weekday": "Fri"])?.schedule.weekday == 6, "friday")
+        check(draft(["schedule": "interval", "minutes": 30])?.schedule == .every(minutes: 30), "interval")
+        check(draft(["schedule": "daily"])?.schedule.hour == 9 && draft(["schedule": "daily"])?.runMissed == false, "defaults")
+        check(draft(["schedule": "interval"]) == nil && draft(["schedule": "weekly"]) == nil, "missing minutes and weekday")
+        check(draft(["schedule": "daily", "time": "25:00"]) == nil && draft(["schedule": "monthly"]) == nil && draft([:]) == nil, "bad input")
+        check(draft(["schedule": "daily", "run_missed": true])?.runMissed == true, "run_missed")
+    }),
+
+    ("routine tools: create resolves the workspace, checks the rest and returns a duplicate instead of adding one", {
+        let source = NoticeSource(agent: "main:personal", workspace: "personal")
+        func request(_ draft: RoutineDraft, action: RoutineRequest.Action = .create, routine: String? = nil, enabled: Bool? = nil, created: Date = monday10) -> RoutineRequest {
+            RoutineRequest(id: "r", action: action, draft: draft, routine: routine, enabled: enabled, source: source, created: created)
+        }
+        func handle(_ request: RoutineRequest, routines: [Routine] = []) -> (reply: NoticeReply, change: RoutineChange?) {
+            RoutineRequests.handle(request, routines: routines, workspaces: ["work", "personal"], assistants: ["assistant:work:developer"], now: monday10,
+                                   newID: { "new-id" })
+        }
+        let base = RoutineDraft(name: " Brief ", prompt: "Go", schedule: RoutineSchedule(kind: .weekdays))
+        let made = handle(request(base))
+        guard case .save(let routine)? = made.change else { return check(false, "saves: \(made.reply.message)") }
+        check(routine.id == "new-id" && routine.name == "Brief" && routine.workspace == "personal" && routine.enabled && routine.nextRun != nil, "\(routine)")
+        check(made.reply.ok && made.reply.notice == "new-id", made.reply.message)
+
+        var named = base
+        named.workspace = "work"
+        named.model = "opus"
+        named.folder = "/tmp/brief"
+        check(handle(request(named)).change.flatMap { if case .save(let saved) = $0 { saved } else { nil } }?.model == "claude-opus-5-5", "model tier")
+        named.assistant = "assistant:work:developer"
+        check(handle(request(named)).change != nil, "assistant of that workspace")
+        named.workspace = "personal"
+        check(handle(request(named)).reply.ok == false, "assistant of another workspace")
+        named.assistant = "assistant:work:nobody"
+        check(handle(request(named)).reply.message.contains("No assistant"), "unknown assistant")
+
+        var bad = base
+        bad.workspace = "elsewhere"
+        check(!handle(request(bad)).reply.ok, "unknown workspace")
+        bad = base
+        bad.folder = "relative/dir"
+        check(!handle(request(bad)).reply.ok, "relative folder")
+        bad = base
+        bad.model = "gpt"
+        check(!handle(request(bad)).reply.ok, "unknown model")
+        bad = base
+        bad.schedule = .every(minutes: 1)
+        check(!handle(request(bad)).reply.ok && handle(request(bad)).change == nil, "interval too short")
+        check(!handle(request(base, created: monday10.addingTimeInterval(-3600))).reply.ok, "stale request")
+
+        let again = handle(request(base), routines: [routine])
+        check(again.change == nil && again.reply.ok && again.reply.notice == "new-id" && again.reply.message.contains("already exists"), again.reply.message)
+    }),
+
+    ("routine tools: list, turn on or off and delete find a routine by id or key", {
+        let source = NoticeSource(agent: "main:work", workspace: "work")
+        let one = routine(RoutineSchedule(kind: .daily), id: "6F9619FF-8B86-D011-B42D-00C04FC964FF")
+        func handle(_ action: RoutineRequest.Action, routine id: String? = nil, enabled: Bool? = nil, routines: [Routine]) -> (reply: NoticeReply, change: RoutineChange?) {
+            RoutineRequests.handle(RoutineRequest(id: "r", action: action, routine: id, enabled: enabled, source: source, created: monday10),
+                                   routines: routines, workspaces: ["work"], assistants: [], now: monday10)
+        }
+        check(handle(.list, routines: []).reply.message == "No routines.\n", "empty")
+        let listed = handle(.list, routines: [one]).reply.message
+        check(listed.contains("id \(one.id)") && listed.contains("Morning sweep") && listed.contains("Every day at 09:00") && listed.contains("not run yet"), listed)
+        check(handle(.setEnabled, routine: one.id.lowercased(), enabled: false, routines: [one]).change == .setEnabled(key: one.key, enabled: false), "by id")
+        check(handle(.delete, routine: one.key, routines: [one]).change == .delete(key: one.key), "by key")
+        check(!handle(.delete, routine: "nope", routines: [one]).reply.ok, "unknown id")
+    }),
+
+    ("routine tools: the creating tools are offered, and always ask", {
+        for name in ["create_routine", "routines", "set_routine_enabled", "delete_routine"] { check(MCPServer.toolNames.contains(name), name) }
+        let tools = MCPServer.routineTools()
+        check(tools.first { $0.name == "routines" }?.readOnly == true && tools.filter { !$0.readOnly }.count == 3, "only the list is read-only")
+    }),
 ]

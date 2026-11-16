@@ -83,6 +83,19 @@ final class RoutineStore: ObservableObject {
         save()
     }
 
+    /// An agent's create_routine, routines, set_routine_enabled or delete_routine, handed over by the MCP server through the agent inbox.
+    func handle(_ request: RoutineRequest) -> NoticeReply {
+        let result = RoutineRequests.handle(request, routines: routines, workspaces: WorkspaceStore.shared.workspaces.map(\.id),
+                                            assistants: Set(AssistantStore.shared.all.map(\.key)), now: Date())
+        switch result.change {
+        case .save(let routine): save(routine)
+        case .setEnabled(let key, let enabled): setEnabled(enabled, for: key)
+        case .delete(let key): delete(key)
+        case nil: break
+        }
+        return result.reply
+    }
+
     // MARK: Agents
 
     /// The folder a routine works in: its own, its assistant's, or the workspace's.

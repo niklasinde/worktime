@@ -248,6 +248,9 @@ final class AgentInboxWatcher {
         for request in take(ReminderRequest.self, where: ReminderLogic.isRequest) {
             Task { @MainActor in answer(TodoModel.shared.handle(request), to: request.id) }
         }
+        for request in take(RoutineRequest.self, where: RoutineRequests.isRequest) {
+            answer(RoutineStore.shared.handle(request), to: request.id)
+        }
         for request in take(BriefRequest.self, where: MeetingBriefLogic.isRequest) {
             Task { @MainActor in answer(await MeetingBriefModel.shared.answer(request), to: request.id) }
         }
