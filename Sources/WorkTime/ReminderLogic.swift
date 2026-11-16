@@ -165,6 +165,11 @@ enum ReminderLogic {
         }
     }
 
+    /// A date and time picker's choice as a due date: a day alone for an all-day reminder.
+    static func due(_ date: Date, allDay: Bool, timeZone: TimeZone = .current) -> ReminderDue {
+        ReminderDue(date: allDay ? calendar(timeZone).startOfDay(for: date) : date, allDay: allDay)
+    }
+
     // MARK: Order, sections and labels
 
     /// Those with a due date first, soonest first, then the rest by when they were made.

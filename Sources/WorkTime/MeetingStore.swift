@@ -26,6 +26,8 @@ enum AppPaths {
     static var notices: URL { support.appendingPathComponent(NoticeLogic.fileName) }
     /// The reminders WorkTime keeps, with the source each came from.
     static var reminders: URL { support.appendingPathComponent(ReminderBook.fileName) }
+    /// Which meeting action items were approved or dismissed as suggested reminders.
+    static var reminderSuggestions: URL { support.appendingPathComponent(SuggestionDecisions.fileName) }
     /// The meetings a brief was already made for, so a restart does not repeat one.
     static var briefed: URL { support.appendingPathComponent(MeetingBriefLogic.fileName) }
     /// The topic agents, read by the MCP server to find one by name.

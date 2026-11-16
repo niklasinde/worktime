@@ -2,7 +2,7 @@ import Foundation
 
 /// The sections of the main window's sidebar, top to bottom; Settings sits at the bottom. Chat opens its own window.
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case meetings, activity, gitHub, jira, chat, agent, settings
+    case meetings, activity, gitHub, jira, reminders, chat, agent, settings
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .activity: return "Activity"
         case .gitHub: return "GitHub"
         case .jira: return "Jira"
+        case .reminders: return "Reminders"
         case .chat: return "Chat"
         case .agent: return "Main"
         case .settings: return "Settings"
@@ -24,6 +25,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .activity: return "clock"
         case .gitHub: return "arrow.triangle.branch"
         case .jira: return "ticket"
+        case .reminders: return "bell"
         case .chat: return "bubble.left.and.text.bubble.right"
         case .agent: return "chevron.left.forwardslash.chevron.right"
         case .settings: return "gearshape"
@@ -36,6 +38,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .activity: return "What you worked on, by day and week"
         case .gitHub: return "Your pull requests, read through the GitHub CLI"
         case .jira: return "Your Jira tickets, one agent per ticket"
+        case .reminders: return "Your reminders, and the meeting action items suggested as reminders"
         case .chat: return "Ask about your meetings and work (\u{2318}\u{21E7}A)"
         case .agent: return "Your overview agent: what needs you across pull requests, their agents, Slack and meetings"
         case .settings: return "Settings (\u{2318},)"
