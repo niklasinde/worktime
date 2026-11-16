@@ -97,7 +97,7 @@ final class AgentModel: ObservableObject {
         didSet {
             guard oldValue != permissionMode, !loadingDefaults else { return }
             var modes = Self.defaults.dictionary(forKey: AgentPermissionMode.storageKey) ?? [:]
-            modes[historyKey] = permissionMode == .ask && assistant == nil && routine == nil ? nil : permissionMode.rawValue
+            modes[historyKey] = permissionMode == AgentPermissionMode.preferred(defaults: Self.defaults) && assistant == nil && routine == nil ? nil : permissionMode.rawValue
             Self.defaults.set(modes, forKey: AgentPermissionMode.storageKey)
             if busy { client?.send(.mode(permissionMode)) }
         }
@@ -400,7 +400,8 @@ final class AgentModel: ObservableObject {
         loadingDefaults = true
         defer { loadingDefaults = false }
         permissionMode = AgentPermissionMode.stored(Self.defaults.dictionary(forKey: AgentPermissionMode.storageKey), key: historyKey,
-                                                    fallback: actingAs.map { Assistants.permissionMode($0.role.permissionMode) } ?? .ask)
+                                                    fallback: actingAs.map { Assistants.permissionMode($0.role.permissionMode) }
+                                                        ?? (routine == nil ? AgentPermissionMode.preferred(defaults: Self.defaults) : .ask))
         if let assistant {
             let saved = (Self.defaults.dictionary(forKey: Assistants.storedModelsKey) as? [String: String])?[historyKey]
             model = saved.map { AgentLogic.storedModel($0) } ?? Assistants.modelID(assistant.role.model)

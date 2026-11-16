@@ -58,6 +58,12 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
     case ask = "default", auto, acceptEdits, plan
 
     static let storageKey = "agentPermissionModes"
+    static let defaultKey = "agentDefaultPermissionMode"
+
+    /// What a new agent starts in when nothing was saved for it and no assistant sets its own.
+    static func preferred(defaults: UserDefaults = .standard) -> AgentPermissionMode {
+        defaults.string(forKey: defaultKey).flatMap(AgentPermissionMode.init(rawValue:)) ?? .ask
+    }
 
     var id: String { rawValue }
 

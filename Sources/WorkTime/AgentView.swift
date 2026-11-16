@@ -953,6 +953,7 @@ private struct AgentPermissionRow: View {
 /// The calls the user chose to always allow, with Remove for each and Remove all.
 struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
+    @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -962,6 +963,15 @@ struct AgentSettingsSection: View {
     }
 
     @ViewBuilder private var sections: some View {
+        SettingsSection("Permissions", footer: "How new agents start. An agent you already changed keeps its own, and assistants and routines keep theirs.") {
+            SettingsRow("Default mode", detail: defaultMode.help) {
+                Picker("Default mode", selection: $defaultMode) {
+                    ForEach(AgentPermissionMode.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
                         + "allowed when each part that is not read-only starts with one of these; Claude in Chrome\u{2019}s actions are always asked, and so is send to agent, unless you allowed Main to message that agent.") {
             if store.rules.isEmpty {
