@@ -183,6 +183,16 @@ let githubClaudeTests: [(name: String, run: () throws -> Void)] = [
         check(GitHubClaude.pullRequest(for: "QDLY-3", in: [branched, titled]) { heads[$0.url] } == nil, "none")
     }),
 
+    ("many tickets read each pull request's branch once, however many tickets ask", {
+        let titled = GitHubPR(url: "u1", number: 1, title: "QDLY-1: Fix", repo: "a/b", updated: Date())
+        let branched = GitHubPR(url: "u2", number: 2, title: "Fix the thing", repo: "a/c", updated: Date())
+        var reads: [String] = []
+        let heads = ["u2": "NI/qdly-2"]
+        let found = GitHubClaude.pullRequests(for: ["QDLY-1", "QDLY-2", "QDLY-3", "QDLY-4"], in: [titled, branched]) { reads.append($0.url); return heads[$0.url] }
+        check(found == ["QDLY-1": titled, "QDLY-2": branched], "matches by title and by branch")
+        check(reads == ["u1", "u2"], "each read once for three tickets that needed it")
+    }),
+
     ("the stream shows the answer as it grows and ends with the result and its cost", {
         var stream = GitHubClaude.Stream()
         stream.consume(#"{"type":"system","subtype":"init"}"#)

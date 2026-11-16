@@ -166,6 +166,20 @@ enum GitHubClaude {
         prs.first { $0.ticket == ticket } ?? prs.first { head($0)?.localizedCaseInsensitiveContains(ticket) == true }
     }
 
+    /// `pullRequest(for:in:head:)` for many tickets at once, reading each pull request's head branch at most once and only when a ticket has no title match.
+    static func pullRequests(for tickets: [String], in prs: [GitHubPR], head: (GitHubPR) -> String?) -> [String: GitHubPR] {
+        var heads: [String: String?] = [:]
+        func cachedHead(_ pr: GitHubPR) -> String? {
+            if let known = heads[pr.url] { return known }
+            let found = head(pr)
+            heads[pr.url] = .some(found)
+            return found
+        }
+        return Dictionary(tickets.compactMap { ticket in
+            pullRequest(for: ticket, in: prs, head: cachedHead).map { (ticket, $0) }
+        }) { first, _ in first }
+    }
+
     static func encode(_ text: String) -> String {
         text.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")) ?? ""
     }

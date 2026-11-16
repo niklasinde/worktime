@@ -460,8 +460,9 @@ private struct AssignedTickets: View {
                 if let error = model.error, model.tickets.isEmpty {
                     Text(error.message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
                 }
+                let pulls = claude.pullRequests(for: model.tickets.map(\.key))
                 NotchScroll {
-                    VStack(alignment: .leading, spacing: 2) { ForEach(model.tickets, content: row) }
+                    VStack(alignment: .leading, spacing: 2) { ForEach(model.tickets) { row($0, pull: pulls[$0.key]) } }
                 }
             } else {
                 Button(action: setUp) {
@@ -477,7 +478,7 @@ private struct AssignedTickets: View {
         .padding(.horizontal, 16)
     }
 
-    private func row(_ ticket: JiraTicket) -> some View {
+    private func row(_ ticket: JiraTicket, pull: GitHubPR?) -> some View {
         HStack(spacing: 0) {
             Button { open(ticket) } label: {
                 HStack(spacing: 8) {
@@ -490,7 +491,7 @@ private struct AssignedTickets: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if let pr = claude.pullRequest(for: ticket.key) { OpenInClaudeCodeButton(pr: pr).padding(.trailing, 8) }
+            if let pull { OpenInClaudeCodeButton(pr: pull).padding(.trailing, 8) }
         }
         .contextMenu {
             Button("Open in Agent") {

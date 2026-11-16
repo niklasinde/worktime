@@ -260,8 +260,16 @@ final class GitHubClaudeModel: ObservableObject {
         if let link = GitHubClaude.appLink(prompt: prompt, folder: folder) { NSWorkspace.shared.open(link) }
     }
 
-    func pullRequest(for ticket: String) -> GitHubPR? {
-        GitHubClaude.pullRequest(for: ticket, in: GitHubModel.shared.prs[.created] ?? []) { self.store?.githubHeadBranch($0.url) }
+    private var ticketMatches: (key: [String], pulls: [String: GitHubPR])?
+
+    /// The pull requests the tickets are worked on in; the answer is kept while the tickets and pull requests stay the same, since the lists ask on every redraw.
+    func pullRequests(for tickets: [String]) -> [String: GitHubPR] {
+        let prs = GitHubModel.shared.prs[.created] ?? []
+        let key = tickets + prs.map(\.url)
+        if let kept = ticketMatches, kept.key == key { return kept.pulls }
+        let pulls = GitHubClaude.pullRequests(for: tickets, in: prs) { self.store?.githubHeadBranch($0.url) }
+        ticketMatches = (key, pulls)
+        return pulls
     }
 
     // MARK: Interactive
