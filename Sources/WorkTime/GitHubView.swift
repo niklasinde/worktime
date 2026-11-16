@@ -7,7 +7,6 @@ struct GitHubView: View {
     @AppStorage(GitHubModel.mergeableKey) private var mergeable = false
     @AppStorage(DockPlacement.choiceKey) private var dockChoice = DockPlacement.Choice.automatic
     @State private var showsDetail = false
-    @State private var dragStart: Double?
     @FocusState private var focus: Pane?
     @ObservedObject private var terminals = EmbeddedTerminalModel.shared
     @ObservedObject private var actions = GitHubActionsModel.shared
@@ -69,19 +68,7 @@ struct GitHubView: View {
     }
 
     private func splitter(current: Double, total: Double) -> some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.12))
-            .frame(width: 1)
-            .overlay {
-                Color.clear.frame(width: 9).contentShape(Rectangle()).pointerStyle(.columnResize)
-                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                        .onChanged { drag in
-                            let start = dragStart ?? current
-                            dragStart = start
-                            listWidth = GitHubLayout.listWidth(start + drag.translation.width, in: total)
-                        }
-                        .onEnded { _ in dragStart = nil })
-            }
+        ColumnSplitter(width: $listWidth, current: current, total: total)
     }
 
     private var openShortcut: some View {

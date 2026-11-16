@@ -47,6 +47,8 @@ struct JiraIssue: Equatable, Sendable {
     let comments: [Comment]
     let commentTotal: Int
     let links: [Link]
+    var labels: [String] = []
+    var fixVersions: [String] = []
 }
 
 struct JiraSearch: Equatable, Sendable {
@@ -117,7 +119,7 @@ enum JiraLogic {
     static let myselfPath = "/rest/api/3/myself"
     static let listFields = fields + ["issuetype", "assignee", "labels"]
     static let issueFields = ["summary", "status", "issuetype", "priority", "assignee", "reporter", "created", "updated", "description",
-                              "comment", "issuelinks"]
+                              "comment", "issuelinks", "labels", "fixVersions"]
     static let commentLimit = 10
     static let searchLimit = 50
 
@@ -222,7 +224,9 @@ enum JiraLogic {
                          priority: name(fields["priority"]), assignee: person(fields["assignee"]), reporter: person(fields["reporter"]),
                          created: (fields["created"] as? String).flatMap(date), updated: (fields["updated"] as? String).flatMap(date),
                          description: text(fields["description"]), comments: comments,
-                         commentTotal: comment["total"] as? Int ?? comments.count, links: links)
+                         commentTotal: comment["total"] as? Int ?? comments.count, links: links,
+                         labels: fields["labels"] as? [String] ?? [],
+                         fixVersions: (fields["fixVersions"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String })
     }
 
     /// Plain text of an Atlassian Document Format value, or of a plain string as older sites return.

@@ -15,6 +15,9 @@ final class JiraPageModel: ObservableObject {
     @Published private(set) var refreshing = false
     @Published private(set) var pullRequests: [String: [GitHubPR]] = [:]
     @Published var notice: String?
+    @Published private(set) var selected: String?
+    @Published private(set) var details: [String: JiraDetail.State] = [:]
+    private var detailFetched: [String: Date] = [:]
 
     let jira: JiraModel
     private let file: URL
@@ -84,6 +87,33 @@ final class JiraPageModel: ObservableObject {
     }
 
     func ticket(_ key: String) -> JiraTicket? { lists.values.joined().first { $0.key == key } }
+
+    /// Shows the ticket in the detail pane at once, from the list's row, and fetches the whole issue behind it.
+    func select(_ key: String?) {
+        selected = key
+        if let key { loadDetail(key) }
+    }
+
+    func loadDetail(_ key: String, force: Bool = false) {
+        guard JiraDetail.needsFetch(fetchedAt: detailFetched[key], now: Date(), force: force) else { return }
+        guard let client = jira.client() else {
+            details[key] = .failed(.notConfigured)
+            return
+        }
+        detailFetched[key] = Date()
+        if case .loaded = details[key] {} else { details[key] = .loading }
+        Task {
+            let result = await Task.detached { () -> Result<JiraIssue, JiraError> in
+                do { return .success(try await client.issue(key)) } catch { return .failure(JiraError.from(error)) }
+            }.value
+            switch result {
+            case .success(let issue): details[key] = .loaded(issue)
+            case .failure(let error):
+                detailFetched[key] = nil
+                if case .loaded = details[key] {} else { details[key] = .failed(error) }
+            }
+        }
+    }
 
     func browseURL(_ key: String) -> URL? { site.flatMap { JiraLogic.browseURL(site: $0, key: key) } }
 

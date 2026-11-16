@@ -303,4 +303,35 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
         check(TopicAgents.systemPrompt(topic) == system.replacingOccurrences(of: "\u{201C}n\u{201D}", with: "\u{201C}\(topic.name)\u{201D}"), "a ticket-only topic uses it")
         check(JiraAgents.ticket(issue).summary == "Release note" && JiraAgents.ticket(issue).status == "In Progress", "list entry from an issue")
     }),
+
+    ("the detail pane reads labels and fix versions, lists the facts that exist and splits the description into blocks", {
+        let now = Date(timeIntervalSince1970: 1_793_000_000)
+        let json = #"{"key":"QDLY-1","fields":{"summary":"S","status":{"name":"Done"},"reporter":{"displayName":"Ann"},"labels":["api","ui"],"fixVersions":[{"name":"202"},{"name":"203"}],"description":"First line\n- one\n- two\n\nLast | ","comment":{"total":7,"comments":[{"author":{"displayName":"Bo"},"body":"hi"}]}}}"#
+        let issue = try JiraLogic.parseIssue(Data(json.utf8))
+        check(issue.labels == ["api", "ui"] && issue.fixVersions == ["202", "203"], "labels and versions")
+        check(JiraLogic.issueFields.contains("labels") && JiraLogic.issueFields.contains("fixVersions"), "requested")
+        let facts = JiraDetail.facts(issue, now: now)
+        check(facts.map(\.title) == ["Assignee", "Reporter", "Labels", "Fix version"], "\(facts)")
+        check(facts.first == JiraDetail.Fact(title: "Assignee", value: "Unassigned") && facts.last?.value == "202, 203", "values")
+        check(JiraDetail.blocks(issue.description) == [.paragraph("First line"), .bullet("one"), .bullet("two"), .paragraph("Last")], "\(JiraDetail.blocks(issue.description))")
+        check(JiraDetail.blocks("").isEmpty, "no description")
+        let comments = JiraDetail.recentComments(issue)
+        check(comments.shown.count == 1 && comments.hidden == 6, "six earlier comments stay in Jira")
+    }),
+
+    ("the detail pane fetches an issue again once it is stale, on retry, or never fetched", {
+        let now = Date(timeIntervalSince1970: 1_793_000_000)
+        check(JiraDetail.needsFetch(fetchedAt: nil, now: now), "never fetched")
+        check(!JiraDetail.needsFetch(fetchedAt: now.addingTimeInterval(-60), now: now), "fresh")
+        check(JiraDetail.needsFetch(fetchedAt: now.addingTimeInterval(-JiraDetail.freshFor), now: now), "stale")
+        check(JiraDetail.needsFetch(fetchedAt: now, now: now, force: true), "retry")
+    }),
+
+    ("arrow keys step the selection within the list and stop at its ends", {
+        let keys = ["A-1", "A-2", "A-3"]
+        check(JiraDetail.step(from: nil, offset: 1, in: keys) == "A-1" && JiraDetail.step(from: nil, offset: -1, in: keys) == "A-3", "no selection")
+        check(JiraDetail.step(from: "A-1", offset: 1, in: keys) == "A-2" && JiraDetail.step(from: "A-3", offset: 1, in: keys) == "A-3", "down")
+        check(JiraDetail.step(from: "A-1", offset: -1, in: keys) == "A-1", "up stops at the top")
+        check(JiraDetail.step(from: "gone", offset: 1, in: keys) == "A-1" && JiraDetail.step(from: "A-1", offset: 1, in: []) == nil, "filtered out, empty")
+    }),
 ]

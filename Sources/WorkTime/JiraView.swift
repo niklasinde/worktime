@@ -6,12 +6,37 @@ struct JiraView: View {
     @ObservedObject var model: JiraPageModel
     @ObservedObject private var writer = AgentStateWriter.shared
     @ObservedObject private var topics = TopicAgentStore.shared
-    @State private var selected: String?
+    @AppStorage("jiraListWidth") private var listWidth = GitHubLayout.defaultListWidth
+    @State private var showsDetail = false
     @FocusState private var focused: Bool
 
     private static let gutter: CGFloat = 16
 
+    private var selected: String? { model.selected }
+
     var body: some View {
+        GeometryReader { proxy in
+            let list = model.configured && model.hasData ? GitHubLayout.listWidth(listWidth, in: proxy.size.width) : 0
+            if list > 0 {
+                HStack(spacing: 0) {
+                    page.frame(width: list)
+                    ColumnSplitter(width: $listWidth, current: list, total: proxy.size.width)
+                    detail(back: nil)
+                }
+            } else if showsDetail, model.configured, model.hasData, selected != nil {
+                detail(back: { showsDetail = false })
+            } else {
+                page
+            }
+        }
+        .onAppear {
+            listWidth = GitHubLayout.repairedWidth(listWidth)
+            model.linkPullRequests()
+            Task { await model.refresh() }
+        }
+    }
+
+    private var page: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if let error = model.error, model.hasData { JiraErrorBanner(error: error) }
@@ -21,9 +46,15 @@ struct JiraView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
-            model.linkPullRequests()
-            Task { await model.refresh() }
+    }
+
+    @ViewBuilder private func detail(back: (() -> Void)?) -> some View {
+        if let key = selected {
+            JiraDetailView(key: key, model: model, back: back).id(key).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            GitHubEmptyState(icon: "ticket", title: "Select a ticket",
+                             text: "Click one in the list, or use the arrow keys. Return opens its agent.") { EmptyView() }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -149,7 +180,10 @@ struct JiraView: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(visible) { ticket in
                         VStack(spacing: 0) {
-                            JiraRow(ticket: ticket, model: model, agent: agents[ticket.key], selected: ticket.key == selected) { selected = ticket.key }
+                            JiraRow(ticket: ticket, model: model, agent: agents[ticket.key], selected: ticket.key == selected) {
+                                model.select(ticket.key)
+                                showsDetail = true
+                            }
                             Divider().padding(.horizontal, Self.gutter)
                         }
                     }
@@ -175,9 +209,7 @@ struct JiraView: View {
     }
 
     private func step(_ offset: Int, in tickets: [JiraTicket]) -> KeyPress.Result {
-        let index = selected.flatMap { key in tickets.firstIndex { $0.key == key } }
-        let next = index.map { min(max($0 + offset, 0), tickets.count - 1) } ?? (offset > 0 ? 0 : tickets.count - 1)
-        selected = tickets[next].key
+        model.select(JiraDetail.step(from: selected, offset: offset, in: tickets.map(\.key)))
         return .handled
     }
 }
@@ -238,7 +270,7 @@ private struct JiraRow: View {
     }
 }
 
-private struct JiraStatusPill: View {
+struct JiraStatusPill: View {
     let ticket: JiraTicket
 
     var body: some View {
