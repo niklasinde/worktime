@@ -27,9 +27,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let record = UNNotificationAction(identifier: Self.recordAction, title: "Record", options: [])
         let stop = UNNotificationAction(identifier: Self.stopAction, title: "Stop", options: [])
         let keep = UNNotificationAction(identifier: Self.keepAction, title: "Keep recording", options: [])
+        let allow = UNNotificationAction(identifier: AgentAttention.allowAction, title: "Allow once", options: [])
+        let deny = UNNotificationAction(identifier: AgentAttention.denyAction, title: "Deny", options: [.destructive])
+        let reply = UNTextInputNotificationAction(identifier: AgentAttention.replyAction, title: "Reply", options: [],
+                                                  textInputButtonTitle: "Send", textInputPlaceholder: "Answer the agent")
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [record], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.approvalCategory, actions: [allow, deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.questionCategory, actions: [reply], intentIdentifiers: [], options: []),
         ])
     }
 
@@ -59,6 +65,34 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.title = title
         content.body = String(body.prefix(200))
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// An agent stopped on a permission prompt; Allow once and Deny answer it without opening the app, a click opens the agent.
+    static func postApproval(agent: String, permission: String, text: (title: String, body: String)) {
+        post(text, category: AgentAttention.approvalCategory, agent: agent, request: permission,
+             identifier: AgentAttention.approvalIdentifier(agent: agent, permission: permission))
+    }
+
+    /// An agent finished a turn on a question; Reply sends what is typed to it as the next prompt.
+    static func postQuestion(agent: String, text: (title: String, body: String)) {
+        post(text, category: AgentAttention.questionCategory, agent: agent, request: nil, identifier: AgentAttention.questionIdentifier(agent: agent))
+    }
+
+    private static func post(_ text: (title: String, body: String), category: String, agent: String, request: String?, identifier: String) {
+        let content = UNMutableNotificationContent()
+        content.title = text.title
+        content.body = text.body
+        content.sound = .default
+        content.categoryIdentifier = category
+        content.interruptionLevel = .timeSensitive
+        content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: request ?? ""]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
+    static func withdraw(identifiers: [String]) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
     /// An agent's notification, at once or with a calendar trigger at its time so it shows even while the app is busy or quit.
@@ -139,6 +173,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let content = response.notification.request.content
         let action = response.actionIdentifier
+        if let agent = content.userInfo[AgentAttention.agentKey] as? String {
+            let request = (content.userInfo[AgentAttention.requestKey] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            await AgentAttentionCenter.shared.respond(agent: agent, request: request, action: action,
+                                                      text: (response as? UNTextInputNotificationResponse)?.userText)
+            return
+        }
         if let id = content.userInfo[NoticeLogic.userInfoKey] as? String {
             if action == UNNotificationDefaultActionIdentifier { await NoticeCenter.shared.open(id) }
             return

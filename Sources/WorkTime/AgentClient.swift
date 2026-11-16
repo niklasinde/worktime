@@ -81,6 +81,9 @@ final class AgentModel: ObservableObject {
     @Published private(set) var queued: [String] = []
     private(set) var updated: Date?
     private var visiblePanes = 0
+    /// The permission prompts a notification was sent for, so one is not sent twice and each is taken back when answered.
+    private var notifiedApprovals: Set<String> = []
+    private var notifiedQuestion = false
     /// The overview session of the Agent window, kept across launches.
     let isMain: Bool
     /// The workspace a Main is for.
@@ -172,6 +175,43 @@ final class AgentModel: ObservableObject {
     func setVisible(_ visible: Bool) {
         visiblePanes = max(visiblePanes + (visible ? 1 : -1), 0)
         if visiblePanes > 0 { resultSeen = true }
+        if visible, NSApp.isActive { withdrawAttention() }
+    }
+
+    /// Who the notifications name this agent.
+    private var attentionTitle: String {
+        routine?.name ?? assistant?.role.name ?? topic?.name ?? prURL.map { AgentOverview.prTitle($0) }
+            ?? (isMain ? "Main" : (folder as NSString).lastPathComponent)
+    }
+
+    /// The key a notification carries to find this agent again: the one the Agent page selects it by.
+    private var attentionID: String { isMain ? Workspaces.mainKey(workspace ?? Workspaces.defaultID) : agentKey ?? historyKey }
+
+    private var isInFront: Bool { visiblePanes > 0 && NSApp.isActive }
+
+    private func announce(permission id: String, tool: String, summary: String) {
+        guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
+              notifiedApprovals.insert(id).inserted else { return }
+        AgentAttentionCenter.shared.register(self, id: attentionID)
+        Notifier.postApproval(agent: attentionID, permission: id, text: AgentAttention.approval(agent: attentionTitle, tool: tool, summary: summary))
+    }
+
+    private func announceQuestion() {
+        guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
+              let question = AgentAttention.question(in: items) else { return }
+        AgentAttentionCenter.shared.register(self, id: attentionID)
+        notifiedQuestion = true
+        Notifier.postQuestion(agent: attentionID, text: AgentAttention.question(agent: attentionTitle, text: question))
+    }
+
+    /// Takes this agent's notifications back: its prompts were answered, or it moved on.
+    private func withdrawAttention() {
+        guard !notifiedApprovals.isEmpty || notifiedQuestion else { return }
+        var identifiers = notifiedApprovals.map { AgentAttention.approvalIdentifier(agent: attentionID, permission: $0) }
+        if notifiedQuestion { identifiers.append(AgentAttention.questionIdentifier(agent: attentionID)) }
+        Notifier.withdraw(identifiers: identifiers)
+        notifiedApprovals = []
+        notifiedQuestion = false
     }
 
     var mentionMatches: [String] {
@@ -530,6 +570,7 @@ final class AgentModel: ObservableObject {
         }
         guard refreshAssistant(), let client = runningClient() else { return false }
         problem = nil
+        withdrawAttention()
         items.append(AgentItem(id: "user-\(items.count)", kind: .user(text), images: images.map(\.path)))
         workMap.prompt(model: model, at: Date())
         let prompt = AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images)
@@ -549,9 +590,27 @@ final class AgentModel: ObservableObject {
         if always, case .permission(_, _, _, let offer, nil) = item.kind { AgentRuleStore.shared.add(offer) }
         AgentLogic.answer(item.id, allow: allow, in: &items)
         client?.send(.permission(id: id, allow: allow))
+        if notifiedApprovals.remove(id) != nil {
+            Notifier.withdraw(identifiers: [AgentAttention.approvalIdentifier(agent: attentionID, permission: id)])
+        }
+    }
+
+    /// The answer of a notification's Allow once or Deny to the prompt with the sidecar's `id`, if it still waits.
+    func answer(permission id: String, allow: Bool) {
+        let waiting = items.first { item in
+            guard AgentLogic.permissionID(of: item.id) == id, case .permission(_, _, _, _, nil) = item.kind else { return false }
+            return true
+        }
+        if let waiting { answer(waiting, allow: allow) }
+    }
+
+    /// What was typed into a notification's Reply: the next prompt, or the one after the current turn.
+    func reply(_ text: String) {
+        if busy { queued.append(text) } else { _ = start(text) }
     }
 
     func stop() {
+        withdrawAttention()
         client?.send(.interrupt)
     }
 
@@ -559,6 +618,7 @@ final class AgentModel: ObservableObject {
         client?.terminate()
         client = nil
         busy = false
+        withdrawAttention()
     }
 
     func loadFiles() {
@@ -638,6 +698,7 @@ final class AgentModel: ObservableObject {
         }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
+        if case .permissionRequest(let id, let tool, let summary, _, _) = event { announce(permission: id, tool: tool, summary: summary) }
         if routine != nil, case .permissionRequest = event, let asked = items.last { answer(asked, allow: false) }
         if case .idle = event { finishTurn() }
     }
@@ -655,13 +716,15 @@ final class AgentModel: ObservableObject {
         busy = false
         if let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
         resultSeen = visiblePanes > 0
-        if !queued.isEmpty { start(queued.removeFirst()) }
+        withdrawAttention()
+        if queued.isEmpty { announceQuestion() } else { start(queued.removeFirst()) }
     }
 
     private func exited(status: Int32, errors: String) {
         client = nil
         guard busy else { return }
         busy = false
+        withdrawAttention()
         AgentLogic.settleStreaming(in: &items)
         workMap.finish(at: Date())
         resultSeen = visiblePanes > 0

@@ -954,6 +954,7 @@ private struct AgentPermissionRow: View {
 struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
+    @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -971,6 +972,10 @@ struct AgentSettingsSection: View {
                 .labelsHidden()
                 .fixedSize()
             }
+        }
+        SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "
+                        + "Allow once, Deny and Reply work from the notification. Routines never ask.") {
+            SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
         }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
                         + "allowed when each part that is not read-only starts with one of these; Claude in Chrome\u{2019}s actions are always asked, and so is send to agent, unless you allowed Main to message that agent.") {

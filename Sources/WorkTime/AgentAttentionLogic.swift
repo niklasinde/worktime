@@ -1,0 +1,71 @@
+import Foundation
+
+/// When an agent that stops to wait for the user reaches them as a system notification, and what the notification says and does.
+enum AgentAttention {
+    static let settingKey = "agentNotifyAttention"
+    static let approvalCategory = "agent-approval"
+    static let questionCategory = "agent-question"
+    static let allowAction = "agent-allow"
+    static let denyAction = "agent-deny"
+    static let replyAction = "agent-reply"
+    static let agentKey = "agentAttentionAgent"
+    static let requestKey = "agentAttentionRequest"
+    static let bodyLimit = 160
+    static let questionLimit = 200
+
+    enum Response: Equatable {
+        case allow, deny, answer(String), open
+    }
+
+    static func enabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: settingKey) as? Bool ?? true
+    }
+
+    /// Routines run unattended and deny what needs approval; an agent the user is looking at asks in its own window.
+    static func shouldNotify(enabled: Bool, isRoutine: Bool, isShown: Bool) -> Bool { enabled && !isRoutine && !isShown }
+
+    static func approvalIdentifier(agent: String, permission: String) -> String { "agent-approval:\(agent):\(permission)" }
+
+    static func questionIdentifier(agent: String) -> String { "agent-question:\(agent)" }
+
+    static func approval(agent: String, tool: String, summary: String) -> (title: String, body: String) {
+        let call = summary.isEmpty ? tool : "\(tool): \(summary)"
+        return ("\(agent) needs approval", clipped(call, to: bodyLimit))
+    }
+
+    static func question(agent: String, text: String) -> (title: String, body: String) {
+        ("\(agent) is asking", clipped(text, to: questionLimit))
+    }
+
+    /// What a tap on the notification means: the buttons answer, a typed reply is the answer, anything else opens the agent.
+    static func response(action: String, text: String?) -> Response {
+        switch action {
+        case allowAction: return .allow
+        case denyAction: return .deny
+        case replyAction:
+            let answer = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return answer.isEmpty ? .open : .answer(answer)
+        default: return .open
+        }
+    }
+
+    static func asks(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'\u{201D}\u{2019})*_`")))
+        return trimmed.hasSuffix("?")
+    }
+
+    /// The last paragraph of the reply the turn ended on, when it is a question for the user.
+    static func question(in items: [AgentItem]) -> String? {
+        let lastPrompt = items.lastIndex { if case .user = $0.kind { true } else { false } }
+        let turn = items[(lastPrompt.map { $0 + 1 } ?? 0)...]
+        guard let last = turn.last(where: { if case .text = $0.kind { true } else { false } }),
+              case .text(let text) = last.kind, asks(text) else { return nil }
+        let paragraphs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return paragraphs.last
+    }
+
+    private static func clipped(_ text: String, to limit: Int) -> String {
+        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return line.count > limit ? String(line.prefix(limit - 1)) + "\u{2026}" : line
+    }
+}
