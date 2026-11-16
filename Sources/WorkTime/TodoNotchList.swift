@@ -111,6 +111,13 @@ final class TodoModel: ObservableObject {
         if let decisionsFile { try? new.save(to: decisionsFile) }
     }
 
+    /// Points the reminder at the Jira ticket made from it.
+    func attach(ticket key: String, summary: String, to id: String, jiraSite: String?) {
+        var new = book
+        new.update(id) { $0 = JiraCreate.linking($0, ticket: key, summary: summary, jiraSite: jiraSite) }
+        apply(new)
+    }
+
     func delete(_ id: String) {
         var new = book
         new.delete(id)

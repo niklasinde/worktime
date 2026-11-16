@@ -71,7 +71,7 @@ enum JiraWrite {
         }
     }
 
-    private static func field(_ key: String, _ value: [String: Any]) -> JiraTransition.Field? {
+    static func field(_ key: String, _ value: [String: Any]) -> JiraTransition.Field? {
         guard value["required"] as? Bool == true, value["hasDefaultValue"] as? Bool != true else { return nil }
         let schema = value["schema"] as? [String: Any] ?? [:]
         let options = (value["allowedValues"] as? [[String: Any]] ?? []).compactMap { option -> JiraTransition.Option? in

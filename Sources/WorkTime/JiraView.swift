@@ -37,6 +37,7 @@ struct JiraView: View {
             model.linkPullRequests()
             Task { await model.refresh() }
         }
+        .sheet(item: $model.newTicket) { JiraNewTicketView(draft: $0, page: model) }
     }
 
     private var page: some View {
@@ -101,8 +102,10 @@ struct JiraView: View {
     private var refreshControls: some View {
         HStack(spacing: 8) {
             if let fetched = model.fetched {
-                Text("Updated \(GitHubLogic.updatedText(fetched, now: Date()))").font(.callout).foregroundStyle(.tertiary)
+                Text("Updated \(GitHubLogic.updatedText(fetched, now: Date()))").font(.callout).foregroundStyle(.tertiary).lineLimit(1).fixedSize()
             }
+            Button { model.startTicket(JiraCreateDraft()) } label: { Image(systemName: "plus") }
+                .help("New ticket: make one in Jira")
             Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                 .disabled(model.refreshing)
                 .help("Fetch your tickets now")
@@ -120,6 +123,18 @@ struct JiraView: View {
                     }
                 }
                 .buttonStyle(NotchChipStyle(selected: model.filter.status == chip))
+            }
+            if model.changedCount > 0 || model.onlyChanged {
+                Button { model.onlyChanged.toggle() } label: {
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                        Text("Changed")
+                        Text("\(model.changedCount)").foregroundStyle(.tertiary).monospacedDigit()
+                    }
+                }
+                .buttonStyle(NotchChipStyle(selected: model.onlyChanged))
+                .help("Tickets that changed since you last looked at them")
+                Button("Mark all seen") { model.markAllSeen() }.buttonStyle(.plain).foregroundStyle(.secondary).font(.caption)
             }
         }
     }
@@ -241,6 +256,9 @@ private struct JiraRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 8)
         .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.08) : .clear))
+        .overlay(alignment: .leading) {
+            if model.isUnseen(ticket) { Circle().fill(Color.accentColor).frame(width: 5, height: 5).help("Changed since you last looked") }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture(perform: select)

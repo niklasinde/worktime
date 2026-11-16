@@ -24,6 +24,23 @@ extension JiraClient {
         return try JiraWrite.parseComment(await change(path: JiraWrite.commentPath(key), method: "POST", body: body))
     }
 
+    func logWork(on key: String, seconds: Int, started: Date, comment: String) async throws {
+        _ = try await change(path: JiraWorklog.path(key), method: "POST", body: JiraWorklog.body(seconds: seconds, started: started, comment: comment))
+    }
+
+    func issueTypes(in project: String) async throws -> [JiraIssueType] {
+        try JiraCreate.parseTypes(await send(path: JiraCreate.typesPath(project: project)))
+    }
+
+    func createForm(in project: String, type: String) async throws -> JiraCreateForm {
+        try JiraCreate.parseForm(await send(path: JiraCreate.fieldsPath(project: project, type: type)))
+    }
+
+    /// Makes the ticket and returns its key.
+    func create(_ body: [String: Any]) async throws -> String {
+        try JiraCreate.parseCreated(await change(path: JiraCreate.createPath, method: "POST", body: body))
+    }
+
     func people(matching query: String, assignableTo issueKey: String? = nil) async throws -> [JiraPerson] {
         try JiraWrite.parseUsers(await send(path: JiraWrite.usersPath(query: query, issueKey: issueKey)))
     }

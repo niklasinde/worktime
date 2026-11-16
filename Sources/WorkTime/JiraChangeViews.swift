@@ -85,7 +85,7 @@ struct JiraTransitionPicker: View {
         VStack(alignment: .leading, spacing: 8) {
             Button { chosen = nil } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(.plain).foregroundStyle(.secondary)
             Text("\(transition.name) needs:").font(.callout.weight(.medium))
-            ForEach(transition.fields) { field in fieldView(field) }
+            ForEach(transition.fields) { JiraFieldView(field: $0, values: $values) }
             HStack {
                 Spacer()
                 Button("Move to \(transition.status)") { model.move(key, with: transition, values: values) }
@@ -95,7 +95,14 @@ struct JiraTransitionPicker: View {
         }
     }
 
-    @ViewBuilder private func fieldView(_ field: JiraTransition.Field) -> some View {
+}
+
+/// One field a move or a new ticket requires: a pick from Jira's list, or text.
+struct JiraFieldView: View {
+    let field: JiraTransition.Field
+    @Binding var values: [String: [String]]
+
+    var body: some View {
         switch field.kind {
         case .choice(multiple: false):
             Picker(field.name, selection: Binding(get: { values[field.key]?.first ?? "" }, set: { values[field.key] = $0.isEmpty ? nil : [$0] })) {

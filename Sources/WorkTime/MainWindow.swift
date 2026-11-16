@@ -19,6 +19,7 @@ final class MainWindow {
             self?.showGitHub()
             GitHubModel.shared.open(target)
         }
+        JiraPageModel.shared.showInWindow = { [weak self] in self?.show(section: .jira) }
     }
 
     func show(selecting meeting: URL? = nil) {

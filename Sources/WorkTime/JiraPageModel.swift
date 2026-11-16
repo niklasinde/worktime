@@ -30,6 +30,12 @@ final class JiraPageModel: ObservableObject {
     @Published var notice: String?
     @Published private(set) var selected: String?
     @Published private(set) var details: [String: JiraDetail.State] = [:]
+    @Published var onlyChanged = false
+    @Published private(set) var seen: JiraSeen
+    @Published var newTicket: JiraCreateDraft?
+    @Published var meetingLinks: [String: [JiraMeetingLink]] = [:]
+    /// Shows the Jira page in the main window, for what starts on another page, such as a new ticket from a Slack message.
+    var showInWindow: (() -> Void)?
     private var detailFetched: [String: Date] = [:]
     private var transitionFetched: [String: Date] = [:]
     private var myself: JiraPerson?
@@ -67,6 +73,8 @@ final class JiraPageModel: ObservableObject {
         self.jira = jira ?? .shared
         self.file = file
         self.defaults = defaults
+        seen = JiraSeen.decode(defaults.data(forKey: JiraSeen.key), now: Date())
+        defaults.set(seen.encoded(), forKey: JiraSeen.key)
         loadCache()
         if let state = JiraPageState.decode(defaults.data(forKey: JiraSavedViews.pageStateKey)) {
             tab = state.tab
@@ -107,7 +115,12 @@ final class JiraPageModel: ObservableObject {
         return shown
     }
 
-    var visible: [JiraTicket] { JiraTickets.filter(rows, shown, mine: mine, now: Date()) }
+    var visible: [JiraTicket] {
+        let tickets = JiraTickets.filter(rows, shown, mine: mine, now: Date())
+        return onlyChanged ? seen.unseen(tickets) : tickets
+    }
+
+    var changedCount: Int { seen.unseen(rows).count }
     var statusCounts: [JiraStatusTab: Int] { JiraTickets.counts(rows, shown, mine: mine, now: Date()) }
     var options: JiraTickets.Options { JiraTickets.options(baseRows + rows).including(filter) }
     var title: String { JiraQuery.title(count: visible.count, capped: isCapped, tab: tab, filter: filter) }
@@ -178,7 +191,26 @@ final class JiraPageModel: ObservableObject {
     /// Shows the ticket in the detail pane at once, from the list's row, and fetches the whole issue behind it.
     func select(_ key: String?) {
         selected = key
-        if let key { loadDetail(key) }
+        if let key {
+            markSeen(key)
+            loadDetail(key)
+        }
+    }
+
+    func isUnseen(_ ticket: JiraTicket) -> Bool { seen.isUnseen(ticket) }
+
+    func markSeen(_ key: String) {
+        keep(seen: seen.marked(key, now: Date()))
+    }
+
+    func markAllSeen() {
+        onlyChanged = false
+        keep(seen: seen.markedAll(now: Date()))
+    }
+
+    private func keep(seen next: JiraSeen) {
+        seen = next
+        defaults.set(next.encoded(), forKey: JiraSeen.key)
     }
 
     func loadDetail(_ key: String, force: Bool = false) {
@@ -352,6 +384,7 @@ final class JiraPageModel: ObservableObject {
             if offersUndo, let from { offerUndo(key: key, from: from, to: transition.status, client: client) }
             save()
             await refresh()
+            markSeen(key)
         }
     }
 
@@ -390,6 +423,7 @@ final class JiraPageModel: ObservableObject {
             loadDetail(key, force: true)
             save()
             await refresh()
+            markSeen(key)
         }
     }
 
@@ -400,7 +434,7 @@ final class JiraPageModel: ObservableObject {
         }
     }
 
-    private func currentUser() async -> JiraPerson? {
+    func currentUser() async -> JiraPerson? {
         if let myself { return myself }
         guard let client = jira.client() else { return nil }
         let result = await Task.detached { () -> Result<JiraPerson, JiraError> in
@@ -433,11 +467,34 @@ final class JiraPageModel: ObservableObject {
                 details[key] = .loaded(issue)
             }
             drafts[key] = nil
+            markSeen(key)
             return true
         case .failure(let error):
             showNotice(error.message)
             return false
         }
+    }
+
+    /// Logs the time as the user, on their click; true when Jira took it and the ticket's total shows it.
+    func logWork(on key: String, seconds: Int, started: Date, comment: String) async -> Bool {
+        guard let client = jira.client() else {
+            showNotice(JiraError.notConfigured.message)
+            return false
+        }
+        let failure = await Task.detached { () -> JiraError? in
+            do { try await client.logWork(on: key, seconds: seconds, started: started, comment: comment); return nil } catch { return JiraError.from(error) }
+        }.value
+        if let failure {
+            showNotice(failure.message)
+            return false
+        }
+        if case .loaded(var issue)? = details[key] {
+            issue.timeSpentSeconds = (issue.timeSpentSeconds ?? 0) + seconds
+            details[key] = .loaded(issue)
+        }
+        markSeen(key)
+        showNotice("Logged \(JiraWorklog.format(seconds)) on \(key)")
+        return true
     }
 
     private struct Snapshot {
@@ -529,5 +586,7 @@ final class JiraPageModel: ObservableObject {
     }
 
     func showSample(statusPicker key: String?) { statusPicker = key }
+
+    func showSample(unseenSince baseline: Date) { seen = JiraSeen(baseline: baseline) }
     #endif
 }

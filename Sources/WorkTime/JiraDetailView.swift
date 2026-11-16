@@ -78,6 +78,7 @@ struct JiraDetailView: View {
         return VStack(alignment: .leading, spacing: 18) {
             facts(issue)
             pullRequests
+            JiraLinkedView(key: key, model: model)
             section("Description") { description(issue.description) }
             if !issue.links.isEmpty {
                 section("Linked issues") {
@@ -108,6 +109,7 @@ struct JiraDetailView: View {
                 }
             }
             section("Add a comment") { JiraCommentBox(key: key, model: model) }
+            section("Log work") { JiraWorklogBox(key: key, model: model) }
         }
     }
 

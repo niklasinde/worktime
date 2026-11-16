@@ -89,6 +89,9 @@ struct ReminderRow: View {
                 ForEach(ReminderPreset.allCases, id: \.self) { preset in Button(preset.title) { model.setDue(reminder.id, preset) } }
             }
             if let source = reminder.source { Button("Open \(source.label)") { model.open(source) } }
+            if JiraModel.shared.configured {
+                Button("Create Jira Ticket\u{2026}") { JiraPageModel.shared.startTicket(JiraCreate.draft(reminder: reminder, jiraSite: JiraModel.shared.site)) }
+            }
             Divider()
             Button("Delete", role: .destructive) { model.delete(reminder.id) }
         }

@@ -40,9 +40,16 @@ enum JiraPreview {
             makeAgents(in: output)
             model.showSample(lists: samples, pullRequests: pullRequests)
             await shot("assigned")
+            model.showSample(unseenSince: Date().addingTimeInterval(-86_400))
+            await shot("changed", appearances: [.aqua])
+            model.onlyChanged = true
+            await shot("changed-only", appearances: [.aqua])
+            model.onlyChanged = false
+            model.showSample(unseenSince: Date())
             model.filter = JiraFilter(project: "QDLY, ISD", statusName: "In Progress, Review", group: .status)
             await shot("filters-grouped", appearances: [.aqua])
             model.filter = JiraFilter()
+            model.meetingLinks["QDLY-8332"] = [JiraMeetingLink(id: 1, title: "Release planning", date: Date().addingTimeInterval(-90_000))]
             model.showSample(issue: sampleIssue, transitions: [JiraTransition(id: "1", name: "Send to review", status: "Review", category: .inProgress, fields: [])],
                              undo: JiraPageModel.Undo(key: "QDLY-8332", from: "To Do", text: "QDLY-8332 moved to In Progress", transition: nil))
             await shot("detail-actions", appearances: [.aqua, .darkAqua])
@@ -126,7 +133,7 @@ enum JiraPreview {
                   description: "Write the release note for the export.\n- Mention the new column\n- Link the guide", comments: [
                     JiraIssue.Comment(author: "Anna Berg", created: Date().addingTimeInterval(-7_200), body: "Can you add the Swedish text too?"),
                     JiraIssue.Comment(author: "Niklas Inde", created: Date().addingTimeInterval(-3_600), body: "Yes, tomorrow.")],
-                  commentTotal: 2, links: [], labels: ["export"], fixVersions: ["2026.11"])
+                  commentTotal: 2, links: [], labels: ["export"], fixVersions: ["2026.11"], timeSpentSeconds: 5_400)
     }
 
     static var pullRequests: [String: [GitHubPR]] {

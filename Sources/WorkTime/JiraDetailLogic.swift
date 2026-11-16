@@ -42,6 +42,7 @@ enum JiraDetail {
             ("Updated", issue.updated.map { GitHubLogic.updatedText($0, now: now) }),
             ("Labels", issue.labels.isEmpty ? nil : issue.labels.joined(separator: ", ")),
             ("Fix version", issue.fixVersions.isEmpty ? nil : issue.fixVersions.joined(separator: ", ")),
+            ("Logged", issue.timeSpentSeconds.map(JiraWorklog.format)),
         ]
         return rows.compactMap { title, value in value.map { Fact(title: title, value: $0) } }
     }

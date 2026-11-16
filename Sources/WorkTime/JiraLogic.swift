@@ -50,6 +50,8 @@ struct JiraIssue: Equatable, Sendable {
     let links: [Link]
     var labels: [String] = []
     var fixVersions: [String] = []
+    /// The time logged on the ticket, in seconds; nil when none is or the site does not track time.
+    var timeSpentSeconds: Int?
 }
 
 struct JiraSearch: Equatable, Sendable {
@@ -123,7 +125,7 @@ enum JiraLogic {
     static let myselfPath = "/rest/api/3/myself"
     static let listFields = fields + ["issuetype", "assignee", "labels"]
     static let issueFields = ["summary", "status", "issuetype", "priority", "assignee", "reporter", "created", "updated", "description",
-                              "comment", "issuelinks", "labels", "fixVersions"]
+                              "comment", "issuelinks", "labels", "fixVersions", "timespent"]
     static let commentLimit = 10
     static let searchLimit = 50
 
@@ -236,7 +238,8 @@ enum JiraLogic {
                          description: text(fields["description"]), comments: comments,
                          commentTotal: comment["total"] as? Int ?? comments.count, links: links,
                          labels: fields["labels"] as? [String] ?? [],
-                         fixVersions: (fields["fixVersions"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String })
+                         fixVersions: (fields["fixVersions"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String },
+                         timeSpentSeconds: fields["timespent"] as? Int)
     }
 
     /// Plain text of an Atlassian Document Format value, or of a plain string as older sites return.

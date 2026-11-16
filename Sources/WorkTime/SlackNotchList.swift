@@ -132,6 +132,12 @@ struct SlackNotchList: View {
                 onOpen()
                 TopicAgentStore.shared.open(slack: message, link: SlackLogic.webLink(message, workspace: model.identity?.url))
             }
+            if JiraModel.shared.configured {
+                Button("Create Jira Ticket\u{2026}") {
+                    onOpen()
+                    JiraPageModel.shared.startTicket(JiraCreate.draft(slack: message, link: SlackLogic.webLink(message, workspace: model.identity?.url)))
+                }
+            }
         }
     }
 
