@@ -19,6 +19,12 @@ test("the MCP server gets the Main's workspace only when there is one", () => {
     { type: "stdio", command: "/app", args: ["--mcp"], env: { WORKTIME_WORKSPACE: "work", WORKTIME_AGENT: "topic:abc" } });
 });
 
+test("agents can start subagents, with the user's agent definitions available", () => {
+  const options = sessionOptions({ cwd: "/repo" }, "m", "default");
+  assert.ok((options.tools as string[]).includes("Agent"));
+  assert.ok(options.agents);
+});
+
 test("partial messages are on, so the reply streams", () => {
   assert.equal(sessionOptions({ cwd: "/repo" }, "m", "default").includePartialMessages, true);
 });

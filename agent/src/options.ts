@@ -1,8 +1,9 @@
 import type { McpServerConfig, Options } from "@anthropic-ai/claude-agent-sdk";
 import { chromeArgs } from "./chrome.js";
+import { userSubagents } from "./subagents.js";
 import type { Mode } from "./permissions.js";
 
-export const tools = ["Read", "Grep", "Glob", "Edit", "Write", "Bash"];
+export const tools = ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Agent"];
 
 export type PromptOptions = { cwd: string; sessionId?: string; forkSession?: boolean; appendSystemPrompt?: string; chrome?: boolean; allowedMcpTools?: string[]; delegateFrom?: string };
 
@@ -18,6 +19,7 @@ export function sessionOptions(input: PromptOptions, model: string, mode: Mode):
     includePartialMessages: true,
     permissionMode: mode,
     settingSources: ["project"],
+    agents: userSubagents(process.env.HOME),
     extraArgs: chromeArgs(input.chrome === true),
   };
 }

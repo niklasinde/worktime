@@ -134,7 +134,7 @@ function forward(message: any, model: string) {
         return send({ type: "error", message: resultText(message.message?.content) || message.error, auth: true });
       }
       for (const block of message.message?.content ?? []) {
-        if (block.type === "text" && block.text) send({ type: "text", text: block.text });
+        if (block.type === "text" && block.text && !message.parent_tool_use_id) send({ type: "text", text: block.text });
         if (block.type === "tool_use") {
           send({ type: "tool_use", id: block.id, tool: block.name, input: block.input ?? {} });
           if (isChromeTool(block.name)) chromeCalls.add(block.id);
