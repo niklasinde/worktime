@@ -230,9 +230,34 @@ let routineTests: [(name: String, run: () throws -> Void)] = [
         check(!handle(.delete, routine: "nope", routines: [one]).reply.ok, "unknown id")
     }),
 
+    ("routine tools: update changes only the named fields and keeps the routine's history", {
+        let run = RoutineRun(started: monday10, finished: monday10, status: .done)
+        var one = routine(RoutineSchedule(kind: .daily), nextRun: date(17, 9, 0))
+        one.assistant = "assistant:work:developer"
+        one.lastRun = run
+        func update(_ patch: RoutinePatch, routines: [Routine]? = nil) -> (reply: NoticeReply, change: RoutineChange?) {
+            RoutineRequests.handle(RoutineRequest(id: "r", action: .update, patch: patch, routine: one.id, source: NoticeSource(workspace: "work"), created: monday10),
+                                   routines: routines ?? [one], workspaces: ["work", "personal"], assistants: ["assistant:work:developer"], now: monday10)
+        }
+        func saved(_ result: (reply: NoticeReply, change: RoutineChange?)) -> Routine? { if case .save(let routine)? = result.change { routine } else { nil } }
+        let renamed = saved(update(RoutinePatch(name: "Evening sweep")))
+        check(renamed?.name == "Evening sweep" && renamed?.prompt == one.prompt && renamed?.assistant == one.assistant, "only the name changes")
+        check(renamed?.id == one.id && renamed?.created == one.created && renamed?.lastRun == run && renamed?.nextRun == one.nextRun, "history and next run stay")
+        let later = saved(update(RoutinePatch(hour: 18)))
+        check(later?.schedule.hour == 18 && later?.nextRun == later?.schedule.next(after: monday10) && later?.nextRun != one.nextRun, "a new time re-arms")
+        let off = saved(update(RoutinePatch(enabled: false)))
+        check(off?.enabled == false && off?.nextRun == nil, "off clears the next run")
+        check(saved(update(RoutinePatch(assistant: "")))?.assistant == nil, "empty assistant resets it")
+        check(saved(update(RoutinePatch(kind: .weekly, weekday: 4)))?.schedule.weekday == 4, "weekly day")
+        check(!update(RoutinePatch(kind: .interval, minutes: 1)).reply.ok, "interval too short")
+        check(!update(RoutinePatch(name: " ")).reply.ok && update(RoutinePatch(name: " ")).change == nil, "blank name")
+        check(!update(RoutinePatch(workspace: "personal")).reply.ok, "the assistant stays in its workspace")
+        check(!update(RoutinePatch(), routines: []).reply.ok, "unknown id")
+    }),
+
     ("routine tools: the creating tools are offered, and always ask", {
-        for name in ["create_routine", "routines", "set_routine_enabled", "delete_routine"] { check(MCPServer.toolNames.contains(name), name) }
+        for name in ["create_routine", "update_routine", "routines", "set_routine_enabled", "delete_routine"] { check(MCPServer.toolNames.contains(name), name) }
         let tools = MCPServer.routineTools()
-        check(tools.first { $0.name == "routines" }?.readOnly == true && tools.filter { !$0.readOnly }.count == 3, "only the list is read-only")
+        check(tools.first { $0.name == "routines" }?.readOnly == true && tools.filter { !$0.readOnly }.count == 4, "only the list is read-only")
     }),
 ]

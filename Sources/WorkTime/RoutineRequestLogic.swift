@@ -12,13 +12,31 @@ struct RoutineDraft: Codable, Equatable, Sendable {
     var runMissed = false
 }
 
+/// What `update_routine` changes: only the fields it names. An empty assistant, folder or model clears it.
+struct RoutinePatch: Codable, Equatable, Sendable {
+    var name: String?
+    var prompt: String?
+    var kind: RoutineSchedule.Kind?
+    var minutes: Int?
+    var hour: Int?
+    var minute: Int?
+    var weekday: Int?
+    var workspace: String?
+    var assistant: String?
+    var folder: String?
+    var model: String?
+    var runMissed: Bool?
+    var enabled: Bool?
+}
+
 /// What the `--mcp` process hands the app through the agent inbox for the routine tools; the app answers with a `NoticeReply`.
 struct RoutineRequest: Codable, Equatable {
-    enum Action: String, Codable { case create, list, setEnabled, delete }
+    enum Action: String, Codable { case create, update, list, setEnabled, delete }
 
     var id: String
     var action: Action
     var draft: RoutineDraft?
+    var patch: RoutinePatch?
     var routine: String?
     var enabled: Bool?
     var source: NoticeSource
@@ -66,6 +84,28 @@ enum RoutineRequests {
                             model: FilterLogic.text(args, "model"), runMissed: try FilterLogic.flag(args, "run_missed") ?? false)
     }
 
+    static func patch(_ args: [String: Any]) throws -> RoutinePatch {
+        var patch = RoutinePatch(name: FilterLogic.text(args, "name"), prompt: FilterLogic.text(args, "prompt"),
+                                 kind: try FilterLogic.choice(args, "schedule", allowed: kinds).flatMap(RoutineSchedule.Kind.init(rawValue:)),
+                                 workspace: FilterLogic.text(args, "workspace"), assistant: stringOrEmpty(args, "assistant"),
+                                 folder: stringOrEmpty(args, "folder"), model: stringOrEmpty(args, "model"),
+                                 runMissed: try FilterLogic.flag(args, "run_missed"), enabled: try FilterLogic.flag(args, "enabled"))
+        if let minutes = MCPServer.number(args["minutes"]) {
+            guard minutes == minutes.rounded() else { throw MCPToolError("minutes must be a whole number.") }
+            patch.minutes = Int(minutes)
+        }
+        if let time = FilterLogic.text(args, "time") {
+            guard let clock = clock(time) else { throw MCPToolError("time must be HH:mm, not \(time).") }
+            (patch.hour, patch.minute) = clock
+        }
+        patch.weekday = try weekday(args)
+        return patch
+    }
+
+    private static func stringOrEmpty(_ args: [String: Any], _ key: String) -> String? {
+        (args[key] as? String).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
     static func clock(_ text: String) -> (hour: Int, minute: Int)? {
         let parts = text.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]), (0..<24).contains(hour), (0..<60).contains(minute) else { return nil }
@@ -105,6 +145,15 @@ enum RoutineRequests {
                 return reply(true, "Created \"\(made.name)\", \(made.schedule.label().lowercased()), workspace \(made.workspace); id \(made.id).",
                              id: made.id, change: .save(made))
             }
+        case .update:
+            guard let found = find(request.routine, in: routines) else { return reply(false, "No routine with id \(request.routine ?? "").") }
+            guard let patch = request.patch else { return reply(false, "Nothing to change.") }
+            switch updated(found, with: patch, workspaces: workspaces, assistants: assistants, now: now) {
+            case .failure(let error): return reply(false, error.message)
+            case .success(let changed):
+                return reply(true, "Updated \"\(changed.name)\", \(changed.schedule.label().lowercased()), \(changed.enabled ? "on" : "off"); id \(changed.id).",
+                             id: changed.id, change: .save(changed))
+            }
         case .setEnabled, .delete:
             guard let found = find(request.routine, in: routines) else { return reply(false, "No routine with id \(request.routine ?? "").") }
             if request.action == .delete { return reply(true, "Deleted \"\(found.name)\".", id: found.id, change: .delete(key: found.key)) }
@@ -138,6 +187,34 @@ enum RoutineRequests {
         let routine = Routine(id: id, name: draft.name, prompt: draft.prompt, workspace: workspace, assistant: assistant, folder: folder, model: model,
                               schedule: draft.schedule, runMissed: draft.runMissed, created: now)
         return .success(Routines.armed(routine, now: now))
+    }
+
+    /// The routine with the patch applied and checked like a new one; its id, creation time and last run stay, and it is due next
+    /// at its schedule's next time when the schedule or whether it is on changed.
+    static func updated(_ routine: Routine, with patch: RoutinePatch, workspaces: [String], assistants: Set<String>, now: Date) -> Result<Routine, NoticeError> {
+        var schedule = routine.schedule
+        if let kind = patch.kind { schedule.kind = kind }
+        if let minutes = patch.minutes { schedule.minutes = minutes }
+        if let hour = patch.hour { schedule.hour = hour }
+        if let minute = patch.minute { schedule.minute = minute }
+        if let weekday = patch.weekday { schedule.weekday = weekday }
+        func keep(_ new: String?, _ old: String?) -> String? { new.map { $0.isEmpty ? nil : $0 } ?? old }
+        let draft = RoutineDraft(name: patch.name ?? routine.name, prompt: patch.prompt ?? routine.prompt, schedule: schedule,
+                                 workspace: patch.workspace ?? routine.workspace, assistant: keep(patch.assistant, routine.assistant),
+                                 folder: keep(patch.folder, routine.folder), model: keep(patch.model, routine.model),
+                                 runMissed: patch.runMissed ?? routine.runMissed)
+        let source = NoticeSource(workspace: routine.workspace)
+        switch self.routine(from: draft, source: source, workspaces: workspaces, assistants: assistants, id: routine.id, now: now) {
+        case .failure(let error): return .failure(error)
+        case .success(var changed):
+            changed.created = routine.created
+            changed.lastRun = routine.lastRun
+            changed.enabled = patch.enabled ?? routine.enabled
+            let rescheduled = changed.schedule != routine.schedule || changed.enabled != routine.enabled
+            changed = Routines.armed(changed, now: now)
+            if !rescheduled { changed.nextRun = routine.nextRun }
+            return .success(changed)
+        }
     }
 
     static func sameRoutine(_ one: Routine, _ other: Routine) -> Bool {

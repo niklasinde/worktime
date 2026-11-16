@@ -1,11 +1,11 @@
 import Foundation
 
-/// create_routine, routines, set_routine_enabled and delete_routine: the scheduled agent runs WorkTime keeps, read and changed by
+/// create_routine, update_routine, routines, set_routine_enabled and delete_routine: the scheduled agent runs WorkTime keeps, read and changed by
 /// the running app (it owns the file and the schedule) through the agent inbox.
 extension MCPServer {
     static func routineTools(sources: NoticeSources = NoticeSources(), now: @escaping () -> Date = Date.init) -> [MCPTool] {
-        func send(_ action: RoutineRequest.Action, draft: RoutineDraft? = nil, routine: String? = nil, enabled: Bool? = nil) throws -> String {
-            let request = RoutineRequest(id: UUID().uuidString, action: action, draft: draft, routine: routine, enabled: enabled, source: sources.source(), created: now())
+        func send(_ action: RoutineRequest.Action, draft: RoutineDraft? = nil, patch: RoutinePatch? = nil, routine: String? = nil, enabled: Bool? = nil) throws -> String {
+            let request = RoutineRequest(id: UUID().uuidString, action: action, draft: draft, patch: patch, routine: routine, enabled: enabled, source: sources.source(), created: now())
             return try sources.ask(AgentInbox.encode(request), id: request.id, name: RoutineRequests.requestName(request.id), what: "the routine").message
         }
         func routineID(_ args: [String: Any]) throws -> String {
@@ -32,6 +32,25 @@ extension MCPServer {
                                  "run_missed": ["type": "boolean", "description": "Run once when the app was closed at the due time; skipped by default."]],
                     required: ["name", "prompt", "schedule"], readOnly: false) { args in
                 try send(.create, draft: try RoutineRequests.draft(args))
+            },
+            MCPTool(name: "update_routine",
+                    description: "Changes one of the user's WorkTime routines, by the id create_routine or routines gave: only the fields you pass change. "
+                        + "An empty assistant, folder or model resets it. The user is asked to approve every change.",
+                    properties: ["id": ["type": "string"],
+                                 "name": ["type": "string", "maxLength": Routines.nameLimit],
+                                 "prompt": ["type": "string"],
+                                 "schedule": ["type": "string", "enum": RoutineRequests.kinds],
+                                 "minutes": ["type": "integer", "minimum": RoutineSchedule.shortestInterval, "description": "For an interval: minutes between runs."],
+                                 "time": ["type": "string", "description": "HH:mm local time of day."],
+                                 "weekday": ["type": "string", "description": "For weekly: the day's name, like Monday."],
+                                 "workspace": ["type": "string"],
+                                 "assistant": ["type": "string", "description": "An assistant key; empty to run as a plain agent."],
+                                 "folder": ["type": "string", "description": "Absolute folder; empty to use the default one."],
+                                 "model": ["type": "string", "description": "A model tier; empty for the default."],
+                                 "run_missed": ["type": "boolean"],
+                                 "enabled": ["type": "boolean"]],
+                    required: ["id"], readOnly: false) { args in
+                try send(.update, patch: try RoutineRequests.patch(args), routine: try routineID(args))
             },
             MCPTool(name: "routines",
                     description: "The user's WorkTime routines: id, name, schedule, whether on, workspace, assistant and how the last run went.",

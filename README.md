@@ -566,7 +566,7 @@ menu bar menu or the **Agent** row in the main window's sidebar.
 - **Routines.** `create_routine(name, prompt, schedule, minutes?, time?, weekday?, workspace?, assistant?, folder?, model?, run_missed?)`
   adds a routine (a prompt that runs on a schedule in an agent of its own, only while the app is open) to the asking agent's
   workspace, or the one named; an existing one with the same name, prompt and schedule is returned instead. `routines` lists them
-  and runs without asking; `create_routine`, `set_routine_enabled(id, enabled)` and `delete_routine(id)` always ask.
+  and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)` and `delete_routine(id)` always ask.
 - **Meeting briefs.** Settings > Meetings > Meeting briefs (on by default only once calendar access is given, from there or from
   Help during calls): 5, 10 or 15 minutes before a calendar meeting that is not all-day, declined or cancelled and has someone else
   invited or a call link, WorkTime posts a notification ("<title> in 10 min", click opens the notch bar) and keeps a card there
