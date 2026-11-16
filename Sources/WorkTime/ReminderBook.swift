@@ -134,6 +134,8 @@ struct ReminderBook: Codable, Equatable, Sendable {
 
     mutating func delete(_ id: String) { reminders.removeAll { $0.id == id } }
 
+    mutating func clearCompleted() { reminders.removeAll { !$0.isOpen } }
+
     mutating func prune(now: Date) {
         reminders.removeAll { reminder in reminder.completed.map { now.timeIntervalSince($0) > Self.keepCompleted } ?? false }
     }

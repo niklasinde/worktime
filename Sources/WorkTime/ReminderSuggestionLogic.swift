@@ -9,6 +9,9 @@ struct SuggestionDecisions: Codable, Equatable, Sendable {
 
     func decided(_ item: Int64) -> Bool { approved.contains(item) || dismissed.contains(item) }
 
+    /// Puts a dismissed item back among the suggestions.
+    mutating func restore(_ item: Int64) { dismissed.remove(item) }
+
     static func load(from file: URL) -> SuggestionDecisions {
         (try? Data(contentsOf: file)).flatMap { AgentInbox.decode(SuggestionDecisions.self, from: $0) } ?? SuggestionDecisions()
     }
@@ -45,6 +48,11 @@ enum SuggestionLogic {
     /// The meeting action items nobody answered yet, in the order given.
     static func suggestions(_ items: [MeetingTodo], decisions: SuggestionDecisions) -> [MeetingTodo] {
         items.filter { !decisions.decided($0.id) }
+    }
+
+    /// The action items the user dismissed, which Resolved keeps so they can be brought back.
+    static func dismissed(_ items: [MeetingTodo], decisions: SuggestionDecisions) -> [MeetingTodo] {
+        items.filter { decisions.dismissed.contains($0.id) }
     }
 
     /// The reminder an approved action item becomes: its task, with the meeting as source and its owner in the notes.

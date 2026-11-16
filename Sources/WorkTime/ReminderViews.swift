@@ -179,6 +179,71 @@ struct SuggestionRow: View {
     }
 }
 
+/// What is done with: completed reminders and dismissed meeting suggestions, folded away until opened. Each comes back with
+/// one click, and Clear deletes the completed reminders.
+struct ResolvedReminders: View {
+    let completed: [Reminder]
+    let dismissed: [MeetingTodo]
+    @ObservedObject private var model = TodoModel.shared
+    @State private var expanded = false
+
+    var body: some View {
+        if !completed.isEmpty || !dismissed.isEmpty {
+            HStack {
+                Button { expanded.toggle() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption2)
+                        Text("Resolved \(completed.count + dismissed.count)").font(.caption.bold())
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                if expanded && !completed.isEmpty {
+                    Button("Clear", action: model.clearCompleted).buttonStyle(.plain).font(.caption).help("Delete the completed reminders")
+                }
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+            if expanded {
+                ForEach(completed) { reminder in
+                    row(title: reminder.title, detail: reminder.completed?.formatted(date: .abbreviated, time: .shortened), source: reminder.source,
+                        help: "Mark as not done") { model.reopen(reminder.id) }
+                        .contextMenu { Button("Delete", role: .destructive) { model.delete(reminder.id) } }
+                    Divider()
+                }
+                ForEach(dismissed) { item in
+                    row(title: item.task, detail: "Dismissed", source: .meeting(id: item.meeting, title: item.title), help: "Bring back as a suggestion") { model.restore(item) }
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private func row(title: String, detail: String?, source: ReminderSource?, help: String, restore: @escaping () -> Void) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Button(action: restore) { CheckCircle(checked: true) }
+                .buttonStyle(.plain)
+                .help(help)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).strikethrough().foregroundStyle(.secondary).lineLimit(2)
+                HStack(spacing: 6) {
+                    if let detail { Text(detail) }
+                    if let source { SourceChip(source: source) { model.open(source) } }
+                }
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+    }
+}
+
 /// The date and time picker behind a reminder's calendar button.
 struct DueEditor: View {
     let set: (ReminderDue?) -> Void

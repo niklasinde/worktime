@@ -106,6 +106,21 @@ let todoTests: [(name: String, run: () throws -> Void)] = [
         check(SuggestionLogic.kinds(in: [open], suggested: [item(1, "x")]) == [.jira, .meeting], "meetings once something is suggested")
     }),
 
+    ("resolved keeps dismissed suggestions and completed reminders until they are restored or cleared", {
+        let items = [item(1, "a"), item(2, "b"), item(3, "c")]
+        var decisions = SuggestionDecisions(approved: [1], dismissed: [2, 3])
+        check(SuggestionLogic.dismissed(items, decisions: decisions).map(\.id) == [2, 3], "only the dismissed ones")
+        decisions.restore(2)
+        check(SuggestionLogic.suggestions(items, decisions: decisions).map(\.id) == [2], "a restored one is a suggestion again")
+        check(SuggestionLogic.dismissed(items, decisions: decisions).map(\.id) == [3], "and leaves Resolved")
+        var book = ReminderBook()
+        let done = book.add(Reminder(id: "", title: "done", created: now))
+        let open = book.add(Reminder(id: "", title: "open", created: now))
+        book.complete(done.id, now: now)
+        book.clearCompleted()
+        check(book.reminders.map(\.id) == [open.id], "clear deletes only the completed ones")
+    }),
+
     ("a date picker's choice is a day for an all-day reminder and the time otherwise", {
         let stockholm = TimeZone(identifier: "Europe/Stockholm")!
         let afternoon = ISO8601DateFormatter().date(from: "2026-11-12T14:30:00Z")!

@@ -16,6 +16,7 @@ final class TodoModel: ObservableObject {
     var completed: [Reminder] { SuggestionLogic.completed(book.reminders) }
     /// Meeting action items waiting for the user to approve or dismiss them.
     var suggestions: [MeetingTodo] { SuggestionLogic.suggestions(meeting, decisions: decisions) }
+    var dismissed: [MeetingTodo] { SuggestionLogic.dismissed(meeting, decisions: decisions) }
 
     func start(store: MeetingStore, file: URL = AppPaths.reminders, decisionsFile: URL = AppPaths.reminderSuggestions) {
         self.store = store
@@ -103,6 +104,14 @@ final class TodoModel: ObservableObject {
     }
 
     func dismiss(_ item: MeetingTodo) { decide { $0.dismissed.insert(item.id) } }
+
+    func restore(_ item: MeetingTodo) { decide { $0.restore(item.id) } }
+
+    func clearCompleted() {
+        var new = book
+        new.clearCompleted()
+        apply(new)
+    }
 
     private func decide(_ change: (inout SuggestionDecisions) -> Void) {
         var new = decisions
@@ -217,6 +226,7 @@ struct TodoNotchList: View {
             reminderRows
             newReminder
             suggestedRows
+            ResolvedReminders(completed: model.completed, dismissed: model.dismissed)
         }
     }
 
