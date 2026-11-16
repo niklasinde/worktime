@@ -6,10 +6,11 @@ import { mcpServers, sessionOptions, type PromptOptions } from "./options.js";
 import { parseMode, preToolDecision, type Decision, type Mode } from "./permissions.js";
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
 import { TextStream } from "./stream.js";
+import { promptInput, type PromptImage } from "./images.js";
 import { delegateTool, hasDelegateRules, matchDelegate, parseRules, suggestRules, type Rule } from "./rules.js";
 
 type Input =
-  | ({ type: "prompt"; text: string; model?: string; permissionMode?: string } & PromptOptions)
+  | ({ type: "prompt"; text: string; model?: string; permissionMode?: string; images?: PromptImage[] } & PromptOptions)
   | { type: "permission"; id: string; allow: boolean }
   | { type: "target"; id: string; key?: string }
   | { type: "mode"; mode: string }
@@ -185,7 +186,7 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
   const promptModel = input.model || model;
   mode = parseMode(input.permissionMode);
   const current = query({
-    prompt: input.text,
+    prompt: promptInput(input.text, input.images),
     options: {
       ...sessionOptions(input, promptModel, mode),
       env,

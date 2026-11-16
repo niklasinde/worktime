@@ -7,6 +7,7 @@ struct ChatComposer: NSViewRepresentable {
     @Binding var height: CGFloat
     let placeholder: String
     var maxLines = 6
+    var attach: (([AgentImageSource]) -> Void)?
     let send: () -> Void
 
     static let inset = NSSize(width: 0, height: 4)
@@ -17,6 +18,8 @@ struct ChatComposer: NSViewRepresentable {
         let textView = PlaceholderTextView()
         textView.placeholder = placeholder
         textView.delegate = context.coordinator
+        textView.attach = { [weak coordinator = context.coordinator] in coordinator?.parent.attach?($0) }
+        textView.registerForDraggedTypes([.fileURL, .png, .tiff])
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = .systemFont(ofSize: NSFont.systemFontSize + 1)
@@ -112,6 +115,30 @@ private final class ComposerScrollView: NSScrollView {
 
 private final class PlaceholderTextView: NSTextView {
     var placeholder = ""
+    var attach: (([AgentImageSource]) -> Void)?
+
+    /// The pictures on a pasteboard that a paste or drop should attach, empty when it holds only text or other files.
+    private func images(on pasteboard: NSPasteboard) -> [AgentImageSource] {
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)
+        return AgentImages.sources(fileURLs: urls, imageData: data, hasText: pasteboard.string(forType: .string) != nil)
+    }
+
+    override func paste(_ sender: Any?) {
+        let sources = images(on: .general)
+        if sources.isEmpty { super.paste(sender) } else { attach?(sources) }
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        images(on: sender.draggingPasteboard).isEmpty ? super.draggingEntered(sender) : .copy
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let sources = images(on: sender.draggingPasteboard)
+        guard !sources.isEmpty else { return super.performDragOperation(sender) }
+        attach?(sources)
+        return true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

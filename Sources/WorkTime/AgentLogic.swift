@@ -108,7 +108,7 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
 /// What the window sends the sidecar, one JSON object per line.
 enum AgentRequest {
     case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
-                chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil)
+                chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [])
     case permission(id: String, allow: Bool)
     /// The answer to the sidecar's `resolve_target`: the key send_to_agent would deliver to, nil when it is unclear.
     case target(id: String, key: String?)
@@ -119,10 +119,11 @@ enum AgentRequest {
     var line: String {
         var object: [String: Any]
         switch self {
-        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom):
+        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom, let images):
             object = ["type": "prompt", "text": text, "cwd": cwd, "permissionMode": mode.rawValue]
             if let allowedTools { object["allowedMcpTools"] = allowedTools }
             if let delegateFrom { object["delegateFrom"] = delegateFrom }
+            if !images.isEmpty { object["images"] = images.map(\.json) }
             if chrome { object["chrome"] = true }
             if let sessionID {
                 object["sessionId"] = sessionID
@@ -159,6 +160,8 @@ struct AgentItem: Identifiable, Equatable {
 
     let id: String
     var kind: Kind
+    /// For a user message: the saved copies of the images sent with it.
+    var images: [String] = []
     /// A text still being generated: more of it can arrive, and the complete text replaces it.
     var streaming = false
 }

@@ -81,6 +81,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AgentOverviewLogic.swift \
     Sources/WorkTime/AgentSessionLogic.swift \
     Sources/WorkTime/AgentToolGroupLogic.swift \
+    Sources/WorkTime/AgentImageLogic.swift \
     Sources/WorkTime/AgentWorkMapLogic.swift \
     Sources/WorkTime/MCPAgents.swift \
     Sources/WorkTime/MCPSlackAttention.swift \
@@ -142,6 +143,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/LocalLLMTests.swift \
     Tests/WorkTimeTests/LiveTranscriptTests.swift \
     Tests/WorkTimeTests/AgentTests.swift \
+    Tests/WorkTimeTests/AgentImageTests.swift \
     Tests/WorkTimeTests/AgentOverviewTests.swift \
     Tests/WorkTimeTests/AgentSessionTests.swift \
     Tests/WorkTimeTests/AgentWorkMapTests.swift \

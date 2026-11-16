@@ -122,6 +122,9 @@ final class AgentModel: ObservableObject {
     @Published private(set) var files: [String] = []
     @Published var folder: String
     @Published var draft = ""
+    /// Pictures pasted or dropped into the prompt, sent with the next message.
+    @Published private(set) var images: [AgentImage] = []
+    @Published private(set) var imageNote: String?
 
     /// Beside a pull request: shows a referenced file in the pull request's diff, false when it is not one of its files.
     var reveal: ((String) -> Bool)?
@@ -470,8 +473,33 @@ final class AgentModel: ObservableObject {
 
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !busy, restoring == nil else { return }
-        if start(text) { draft = "" }
+        guard !text.isEmpty || !images.isEmpty, !busy, restoring == nil else { return }
+        if start(text, images: images) {
+            draft = ""
+            images = []
+            imageNote = nil
+        }
+    }
+
+    func attach(_ sources: [AgentImageSource]) {
+        if let message = AgentImages.refusal(adding: sources.count, to: images.count) { return imageNote = message }
+        imageNote = nil
+        Task.detached {
+            var loaded: [AgentImage] = [], note: String?
+            for source in sources {
+                do { loaded.append(try AgentImageCodec.load(source)) } catch let error as AgentImageCodec.Rejected { note = error.message } catch { note = AgentImages.unreadable }
+            }
+            await MainActor.run { [weak self, loaded, note] in
+                guard let self else { return }
+                images = Array((images + loaded).prefix(AgentImages.maxCount))
+                imageNote = note
+            }
+        }
+    }
+
+    func removeImage(_ image: AgentImage) {
+        images.removeAll { $0.id == image.id }
+        imageNote = nil
     }
 
     func catchUp() {
@@ -492,23 +520,23 @@ final class AgentModel: ObservableObject {
     }
 
     @discardableResult
-    private func start(_ text: String) -> Bool {
+    private func start(_ text: String, images: [AgentImage] = []) -> Bool {
         guard FileManager.default.fileExists(atPath: folder) else {
             AgentLogic.apply(.missingFolder(folder), to: &items)
             return false
         }
         guard refreshAssistant(), let client = runningClient() else { return false }
         problem = nil
-        items.append(AgentItem(id: "user-\(items.count)", kind: .user(text)))
+        items.append(AgentItem(id: "user-\(items.count)", kind: .user(text), images: images.map(\.path)))
         workMap.prompt(model: model, at: Date())
-        let prompt = AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }
+        let prompt = AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images)
         busy = true
         let system = systemPrompt, allowedTools = actingAs.map { Assistants.allowedTools($0.role) }, delegateFrom = isMain ? workspace : nil
         lastModel = model
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
-                            delegateFrom: delegateFrom))
+                            delegateFrom: delegateFrom, images: images))
         return true
     }
 

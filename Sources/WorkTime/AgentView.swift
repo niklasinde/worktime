@@ -742,15 +742,17 @@ struct AgentPanel: View {
                     }
                 }
             }
+            AgentImageChips(model: model)
             HStack(alignment: .bottom, spacing: 10) {
-                ChatComposer(text: $model.draft, height: $height, placeholder: "Ask the agent \u{2014} @ to reference a file") { model.submit() }
+                ChatComposer(text: $model.draft, height: $height, placeholder: "Ask the agent \u{2014} @ to reference a file or paste an image",
+                             attach: model.attach) { model.submit() }
                     .frame(height: height)
                 Button {
                     if model.busy { model.stop() } else { model.send() }
                 } label: {
                     Image(systemName: model.busy ? "stop.circle.fill" : "arrow.up.circle.fill")
                         .font(.system(size: 24))
-                        .foregroundStyle(model.busy || !model.draft.trimmingCharacters(in: .whitespaces).isEmpty ? Color.accentColor : .secondary.opacity(0.5))
+                        .foregroundStyle(model.busy || !model.draft.trimmingCharacters(in: .whitespaces).isEmpty || !model.images.isEmpty ? Color.accentColor : .secondary.opacity(0.5))
                 }
                 .buttonStyle(.plain)
                 .help(model.busy ? "Stop" : "Send (Return)")
@@ -788,11 +790,18 @@ private struct AgentItemRow: View {
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.purple.opacity(0.12)))
                     .help("Sent by the Main agent, approved by you there")
                 } else {
-                    Text(text)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.15)))
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if !item.images.isEmpty {
+                            HStack(spacing: 6) { ForEach(item.images, id: \.self) { AgentThumbnail(path: $0, side: 96) } }
+                        }
+                        if !text.isEmpty {
+                            Text(text)
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.15)))
+                        }
+                    }
                 }
             }
             .transcriptPullRequests(in: text)
@@ -1081,5 +1090,56 @@ private struct AgentCode: View {
         .frame(maxHeight: maxHeight)
         .fixedSize(horizontal: false, vertical: true)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+    }
+}
+
+/// A saved image, loaded off the main thread, at a fixed size.
+private struct AgentThumbnail: View {
+    let path: String
+    let side: CGFloat
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Color.primary.opacity(0.08)
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task(id: path) { image = await Task.detached { NSImage(contentsOfFile: path) }.value }
+    }
+}
+
+/// The pictures waiting to be sent with the next message, each removable, and why one was refused.
+private struct AgentImageChips: View {
+    @ObservedObject var model: AgentModel
+
+    var body: some View {
+        if !model.images.isEmpty || model.imageNote != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                if !model.images.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(model.images) { image in
+                            AgentThumbnail(path: image.path, side: 56)
+                                .overlay(alignment: .topTrailing) {
+                                    Button { model.removeImage(image) } label: {
+                                        Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, .black.opacity(0.6))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(2)
+                                    .help("Remove")
+                                }
+                        }
+                        Spacer()
+                    }
+                }
+                if let note = model.imageNote { Text(note).font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding(.horizontal, 14)
+        }
     }
 }
