@@ -582,7 +582,7 @@ struct AgentPermissionPicker: View {
     }
 }
 
-/// Gives this agent the Claude in Chrome tools from the next prompt on; their actions always ask, whatever the mode.
+/// Gives this agent the Claude in Chrome tools from the next prompt on; their actions ask in every mode, unless allowed for the session.
 struct AgentChromeToggle: View {
     @ObservedObject var model: AgentModel
 
@@ -593,7 +593,7 @@ struct AgentChromeToggle: View {
         .toggleStyle(.button)
         .help(model.chromeProblem.map { "Claude in Chrome is not working: \($0)" }
               ?? (model.chrome ? "Claude in Chrome is on: the agent can use your Chrome through the extension. Reading tabs and pages "
-                  + "runs without asking; navigating, clicking and typing always ask." : "Let the agent use Chrome through the Claude in Chrome extension"))
+                  + "runs without asking; navigating, clicking and typing ask, with Allow for this session on the prompt." : "Let the agent use Chrome through the Claude in Chrome extension"))
     }
 }
 
@@ -628,7 +628,7 @@ struct AgentPanel: View {
     private var isMain: Bool { model.isMain && model.prURL == nil }
 
     private func row(_ item: AgentItem) -> AgentItemRow {
-        AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1) },
+        AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1, session: $2) },
                      move: { if let folder = $0 { model.move(to: folder) } else { model.changeFolder() } })
     }
 
@@ -778,7 +778,7 @@ struct AgentPanel: View {
 private struct AgentItemRow: View {
     let item: AgentItem
     let folder: String
-    let answer: (_ allow: Bool, _ always: Bool) -> Void
+    let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
     /// Moves the agent to the folder, or asks for one when nil.
     let move: (String?) -> Void
 
@@ -916,7 +916,7 @@ private struct AgentPermissionRow: View {
     let detail: String
     let offer: [AgentRule]
     let allowed: Bool?
-    let answer: (_ allow: Bool, _ always: Bool) -> Void
+    let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -942,12 +942,16 @@ private struct AgentPermissionRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
-                    Button("Allow once") { answer(true, false) }
+                    Button("Allow once") { answer(true, false, false) }
+                    if AgentRules.sessionOffered(tool: tool) {
+                        Button("Allow for this session") { answer(true, false, true) }
+                            .help("Runs this tool without asking until the agent is restarted")
+                    }
                     if !offer.isEmpty {
-                        Button(AgentRules.offerButton(offer)) { answer(true, true) }
+                        Button(AgentRules.offerButton(offer)) { answer(true, true, false) }
                             .help("Saved in Settings \u{203A} Agent, for every agent")
                     }
-                    Button("Deny") { answer(false, false) }
+                    Button("Deny") { answer(false, false, false) }
                 }
             }
         }
@@ -985,7 +989,7 @@ struct AgentSettingsSection: View {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
         }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
-                        + "allowed when each part that is not read-only starts with one of these; Claude in Chrome\u{2019}s actions are always asked, and so is send to agent, unless you allowed Main to message that agent.") {
+                        + "allowed when each part that is not read-only starts with one of these; Claude in Chrome\u{2019}s actions need Allow for this session instead, and send to agent is always asked, unless you allowed Main to message that agent.") {
             if store.rules.isEmpty {
                 SettingsRow("Nothing yet", detail: "Choose Always allow when an agent asks to run something") {}
             }
@@ -1030,8 +1034,7 @@ struct AgentSettingsSection: View {
         }
     }
 
-    var builtIn: AgentBuiltIn? = AgentBuiltIn.load(sidecars: AgentLogic.sidecarCandidates(
-        environment: ProcessInfo.processInfo.environment, resources: Bundle.main.resourceURL, sourceFile: #filePath))
+    var builtIn = AgentRules.builtIn
 }
 
 /// Adds a rule by hand: a command prefix typed in, edits in a folder, or one of WorkTime's tools.

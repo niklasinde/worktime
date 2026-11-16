@@ -8,13 +8,13 @@ import { contextWindow, hookMessage, reportedContext, usageContext } from "./wor
 import { TextStream } from "./stream.js";
 import { userMessage, type PromptImage } from "./images.js";
 import { PromptQueue } from "./promptqueue.js";
-import { delegateTool, hasDelegateRules, matchDelegate, parseRules, suggestRules, type Rule } from "./rules.js";
+import { delegateTool, hasDelegateRules, isSessionAllowable, matchDelegate, parseRules, sessionKey, suggestRules, type Rule } from "./rules.js";
 
 type Input =
   | ({ type: "prompt"; text: string; model?: string; permissionMode?: string; images?: PromptImage[] } & PromptOptions)
   | { type: "message"; id: string; text: string; images?: PromptImage[] }
   | { type: "cancel_message"; id: string }
-  | { type: "permission"; id: string; allow: boolean }
+  | { type: "permission"; id: string; allow: boolean; session?: boolean }
   | { type: "target"; id: string; key?: string }
   | { type: "mode"; mode: string }
   | { type: "interrupt" }
@@ -26,6 +26,10 @@ const autoAllowed = new Map<string, string | undefined>();
 /// Claude in Chrome calls waiting for their result, which tells whether the extension is connected.
 const chromeCalls = new Set<string>();
 let rules: Rule[] = [];
+/// The calls the user allowed for the rest of this session, by `sessionKey`.
+const sessionAllowed = new Set<string>();
+/// What each waiting permission prompt would add to `sessionAllowed`, nothing for a tool that is asked about every time.
+const sessionKeys = new Map<string, string | undefined>();
 const resultLimit = 4000;
 const authErrors = ["authentication_failed", "oauth_org_not_allowed"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"].includes(key)));
@@ -68,13 +72,14 @@ function resolveTarget(input: Record<string, unknown>): Promise<string | undefin
 async function decide(tool: string, input: Record<string, unknown>, options: PromptOptions) {
   const check = tool === delegateTool && hasDelegateRules(rules, options.delegateFrom);
   const delegated = check ? matchDelegate(rules, options.delegateFrom, await resolveTarget(input)) : undefined;
-  return preToolDecision(tool, input, options.cwd, rules, mode, options.allowedMcpTools, delegated);
+  return preToolDecision(tool, input, options.cwd, rules, mode, options.allowedMcpTools, delegated, sessionAllowed);
 }
 
 function ask(tool: string, input: Record<string, unknown>, cwd: string): Promise<PermissionResult> {
   return new Promise((resolve) => {
     const id = String(++nextPermission);
     pending.set(id, resolve);
+    sessionKeys.set(id, isSessionAllowable(tool) ? sessionKey(tool, input) : undefined);
     send({ type: "permission_request", id, tool, input, offer: suggestRules(tool, input, cwd) });
   });
 }
@@ -181,6 +186,7 @@ function report(type: "delivered" | "cancelled", ids: string[]) {
 function denyPending(reason: string) {
   for (const resolve of pending.values()) resolve({ behavior: "deny", message: reason, interrupt: true });
   pending.clear();
+  sessionKeys.clear();
 }
 
 async function run(input: Extract<Input, { type: "prompt" }>) {
@@ -265,6 +271,9 @@ function handle(line: string) {
     case "permission": {
       const resolve = pending.get(input.id);
       pending.delete(input.id);
+      const key = sessionKeys.get(input.id);
+      sessionKeys.delete(input.id);
+      if (input.allow && input.session && key) sessionAllowed.add(key);
       resolve?.(input.allow ? { behavior: "allow" } : { behavior: "deny", message: "The user denied this tool call." });
       break;
     }

@@ -68,6 +68,14 @@ enum AgentRules {
         }
     }
 
+    static let builtIn = AgentBuiltIn.load(sidecars: AgentLogic.sidecarCandidates(
+        environment: ProcessInfo.processInfo.environment, resources: Bundle.main.resourceURL, sourceFile: #filePath))
+
+    /// Whether a permission card offers Allow for this session: MCP tools, but never the ones asked about every time.
+    static func sessionOffered(tool: String, builtIn: AgentBuiltIn? = builtIn) -> Bool {
+        tool.hasPrefix("mcp__") && !(builtIn?.alwaysAsk.contains(tool) ?? true)
+    }
+
     /// The Always allow button of a permission card.
     static func offerButton(_ rules: [AgentRule]) -> String {
         guard let rule = rules.first, rule.kind == .delegate else { return "Always allow" }

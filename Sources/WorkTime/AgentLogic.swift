@@ -124,7 +124,8 @@ enum AgentRequest {
     /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
     case message(id: String, text: String, images: [AgentImage] = [])
     case cancelMessage(id: String)
-    case permission(id: String, allow: Bool)
+    /// `session` also allows the same call for the rest of the session.
+    case permission(id: String, allow: Bool, session: Bool = false)
     /// The answer to the sidecar's `resolve_target`: the key send_to_agent would deliver to, nil when it is unclear.
     case target(id: String, key: String?)
     case mode(AgentPermissionMode)
@@ -151,7 +152,9 @@ enum AgentRequest {
             if !images.isEmpty { object["images"] = images.map(\.json) }
         case .cancelMessage(let id): object = ["type": "cancel_message", "id": id]
         case .mode(let mode): object = ["type": "mode", "mode": mode.rawValue]
-        case .permission(let id, let allow): object = ["type": "permission", "id": id, "allow": allow]
+        case .permission(let id, let allow, let session):
+            object = ["type": "permission", "id": id, "allow": allow]
+            if session { object["session"] = true }
         case .target(let id, let key):
             object = ["type": "target", "id": id]
             if let key { object["key"] = key }

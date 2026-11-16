@@ -68,3 +68,23 @@ test("without an allowlist every MCP tool is decided as before", () => {
 test("Claude in Chrome is not touched by the allowlist", () => {
   assert.notEqual(preToolDecision("mcp__claude-in-chrome__navigate", {}, cwd, [], "default", []).kind, "deny");
 });
+
+test("a call allowed for this session runs without asking, Chrome's too, and an always-asked tool never does", () => {
+  const chromeJs = "mcp__claude-in-chrome__javascript_tool";
+  const session = new Set([chromeJs, "mcp__claude-in-chrome__computer:left_click", "mcp__worktime__send_to_agent", "mcp__worktime__slack_thread"]);
+  for (const mode of modes) {
+    assert.deepEqual(preToolDecision(chromeJs, {}, cwd, [], mode, undefined, undefined, session), { kind: "allow", rule: "this session" }, mode);
+    assert.deepEqual(preToolDecision("mcp__worktime__send_to_agent", {}, cwd, [], mode, undefined, undefined, session), { kind: "ask" }, mode);
+  }
+  assert.deepEqual(preToolDecision("mcp__claude-in-chrome__form_input", {}, cwd, [], "default", undefined, undefined, session), { kind: "ask" });
+  const computer = "mcp__claude-in-chrome__computer";
+  assert.deepEqual(preToolDecision(computer, { action: "left_click" }, cwd, [], "default", undefined, undefined, session), { kind: "allow", rule: "this session" });
+  assert.deepEqual(preToolDecision(computer, { action: "type" }, cwd, [], "default", undefined, undefined, session), { kind: "ask" });
+  assert.deepEqual(preToolDecision(chromeJs, {}, cwd, [], "default"), { kind: "ask" });
+});
+
+test("a session allowance does not reach Bash or the edit tools", () => {
+  const session = new Set(["Bash", "Edit"]);
+  assert.deepEqual(preToolDecision("Bash", { command: "rm -rf build" }, cwd, [], "default", undefined, undefined, session), { kind: "defer" });
+  assert.deepEqual(preToolDecision("Edit", { file_path: `${cwd}/x` }, cwd, [], "default", undefined, undefined, session), { kind: "defer" });
+});

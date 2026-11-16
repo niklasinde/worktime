@@ -49,6 +49,15 @@ export function suggestRules(tool: string, input: Record<string, unknown>, cwd: 
   return [{ kind: "tool", value: tool }];
 }
 
+/// Whether the user may allow this tool for the rest of the session: MCP tools, but never those asked about every time.
+export const isSessionAllowable = (tool: string) => tool.startsWith("mcp__") && !alwaysAsk.has(tool);
+
+/// What "Allow for this session" remembers: the tool, and for Chrome's computer tool the action too, so allowing a screenshot
+/// does not allow a click.
+export function sessionKey(tool: string, input: Record<string, unknown>): string {
+  return isChromeTool(tool) && /__computer$/.test(tool) && typeof input.action === "string" ? `${tool}:${input.action}` : tool;
+}
+
 /// The rule saved when Main of `workspace` may message the agent with canonical key `target`.
 export const delegateRule = (workspace: string, target: string) => `delegate:${workspace}:${target}`;
 

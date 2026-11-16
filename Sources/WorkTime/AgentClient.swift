@@ -612,11 +612,12 @@ final class AgentModel: ObservableObject {
     }
 
     /// `always` first saves the rules the card offers, so this and later calls of every agent that match them run without asking.
-    func answer(_ item: AgentItem, allow: Bool, always: Bool = false) {
+    /// `session` allows the same tool for the rest of this session only.
+    func answer(_ item: AgentItem, allow: Bool, always: Bool = false, session: Bool = false) {
         guard let id = AgentLogic.permissionID(of: item.id) else { return }
         if always, case .permission(_, _, _, let offer, nil) = item.kind { AgentRuleStore.shared.add(offer) }
         AgentLogic.answer(item.id, allow: allow, in: &items)
-        client?.send(.permission(id: id, allow: allow))
+        client?.send(.permission(id: id, allow: allow, session: session))
         if notifiedApprovals.remove(id) != nil {
             Notifier.withdraw(identifiers: [AgentAttention.approvalIdentifier(agent: attentionID, permission: id)])
         }
