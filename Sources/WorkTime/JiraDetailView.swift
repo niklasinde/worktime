@@ -43,7 +43,7 @@ struct JiraDetailView: View {
             }
             if let summary, !summary.isEmpty { Text(summary).font(.system(size: 20, weight: .medium)) }
             HStack(spacing: 8) {
-                if let ticket, !ticket.status.isEmpty { JiraStatusPill(ticket: ticket) }
+                if let ticket, !ticket.status.isEmpty { JiraStatusButton(key: key, ticket: ticket, model: model) }
                 if let priority = ticket?.priority { Text(priority).font(.callout).foregroundStyle(.secondary) }
             }
         }
@@ -54,9 +54,23 @@ struct JiraDetailView: View {
             Button("Open in Jira") { model.browseURL(key).map { _ = NSWorkspace.shared.open($0) } }.disabled(model.site == nil)
             Button("Open Agent") { model.openAgent(key: key) }
             Button("Copy Key") { GitHubModel.copy(key) }
+            assignMenu
             RemindMeMenu(title: title, source: .jira(key: key)).fixedSize()
         }
         .controlSize(.small)
+    }
+
+    private var assignMenu: some View {
+        Menu("Assign") {
+            Button("Assign to Me") { model.assignToMe(key) }
+            Button("Unassign") { model.assign(key, to: nil) }.disabled(model.ticket(key)?.assignee == nil)
+            Button("Choose Person\u{2026}") { model.assignPicker = key }
+        }
+        .fixedSize()
+        .popover(isPresented: Binding(get: { model.assignPicker == key }, set: { if !$0, model.assignPicker == key { model.assignPicker = nil } }),
+                 arrowEdge: .bottom) {
+            JiraPersonPicker(model: model, issueKey: key) { model.assign(key, to: $0) }
+        }
     }
 
     private func loaded(_ issue: JiraIssue) -> some View {
@@ -93,6 +107,7 @@ struct JiraDetailView: View {
                     }
                 }
             }
+            section("Add a comment") { JiraCommentBox(key: key, model: model) }
         }
     }
 

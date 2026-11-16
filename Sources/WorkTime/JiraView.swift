@@ -15,18 +15,21 @@ struct JiraView: View {
     private var selected: String? { model.selected }
 
     var body: some View {
-        GeometryReader { proxy in
-            let list = model.configured && model.hasData ? GitHubLayout.listWidth(listWidth, in: proxy.size.width) : 0
-            if list > 0 {
-                HStack(spacing: 0) {
-                    page.frame(width: list)
-                    ColumnSplitter(width: $listWidth, current: list, total: proxy.size.width)
-                    detail(back: nil)
+        VStack(spacing: 0) {
+            JiraBanners(model: model)
+            GeometryReader { proxy in
+                let list = model.configured && model.hasData ? GitHubLayout.listWidth(listWidth, in: proxy.size.width) : 0
+                if list > 0 {
+                    HStack(spacing: 0) {
+                        page.frame(width: list)
+                        ColumnSplitter(width: $listWidth, current: list, total: proxy.size.width)
+                        detail(back: nil)
+                    }
+                } else if showsDetail, model.configured, model.hasData, selected != nil {
+                    detail(back: { showsDetail = false })
+                } else {
+                    page
                 }
-            } else if showsDetail, model.configured, model.hasData, selected != nil {
-                detail(back: { showsDetail = false })
-            } else {
-                page
             }
         }
         .onAppear {
@@ -40,9 +43,7 @@ struct JiraView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if let error = model.error, model.hasData { JiraErrorBanner(error: error) }
-            if let notice = model.notice {
-                Text(notice).font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(8).background(.quaternary)
-            }
+            if let error = model.queryError { JiraErrorBanner(error: error) }
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -73,16 +74,23 @@ struct JiraView: View {
                 }
                 .padding(.top, 8)
                 .padding(.leading, -8)
-                Text(JiraTickets.header(count: model.visible.count, tab: model.tab, capped: model.isCapped))
-                    .font(.system(size: 22, weight: .medium))
-                    .padding(.top, 8)
+                HStack(spacing: 8) {
+                    Text(model.title).font(.system(size: 22, weight: .medium))
+                    if model.querying { ProgressView().controlSize(.small) }
+                }
+                .padding(.top, 8)
+                JiraFilterBar(model: model).controlSize(.small).padding(.top, 6)
                 statusChips.padding(.top, 6)
                 ViewThatFits(in: .horizontal) {
                     searchRow(compact: false)
                     searchRow(compact: true)
                 }
                 .controlSize(.small)
+                .onSubmit { model.runRaw() }
                 .padding(.top, 10)
+                if model.isRaw {
+                    Text("Runs the JQL after jql: when you press Return, over all of Jira.").font(.caption).foregroundStyle(.tertiary).padding(.top, 4)
+                }
             }
         }
         .padding(.horizontal, Self.gutter)
@@ -118,38 +126,8 @@ struct JiraView: View {
 
     private func searchRow(compact: Bool) -> some View {
         HStack(spacing: 8) {
-            SearchField(text: $model.filter.query).frame(minWidth: compact ? nil : 150)
-            filtersMenu
+            SearchField(text: $model.filter.query).frame(minWidth: compact ? nil : 150).help("Search, or type jql: and a JQL query")
             OpenTicketButton(model: model, compact: compact)
-        }
-    }
-
-    private var filtersMenu: some View {
-        let options = model.options
-        return Menu {
-            choice("Project", $model.filter.project, options.projects, all: "All projects")
-            choice("Type", $model.filter.type, options.types, all: "All types")
-            choice("Status", $model.filter.statusName, options.statuses, all: "All statuses")
-            choice("Priority", $model.filter.priority, options.priorities, all: "All priorities")
-            choice("Assignee", $model.filter.assignee, ["Unassigned"] + options.assignees, all: "Anyone")
-            Divider()
-            Button("Open These in Jira") {
-                model.site.flatMap { JiraTickets.navigatorURL(site: $0, jql: JiraTickets.jql(model.tab, model.filter)) }.map { _ = NSWorkspace.shared.open($0) }
-            }
-            .disabled(model.site == nil)
-            Button("Reset Filters") { model.filter = model.filter.withoutRefinements }.disabled(model.filter.refinements == 0)
-        } label: {
-            Label(model.filter.refinements == 0 ? "Filters" : "Filters \u{00B7} \(model.filter.refinements)", systemImage: "line.3.horizontal.decrease.circle")
-        }
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Project, type, status, priority and assignee")
-    }
-
-    private func choice(_ title: String, _ selection: Binding<String?>, _ values: [String], all: String) -> some View {
-        Picker(title, selection: selection) {
-            Text(all).tag(String?.none)
-            ForEach(values, id: \.self) { Text($0).tag(String?.some($0)) }
         }
     }
 
@@ -164,27 +142,43 @@ struct JiraView: View {
                 Button("Try Again") { Task { await model.refresh() } }
             }
         } else if model.visible.isEmpty {
-            GitHubEmptyState(icon: model.refreshing && !model.hasData ? "arrow.clockwise" : "checkmark.circle",
-                             title: model.refreshing && !model.hasData ? "Fetching tickets\u{2026}"
-                             : model.rows.isEmpty ? "No tickets" : "Nothing matches",
-                             text: model.rows.isEmpty ? nil : "Change the chip, the search or the filters.") { EmptyView() }
+            emptyState
         } else {
             list
         }
     }
 
+    private var emptyState: some View {
+        let fetching = model.querying || (model.refreshing && !model.hasData)
+        return GitHubEmptyState(icon: fetching ? "arrow.clockwise" : "checkmark.circle",
+                                title: fetching ? "Fetching tickets\u{2026}" : model.isRaw && model.activeJQL == nil ? "Press Return to run the query"
+                                : model.rows.isEmpty ? "No tickets" : "Nothing matches",
+                                text: model.rows.isEmpty || fetching ? nil : "Change the chip, the search or the filters.") { EmptyView() }
+    }
+
     private var list: some View {
-        let visible = model.visible, agents = JiraTickets.agents(writer.states())
+        let groups = JiraTickets.groups(model.visible, by: model.filter.group), agents = JiraTickets.agents(writer.states())
+        let ordered = groups.flatMap(\.tickets)
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(visible) { ticket in
-                        VStack(spacing: 0) {
-                            JiraRow(ticket: ticket, model: model, agent: agents[ticket.key], selected: ticket.key == selected) {
-                                model.select(ticket.key)
-                                showsDetail = true
+                    ForEach(groups) { group in
+                        if !group.title.isEmpty {
+                            Text("\(group.title) \u{00B7} \(group.tickets.count)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                        }
+                        ForEach(group.tickets) { ticket in
+                            VStack(spacing: 0) {
+                                JiraRow(ticket: ticket, model: model, agent: agents[ticket.key], selected: ticket.key == selected) {
+                                    model.select(ticket.key)
+                                    showsDetail = true
+                                }
+                                Divider().padding(.horizontal, Self.gutter)
                             }
-                            Divider().padding(.horizontal, Self.gutter)
                         }
                     }
                 }
@@ -194,8 +188,8 @@ struct JiraView: View {
             .focusable()
             .focused($focused)
             .focusEffectDisabled()
-            .onKeyPress(.upArrow) { step(-1, in: visible) }
-            .onKeyPress(.downArrow) { step(1, in: visible) }
+            .onKeyPress(.upArrow) { step(-1, in: ordered) }
+            .onKeyPress(.downArrow) { step(1, in: ordered) }
             .onKeyPress(.return) {
                 guard let selected else { return .ignored }
                 model.openAgent(key: selected)
@@ -220,6 +214,7 @@ private struct JiraRow: View {
     let agent: AgentState?
     let selected: Bool
     let select: () -> Void
+    @State private var hover: Task<Void, Never>?
 
     var body: some View {
         let prs = model.pullRequests[ticket.key] ?? []
@@ -250,7 +245,15 @@ private struct JiraRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.openAgent(key: ticket.key) })
+        .onHover(perform: prefetch)
         .contextMenu {
+            statusItems
+            Menu("Assign") {
+                Button("Assign to Me") { model.assignToMe(ticket.key) }
+                Button("Unassign") { model.assign(ticket.key, to: nil) }.disabled(ticket.assignee == nil)
+                Button("Choose Person\u{2026}") { openPicker(assign: true) }
+            }
+            Divider()
             Button("Open Agent") { model.openAgent(key: ticket.key) }
             Button("Open in Jira") { model.browseURL(ticket.key).map { _ = NSWorkspace.shared.open($0) } }.disabled(model.site == nil)
             Button("Copy Key") { GitHubModel.copy(ticket.key) }
@@ -264,6 +267,35 @@ private struct JiraRow: View {
         .help(ticket.key)
     }
 
+    /// The moves Jira offered when the pointer rested on the row, or a way to ask for them.
+    @ViewBuilder private var statusItems: some View {
+        if let moves = model.transitions[ticket.key], !moves.isEmpty {
+            Menu("Move to") {
+                ForEach(moves) { move in
+                    Button(move.name + (move.needsJira ? " (in Jira)" : !move.fields.isEmpty ? "\u{2026}" : "")) {
+                        if move.fields.isEmpty, !move.needsJira { model.move(ticket.key, with: move) } else { openPicker(assign: false) }
+                    }
+                }
+            }
+        }
+        Button("Change Status\u{2026}") { openPicker(assign: false) }
+    }
+
+    private func openPicker(assign: Bool) {
+        select()
+        if assign { model.assignPicker = ticket.key } else { model.statusPicker = ticket.key }
+    }
+
+    /// Fetches the ticket's moves once the pointer has rested on its row, so the context menu can list them.
+    private func prefetch(_ inside: Bool) {
+        hover?.cancel()
+        guard inside else { return }
+        hover = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            if !Task.isCancelled { model.loadTransitions(ticket.key) }
+        }
+    }
+
     private var facts: String {
         [ticket.key, ticket.type, ticket.assignee, ticket.updated.map { "updated \(GitHubLogic.updatedText($0, now: Date()))" }]
             .compactMap { $0 }.joined(separator: " \u{00B7} ")
@@ -272,12 +304,15 @@ private struct JiraRow: View {
 
 struct JiraStatusPill: View {
     let ticket: JiraTicket
+    var chevron = false
 
     var body: some View {
         let color = JiraTickets.isBlocked(ticket) ? Color.red : JiraStyle.color(JiraTickets.stage(ticket))
-        Text(ticket.status)
+        HStack(spacing: 3) {
+            Text(ticket.status).lineLimit(1)
+            if chevron { Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) }
+        }
             .font(.caption)
-            .lineLimit(1)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(Capsule().fill(color.opacity(0.16)))

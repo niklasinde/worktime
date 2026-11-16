@@ -3,11 +3,12 @@ import Foundation
 struct JiraTicket: Equatable, Identifiable, Sendable, Codable {
     let key: String
     let summary: String
-    let status: String
+    var status: String
     let priority: String?
     let updated: Date?
     var type: String?
     var assignee: String?
+    var assigneeID: String?
     var category: JiraStatusCategory?
     var labels: [String] = []
 
@@ -36,16 +37,16 @@ struct JiraIssue: Equatable, Sendable {
 
     let key: String
     let summary: String
-    let status: String
+    var status: String
     let type: String?
     let priority: String?
-    let assignee: String?
+    var assignee: String?
     let reporter: String?
     let created: Date?
     let updated: Date?
     let description: String
-    let comments: [Comment]
-    let commentTotal: Int
+    var comments: [Comment]
+    var commentTotal: Int
     let links: [Link]
     var labels: [String] = []
     var fixVersions: [String] = []
@@ -65,6 +66,8 @@ enum JiraError: Error, Equatable {
     case rateLimited
     case offline
     case failed(String)
+    /// Jira understood a change and said no: a missing permission, a required field, a ticket that moved on.
+    case refused(String)
 
     var message: String {
         switch self {
@@ -75,6 +78,7 @@ enum JiraError: Error, Equatable {
         case .rateLimited: return "Jira is rate limiting requests. Try again in a few minutes."
         case .offline: return "Jira cannot be reached. Check the site and your connection."
         case .failed(let detail): return "Jira returned an error: \(detail)"
+        case .refused(let detail): return "Jira refused: \(detail)"
         }
     }
 
@@ -159,13 +163,14 @@ enum JiraLogic {
         "Basic " + Data("\(email):\(token)".utf8).base64EncodedString()
     }
 
-    static func request(site: String, path: String, email: String, token: String, body: [String: Any]? = nil) -> URLRequest {
+    static func request(site: String, path: String, email: String, token: String, body: [String: Any]? = nil, method: String? = nil) -> URLRequest {
         var request = URLRequest(url: URL(string: "https://\(site)\(path)")!)
         request.setValue(authorization(email: email, token: token), forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30
+        if let method { request.httpMethod = method }
         if let body {
-            request.httpMethod = "POST"
+            request.httpMethod = method ?? "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         }
@@ -183,7 +188,7 @@ enum JiraLogic {
         let tickets = response.issues.map { issue in
             JiraTicket(key: issue.key, summary: issue.fields.summary ?? "", status: issue.fields.status?.name ?? "",
                        priority: issue.fields.priority?.name, updated: issue.fields.updated.flatMap(date), type: issue.fields.issuetype?.name,
-                       assignee: issue.fields.assignee?.displayName,
+                       assignee: issue.fields.assignee?.displayName, assigneeID: issue.fields.assignee?.accountId,
                        category: issue.fields.status?.statusCategory?.key.flatMap(JiraStatusCategory.init(rawValue:)),
                        labels: issue.fields.labels ?? [])
         }
@@ -197,6 +202,11 @@ enum JiraLogic {
 
     static func parseDisplayName(_ data: Data) throws -> String {
         try JSONDecoder().decode(Myself.self, from: data).displayName
+    }
+
+    static func parseMyself(_ data: Data) throws -> JiraPerson {
+        let myself = try JSONDecoder().decode(Myself.self, from: data)
+        return JiraPerson(id: myself.accountId ?? "", name: myself.displayName)
     }
 
     static func headline(total: Int?, shown: Int) -> String {
@@ -322,6 +332,7 @@ enum JiraLogic {
 
     private struct Person: Decodable {
         let displayName: String?
+        let accountId: String?
     }
 
     private struct CountResponse: Decodable {
@@ -330,6 +341,7 @@ enum JiraLogic {
 
     private struct Myself: Decodable {
         let displayName: String
+        let accountId: String?
     }
 }
 

@@ -40,6 +40,15 @@ enum JiraPreview {
             makeAgents(in: output)
             model.showSample(lists: samples, pullRequests: pullRequests)
             await shot("assigned")
+            model.filter = JiraFilter(project: "QDLY, ISD", statusName: "In Progress, Review", group: .status)
+            await shot("filters-grouped", appearances: [.aqua])
+            model.filter = JiraFilter()
+            model.showSample(issue: sampleIssue, transitions: [JiraTransition(id: "1", name: "Send to review", status: "Review", category: .inProgress, fields: [])],
+                             undo: JiraPageModel.Undo(key: "QDLY-8332", from: "To Do", text: "QDLY-8332 moved to In Progress", transition: nil))
+            await shot("detail-actions", appearances: [.aqua, .darkAqua])
+            model.select(nil)
+            model.showSample(issue: sampleIssue, undo: nil)
+            model.select(nil)
             model.filter.status = .myTurn
             await shot("my-turn", appearances: [.aqua])
             model.filter.status = .blocked
@@ -109,6 +118,15 @@ enum JiraPreview {
                         ticket("QDLY-8311", "Show the debtor's payment plan in the case view", "In Progress", .inProgress, type: "Story", assignee: "Katia Lind", ago: 70_000)],
             .watching: [ticket("QDLY-8120", "Move the print-house templates to the new address layout", "Review", .inProgress, type: "Story", assignee: "Johan Ek", ago: 150_000)],
         ]
+    }
+
+    static var sampleIssue: JiraIssue {
+        JiraIssue(key: "QDLY-8332", summary: "Release note for the new export of invoices to Gaia", status: "In Progress", type: "Task", priority: "High",
+                  assignee: "Niklas Inde", reporter: "Oskar Appelberg", created: Date().addingTimeInterval(-90_000), updated: Date().addingTimeInterval(-1_800),
+                  description: "Write the release note for the export.\n- Mention the new column\n- Link the guide", comments: [
+                    JiraIssue.Comment(author: "Anna Berg", created: Date().addingTimeInterval(-7_200), body: "Can you add the Swedish text too?"),
+                    JiraIssue.Comment(author: "Niklas Inde", created: Date().addingTimeInterval(-3_600), body: "Yes, tomorrow.")],
+                  commentTotal: 2, links: [], labels: ["export"], fixVersions: ["2026.11"])
     }
 
     static var pullRequests: [String: [GitHubPR]] {

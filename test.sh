@@ -54,6 +54,9 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/GitHubClient.swift \
     Sources/WorkTime/JiraLogic.swift \
     Sources/WorkTime/JiraClient.swift \
+    Sources/WorkTime/JiraWriteLogic.swift \
+    Sources/WorkTime/JiraWriteClient.swift \
+    Sources/WorkTime/JiraFilterLogic.swift \
     Sources/WorkTime/JiraTickets.swift \
     Sources/WorkTime/JiraAgents.swift \
     Sources/WorkTime/JiraDetailLogic.swift \
@@ -128,6 +131,8 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/MCPGitHubTests.swift \
     Tests/WorkTimeTests/GitHubLinkTests.swift \
     Tests/WorkTimeTests/JiraTests.swift \
+    Tests/WorkTimeTests/JiraWriteTests.swift \
+    Tests/WorkTimeTests/JiraFilterTests.swift \
     Tests/WorkTimeTests/SlackTests.swift \
     Tests/WorkTimeTests/EmbeddedTerminalTests.swift \
     Tests/WorkTimeTests/ClaudeResumeTests.swift \

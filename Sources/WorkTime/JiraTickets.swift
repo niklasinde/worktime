@@ -7,13 +7,16 @@ enum JiraTab: String, CaseIterable, Identifiable, Codable {
 
     var title: String { rawValue.capitalized }
 
-    var jql: String {
+    /// What makes a ticket belong to the tab.
+    var condition: String {
         switch self {
-        case .assigned: return "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
-        case .reported: return "reporter = currentUser() ORDER BY updated DESC"
-        case .watching: return "watcher = currentUser() ORDER BY updated DESC"
+        case .assigned: return "assignee = currentUser() AND resolution = Unresolved"
+        case .reported: return "reporter = currentUser()"
+        case .watching: return "watcher = currentUser()"
         }
     }
+
+    var jql: String { condition + " ORDER BY updated DESC" }
 }
 
 enum JiraStage: String, CaseIterable {
@@ -30,7 +33,7 @@ enum JiraStage: String, CaseIterable {
 }
 
 /// The chips above the list; each narrows the tab's tickets.
-enum JiraStatusTab: String, CaseIterable, Identifiable {
+enum JiraStatusTab: String, CaseIterable, Identifiable, Codable {
     case all, myTurn, inReview, blocked, done
 
     var id: String { rawValue }
@@ -48,7 +51,7 @@ enum JiraStatusTab: String, CaseIterable, Identifiable {
 
 /// What the Filters menu and the search field narrow the list to. Each value is one name or several separated by commas,
 /// like the `jira_search` arguments of the same names.
-struct JiraFilter: Equatable {
+struct JiraFilter: Equatable, Codable {
     var status = JiraStatusTab.all
     var query = ""
     var project: String?
@@ -56,15 +59,44 @@ struct JiraFilter: Equatable {
     var statusName: String?
     var priority: String?
     var assignee: String?
+    var sort = JiraSort.updated
+    var group = JiraGrouping.none
+
+    /// The search text is not part of what is remembered or saved.
+    enum CodingKeys: String, CodingKey { case status, project, type, statusName, priority, assignee, sort, group }
+
+    init(status: JiraStatusTab = .all, query: String = "", project: String? = nil, type: String? = nil, statusName: String? = nil,
+         priority: String? = nil, assignee: String? = nil, sort: JiraSort = .updated, group: JiraGrouping = .none) {
+        self.status = status
+        self.query = query
+        self.project = project
+        self.type = type
+        self.statusName = statusName
+        self.priority = priority
+        self.assignee = assignee
+        self.sort = sort
+        self.group = group
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(status: (try? values.decode(JiraStatusTab.self, forKey: .status)) ?? .all,
+                  project: try? values.decode(String.self, forKey: .project), type: try? values.decode(String.self, forKey: .type),
+                  statusName: try? values.decode(String.self, forKey: .statusName), priority: try? values.decode(String.self, forKey: .priority),
+                  assignee: try? values.decode(String.self, forKey: .assignee),
+                  sort: (try? values.decode(JiraSort.self, forKey: .sort)) ?? .updated,
+                  group: (try? values.decode(JiraGrouping.self, forKey: .group)) ?? .none)
+    }
+
+    var withoutText: JiraFilter {
+        var filter = self
+        filter.query = ""
+        return filter
+    }
 
     var refinements: Int { [project, type, statusName, priority, assignee].filter { $0 != nil }.count }
 
-    var withoutRefinements: JiraFilter { JiraFilter(status: status, query: query) }
-
-    /// The refinements as `jira_search` arguments.
-    var arguments: [String: Any] {
-        ["project": project, "type": type, "status": statusName, "priority": priority, "assignee": assignee].compactMapValues { $0 }
-    }
+    var withoutRefinements: JiraFilter { JiraFilter(status: status, query: query, sort: sort, group: group) }
 }
 
 enum JiraTickets {
@@ -153,11 +185,8 @@ enum JiraTickets {
                        assignees: sorted(tickets.map(\.assignee)))
     }
 
-    /// The tab's JQL with the refinements ANDed on, through the same composing `jira_search` uses.
-    static func jql(_ tab: JiraTab, _ filter: JiraFilter) -> String {
-        let clauses = (try? JQLFilter.clauses(filter.arguments)) ?? []
-        return JQLFilter.compose(jql: tab.jql, clauses: clauses)
-    }
+    /// The tab's JQL with the filters ANDed on, through the same composing `jira_search` uses.
+    static func jql(_ tab: JiraTab, _ filter: JiraFilter) -> String { JiraQuery.jql(tab, filter) }
 
     /// The Jira issue navigator for a JQL query.
     static func navigatorURL(site: String, jql: String) -> URL? {
