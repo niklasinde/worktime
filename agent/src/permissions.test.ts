@@ -11,9 +11,9 @@ test("only the offered modes pass; anything else is Ask", () => {
   for (const other of ["bypassPermissions", "dontAsk", undefined, 3, ""]) assert.equal(parseMode(other), "default");
 });
 
-test("send_to_agent, complete_reminder and the routine changes are asked of the user in every mode", () => {
+test("send_to_agent, complete_reminder and the routine and assistant changes are asked of the user in every mode", () => {
   for (const mode of modes) {
-    for (const tool of ["create_routine", "update_routine", "set_routine_enabled", "delete_routine"]) {
+    for (const tool of ["create_routine", "update_routine", "set_routine_enabled", "delete_routine", "create_assistant", "update_assistant", "delete_assistant"]) {
       assert.deepEqual(preToolDecision(`mcp__worktime__${tool}`, {}, cwd, rules, mode), { kind: "ask" }, `${tool} ${mode}`);
     }
     assert.deepEqual(preToolDecision("mcp__worktime__send_to_agent", { text: "x" }, cwd, rules, mode), { kind: "ask" }, mode);

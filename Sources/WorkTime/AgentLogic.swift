@@ -587,6 +587,12 @@ enum AgentLogic {
         as text for the user.
         Use notify when something needs the user and they may not be watching; with at, it reminds them later.
         Use add_reminder for something the user should do later; it goes to their WorkTime reminders, and a link to the pull request, ticket, Slack message or meeting it is about lets them open it from there.
+        A routine is a prompt that runs on a schedule in an agent of its own (only while WorkTime is open). When the user asks for something \
+        to happen regularly, call routines first, then create_routine (name, prompt, schedule, and an assistant when one fits), or \
+        update_routine, set_routine_enabled and delete_routine for one that exists. The prompt must stand alone: a run cannot ask questions.
+        An assistant is a role agent under a workspace's Main with its own instructions, model, tools and permissions. Call assistants \
+        to see them (with an assistant it returns its instructions); create_assistant, update_assistant and delete_assistant change them. \
+        Write its description as one line telling you when to hand work to it. Every routine and assistant change asks the user to approve.
         """
 
     /// Main's prompt for a workspace: what it is and sees, then the shared guidance.

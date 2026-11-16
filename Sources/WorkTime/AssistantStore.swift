@@ -137,6 +137,20 @@ final class AssistantStore: ObservableObject {
         refresh(force: true)
     }
 
+    /// An agent's create_assistant, assistants, update_assistant or delete_assistant, handed over by the MCP server through the agent inbox.
+    func handle(_ request: AssistantRequest) -> NoticeReply {
+        let result = AssistantRequests.handle(request, entries: all, workspaces: workspaces().map(\.id), tools: Set(MCPServer.toolNames), now: Date())
+        switch result.change {
+        case .write(let workspace, let slug, let text):
+            files.write(text, workspace: workspace, slug: slug)
+            refresh(force: true)
+        case .delete(let key):
+            if let entry = entry(key) { delete(entry) }
+        case nil: break
+        }
+        return result.reply
+    }
+
     func save(_ text: String, for entry: AssistantEntry) {
         files.write(text, workspace: entry.workspace, slug: entry.role.slug)
         refresh(force: true)

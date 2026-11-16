@@ -25,11 +25,14 @@ struct MCPToolError: LocalizedError {
 struct MCPServer {
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
     static let instructions = """
-        Read-only access to WorkTime on this Mac: the user's meetings (summaries, action items, notes, transcripts \
-        with speakers), tracked activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull \
-        requests, the app's Claude agents, and read-only Jira and Slack lookups with the tokens set up in WorkTime. send_to_agent \
-        hands a prompt to one of the app's agents, notify shows the user a notification, now or at a set time, and \
-        add_reminder and complete_reminder write to the user's WorkTime reminders, and create_routine adds a prompt that runs on a schedule.
+        Access to WorkTime on this Mac. Reading: the user's meetings (summaries, action items, notes, transcripts with speakers), tracked \
+        activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull requests, the app's Claude agents, \
+        routines and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
+        one of the app's agents; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
+        the user's WorkTime reminders; create_routine, update_routine, set_routine_enabled and delete_routine manage routines (a prompt \
+        that runs on a schedule in an agent of its own); create_assistant, update_assistant and delete_assistant manage the role agents \
+        under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
+        second. send_to_agent, complete_reminder and every routine and assistant change ask the user to approve.
         """
 
     let tools: [MCPTool]
@@ -94,7 +97,7 @@ struct MCPServer {
     /// The names of every tool the server offers.
     static var toolNames: [String] {
         let none = Result<MeetingStore, Error>.failure(MCPToolError(""))
-        return (meetingTools(none) + githubTools(none) + agentTools(none) + topicTools() + resumeTools(none) + noticeTools() + reminderTools() + routineTools() + briefTools()).map(\.name)
+        return (meetingTools(none) + githubTools(none) + agentTools(none) + topicTools() + resumeTools(none) + noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools()).map(\.name)
     }
 
     /// `--mcp`: serves the read-only tools over stdin and stdout until stdin closes.
@@ -103,7 +106,7 @@ struct MCPServer {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let github = githubTools(store)
         let server = MCPServer(tools: meetingTools(store) + github + agentTools(store, github: github) + topicTools() + resumeTools(store) + noticeTools()
-                                   + reminderTools() + routineTools() + briefTools(),
+                                   + reminderTools() + routineTools() + assistantTools() + briefTools(),
                                version: version)
         let output = DispatchQueue(label: "worktime.mcp.output"), slow = DispatchQueue(label: "worktime.mcp.slow", attributes: .concurrent)
         let running = DispatchGroup()

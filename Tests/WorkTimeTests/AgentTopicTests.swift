@@ -232,7 +232,8 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
         let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("agent/src/\(AgentBuiltIn.fileName)")
         guard let builtIn = AgentBuiltIn.decode(try? Data(contentsOf: file)) else { return check(false, "\(file.path) decodes") }
-        let alwaysAsk = ["send_to_agent", "complete_reminder", "create_routine", "update_routine", "set_routine_enabled", "delete_routine"]
+        let alwaysAsk = ["send_to_agent", "complete_reminder", "create_routine", "update_routine", "set_routine_enabled", "delete_routine",
+                         "create_assistant", "update_assistant", "delete_assistant"]
         check(builtIn.alwaysAsk == alwaysAsk.map { builtIn.mcpPrefix + $0 } && alwaysAsk.allSatisfy(MCPServer.toolNames.contains), "\(builtIn.alwaysAsk) always ask")
         check(builtIn.tools == ["Read", "Grep", "Glob", "Agent", "Task"], "\(builtIn.tools)")
         check(builtIn.lines.contains("ls") && builtIn.lines.contains { $0.hasPrefix("sed \u{2014} no -i") }, "\(builtIn.lines)")

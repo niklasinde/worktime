@@ -558,15 +558,21 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   on its GitHub page here, an agent key in Agents, anything else in the browser) and the row names the sender.
   `scheduled_notifications` and `cancel_notification` (own ones, or any from a Main) manage the schedule; repeats within a
   minute collapse, ten per minute per sender at most. All three run without asking, even for assistants with a tool list.
-- **Apple Reminders.** `add_reminder(title, notes?, due?, list?, link?, priority?)` adds to the user's Reminders through the
-  running app (it holds the permission): `due` reads like notify's `at` and sets an alarm, a date alone is all-day; `list`
-  defaults to the one the notch bar shows; the notes name the sender, and an open one with the same title and due in that list
-  is returned instead of a duplicate. It runs without asking, like notify. `reminders(list?, due_before?)` lists open ones;
-  `complete_reminder(id)` always asks.
+- **Reminders.** `add_reminder(title, notes?, due?, link?, priority?)` adds to WorkTime's own reminders (the notch bar's list and the
+  Reminders page) through the running app: `due` reads like notify's `at` and sets an alarm, a date alone is all-day; `link` is the
+  source (pull request, Jira key, Slack message, meeting or url) the reminder opens; the notes name the sender, and an open one with the
+  same title and due is returned instead of a duplicate. It runs without asking, like notify. `reminders(…)` lists open ones with
+  filters; `complete_reminder(id)` always asks.
 - **Routines.** `create_routine(name, prompt, schedule, minutes?, time?, weekday?, workspace?, assistant?, folder?, model?, run_missed?)`
   adds a routine (a prompt that runs on a schedule in an agent of its own, only while the app is open) to the asking agent's
   workspace, or the one named; an existing one with the same name, prompt and schedule is returned instead. `routines` lists them
   and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)` and `delete_routine(id)` always ask.
+- **Assistants.** `assistants(assistant?)` lists every workspace's assistants (key, name, when to use it, model, permissions, tools,
+  folder), with one's instructions when it is named, and runs without asking. `create_assistant(name, description, instructions,
+  icon?, model?, permission_mode?, tools?, folder?, workspace?)` writes a role file in the asking agent's workspace, or the one
+  named, and refuses a name that exists; `update_assistant(assistant, …)` changes only the fields passed and `delete_assistant(assistant)`
+  removes the file (its sessions and own folder stay). The file is checked like one written by hand, `tools` must be WorkTime tools,
+  and all three always ask. Main's prompt and the MCP instructions tell agents to list first and change what exists.
 - **Meeting briefs.** Settings > Meetings > Meeting briefs (on by default only once calendar access is given, from there or from
   Help during calls): 5, 10 or 15 minutes before a calendar meeting that is not all-day, declined or cancelled and has someone else
   invited or a call link, WorkTime posts a notification ("<title> in 10 min", click opens the notch bar) and keeps a card there

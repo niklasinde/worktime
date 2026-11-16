@@ -287,6 +287,96 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
               && Assistants.permissionMode("plan") == .plan && Assistants.permissionMode("x") == .ask, "modes")
         check(Assistants.wordCount("---\nname: X\ndescription: y\n---\n\none two\nthree") == 3 && Assistants.wordCount("") == 0, "words of the body only")
     }),
+    ("assistant tools: create writes a role file that reads back, in the asking agent's workspace, and refuses a name that exists", {
+        let source = NoticeSource(agent: "main:personal", workspace: "personal")
+        let known: Set<String> = ["jira_issue", "jira_search"]
+        func handle(_ draft: AssistantDraft, entries: [AssistantEntry] = [], action: AssistantRequest.Action = .create, assistant: String? = nil,
+                    created: Date = now) -> (reply: NoticeReply, change: AssistantChange?) {
+            AssistantRequests.handle(AssistantRequest(id: "r", action: action, draft: draft, assistant: assistant, source: source, created: created),
+                                     entries: entries, workspaces: ["work", "personal"], tools: known, now: now)
+        }
+        let draft = AssistantDraft(name: "Release notes", summary: "Drafts release notes.", instructions: "# Release notes\n\nBe brief.", model: "haiku",
+                                   permissionMode: "plan", tools: ["jira_issue"], folder: "own")
+        let made = handle(draft)
+        guard case .write(let workspace, let slug, let text)? = made.change else { return check(false, "writes: \(made.reply.message)") }
+        let role = Assistants.parse(slug: slug, text: text)
+        check(workspace == "personal" && slug == "release-notes" && made.reply.notice == "assistant:personal:release-notes", made.reply.message)
+        check(role.isUsable && role.name == "Release notes" && role.model == "haiku" && role.permissionMode == "plan" && role.tools == ["jira_issue"]
+              && role.folder == "own" && role.body.contains("Be brief."), "\(role.problems)")
+
+        let existing = [AssistantEntry(workspace: "personal", role: role)]
+        let again = handle(draft, entries: existing)
+        check(!again.reply.ok && again.change == nil && again.reply.message.contains("update_assistant"), again.reply.message)
+        var elsewhere = draft
+        elsewhere.workspace = "work"
+        check(handle(elsewhere, entries: existing).change != nil, "the same name in another workspace")
+
+        var bad = draft
+        bad.model = "gpt"
+        check(!handle(bad).reply.ok, "unknown model")
+        bad = draft
+        bad.summary = nil
+        check(!handle(bad).reply.ok && handle(bad).change == nil, "description is required")
+        bad = draft
+        bad.tools = ["nope"]
+        check(handle(bad).reply.message.contains("No tool nope"), "unknown tool")
+        bad.tools = ["mcp__other__read"]
+        check(handle(bad).change != nil, "a full mcp tool name passes")
+        bad = draft
+        bad.folder = "relative"
+        check(!handle(bad).reply.ok, "relative folder")
+        bad = draft
+        bad.workspace = "elsewhere"
+        check(!handle(bad).reply.ok, "unknown workspace")
+        bad = draft
+        bad.instructions = String(repeating: "x", count: Assistants.bodyLimit + 1)
+        check(!handle(bad).reply.ok, "instructions too long")
+        check(!handle(draft, created: now.addingTimeInterval(-3600)).reply.ok, "stale request")
+    }),
+
+    ("assistant tools: update changes only the named fields, list shows them and delete removes the file", {
+        let source = NoticeSource(agent: "main:work", workspace: "work")
+        var one = role("Reviewer", summary: "Reviews pull requests.", body: "Review it.")
+        one.tools = ["github_pr"]
+        let entries = [AssistantEntry(workspace: "work", role: one), entry("Support"), entry("Broken", problems: [AssistantProblem(line: 2, message: "bad")])]
+        func handle(_ action: AssistantRequest.Action, _ assistant: String?, draft: AssistantDraft? = nil) -> (reply: NoticeReply, change: AssistantChange?) {
+            AssistantRequests.handle(AssistantRequest(id: "r", action: action, draft: draft, assistant: assistant, source: source, created: now),
+                                     entries: entries, workspaces: ["work"], tools: ["github_pr", "jira_issue"], now: now)
+        }
+        func written(_ result: (reply: NoticeReply, change: AssistantChange?)) -> AssistantRole? {
+            if case .write(_, let slug, let text)? = result.change { Assistants.parse(slug: slug, text: text) } else { nil }
+        }
+        let changed = written(handle(.update, "reviewer", draft: AssistantDraft(model: "opus", tools: ["jira_issue"])))
+        check(changed?.model == "opus" && changed?.tools == ["jira_issue"] && changed?.name == "Reviewer" && changed?.body == "Review it.", "\(String(describing: changed))")
+        check(written(handle(.update, "assistant:work:reviewer", draft: AssistantDraft(folder: "own")))?.folder == "own", "by key")
+        check(written(handle(.update, "reviewer", draft: AssistantDraft(name: "Code reviewer")))?.slug == "reviewer", "a rename keeps the key")
+        check(!handle(.update, "reviewer", draft: AssistantDraft(name: "support")).reply.ok, "the name of another")
+        check(!handle(.update, "reviewer", draft: AssistantDraft(permissionMode: "yolo")).reply.ok, "bad mode")
+        check(!handle(.update, "broken", draft: AssistantDraft(model: "opus")).reply.ok, "a broken file is not edited")
+        check(!handle(.update, "nobody", draft: AssistantDraft(model: "opus")).reply.ok && !handle(.update, "reviewer").reply.ok, "unknown, nothing to change")
+
+        let listed = handle(.list, nil).reply.message
+        check(listed.contains("key assistant:work:reviewer") && listed.contains("Reviews pull requests.") && listed.contains("tools github_pr") && listed.contains("broken: Line 2"), listed)
+        let one1 = handle(.list, "Reviewer").reply.message
+        check(one1.contains("Review it.") && !one1.contains("Support"), one1)
+        check(!handle(.list, "nobody").reply.ok, "unknown on list")
+
+        check(handle(.delete, "Reviewer").change == .delete(key: "assistant:work:reviewer"), "delete by name")
+        check(!handle(.delete, "nobody").reply.ok, "delete unknown")
+    }),
+
+    ("assistant tools: the tools are offered, and only the list runs without asking", {
+        for name in ["create_assistant", "update_assistant", "assistants", "delete_assistant"] { check(MCPServer.toolNames.contains(name), name) }
+        let tools = MCPServer.assistantTools()
+        check(tools.first { $0.name == "assistants" }?.readOnly == true && tools.filter { !$0.readOnly }.count == 3, "only the list is read-only")
+        let args: [String: Any] = ["name": "X", "description": "d", "tools": "jira_issue, jira_search", "permission_mode": "ACCEPTEDITS", "folder": " "]
+        let draft = try? AssistantRequests.draft(args)
+        check(draft?.tools == ["jira_issue", "jira_search"] && draft?.permissionMode == "acceptEdits" && draft?.folder == "" && draft?.instructions == nil, "\(String(describing: draft))")
+        check((try? AssistantRequests.draft(["model": "gpt"])) == nil, "a bad model throws")
+        let named = (MCPServer.routineTools() + tools).map(\.name)
+        check(named.allSatisfy { MCPServer.instructions.contains($0) }, "the MCP instructions name \(named.filter { !MCPServer.instructions.contains($0) })")
+        check(["create_routine", "create_assistant", "assistants", "routines"].allSatisfy { AgentLogic.mainBasePrompt.contains($0) }, "Main is told")
+    }),
 ]
 
 private extension Result {
