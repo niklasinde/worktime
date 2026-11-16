@@ -22,9 +22,11 @@ enum NotchPreview {
             @MainActor func shot(_ name: String, _ view: some View, appearance: NSAppearance.Name = .darkAqua) async {
                 await render(view, appearance: appearance, to: output.appendingPathComponent("\(name).png"))
             }
-            @MainActor func notch(_ name: String, setup: NotchPanelSetup, list: NotchPanelID?, hasNotch: Bool = true) async {
+            @MainActor func notch(_ name: String, setup: NotchPanelSetup, list: NotchPanelID?, hasNotch: Bool = true,
+                                  appearance: NSAppearance.Name = .darkAqua) async {
                 panels.showSample(setup)
-                await shot(name, bar.sample(list: list, hasNotch: hasNotch).frame(width: 600).padding(.bottom, 8).background(Color.gray.opacity(0.35)))
+                await shot(name, bar.sample(list: list, hasNotch: hasNotch).frame(width: 600).padding(.bottom, 8).background(Color.gray.opacity(0.35)),
+                           appearance: appearance)
             }
             slack.showSample(messages: messages, badge: 3)
             await notch("bar-default", setup: standard, list: nil)
@@ -35,6 +37,18 @@ enum NotchPreview {
             await notch("bar-four", setup: NotchPanelSetup(order: standard.order, enabled: Set(NotchPanelID.allCases).subtracting([.todo])), list: nil)
             await notch("bar-five-no-notch", setup: NotchPanelSetup(order: standard.order, enabled: Set(NotchPanelID.allCases)), list: nil, hasNotch: false)
             await notch("slack-all", setup: swapped, list: .slack)
+            let sample = messages
+            let dismissed = sample.filter { $0.channelID == "D0BO" || $0.channelID == "C0OPS" }
+            let previousFilter = UserDefaults.standard.object(forKey: SlackNotchFilter.storageKey)
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                let suffix = appearance == .aqua ? "light" : "dark"
+                for filter in SlackNotchFilter.allCases {
+                    UserDefaults.standard.set(filter.rawValue, forKey: SlackNotchFilter.storageKey)
+                    slack.showSample(messages: SlackLogic.applying(SlackLogic.marking(dismissed, as: .dismissed, in: [:]), to: sample))
+                    await notch("slack-done-\(filter.rawValue)-\(suffix)", setup: swapped, list: .slack, appearance: appearance)
+                }
+            }
+            UserDefaults.standard.set(previousFilter, forKey: SlackNotchFilter.storageKey)
             slack.showSample(messages: messages.filter { $0.kind == .mention }, unreadKnown: false)
             await notch("slack-recent-dms-fallback", setup: swapped, list: .slack)
             slack.showSample(messages: [], hasToken: false)
@@ -108,6 +122,7 @@ enum NotchPreview {
         ], direct: [
             message(.direct, "D0ANNA", "Anna Berg", "Anna Berg", "lunch at 12? :ramen:", minutes: 4, unread: 2),
             message(.direct, "D0BO", "Bo Lind", "Bo Lind", "Sent you the invoice draft, see <https://docs.example.com/x|the doc>", minutes: 48, unread: 1),
+            message(.direct, "G0TEAM", "anna, bo, niklas", "Anna Berg", "Hoppar ni in i mötet?", minutes: 22, unread: 3),
         ])
     }
 }

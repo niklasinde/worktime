@@ -70,6 +70,9 @@ enum SlackHandled: String, Sendable {
         case .read: "read"
         }
     }
+
+    /// Set by the user in WorkTime rather than found out from Slack.
+    var isMark: Bool { self == .dismissed || self == .viewed }
 }
 
 /// A channel's or thread's messages from `conversations.history` or `conversations.replies`, with the user's read position.
@@ -576,6 +579,25 @@ enum SlackLogic {
 
     static func stored(_ marks: [String: SlackHandled]) -> [String: String] { marks.mapValues(\.rawValue) }
 
+    /// `marks` with `reason` added for the messages still needing the user. A DM's id carries its latest message's ts, so a newer message
+    /// in the conversation is a new id and needs the user again.
+    static func marking(_ messages: [SlackMessage], as reason: SlackHandled, in marks: [String: SlackHandled]) -> [String: SlackHandled] {
+        messages.filter { $0.handled == nil }.reduce(into: marks) { $0[$1.id] = reason }
+    }
+
+    static func unmarking(_ messages: [SlackMessage], in marks: [String: SlackHandled]) -> [String: SlackHandled] {
+        messages.reduce(into: marks) { $0[$1.id] = nil }
+    }
+
+    /// The messages with what `marks` says: a marked one is handled, one that was only marked needs the user again.
+    static func applying(_ marks: [String: SlackHandled], to messages: [SlackMessage]) -> [SlackMessage] {
+        messages.map { message in
+            var copy = message
+            if let mark = marks[message.id] { copy.handled = mark } else if message.handled?.isMark == true { copy.handled = nil }
+            return copy
+        }
+    }
+
     // MARK: Text
 
     /// The user ids a text mentions without a label, to look up their names.
@@ -652,7 +674,7 @@ enum SlackLogic {
     }
 
     static func badge(_ direct: SlackDirectMessages) -> Int {
-        direct.unreadKnown ? direct.messages.reduce(0) { $0 + max($1.unread ?? 1, 1) } : 0
+        direct.unreadKnown ? direct.messages.filter { $0.handled == nil }.reduce(0) { $0 + max($1.unread ?? 1, 1) } : 0
     }
 
     // MARK: Decoding

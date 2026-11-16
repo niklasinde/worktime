@@ -417,6 +417,48 @@ let slackTests: [(name: String, run: () throws -> Void)] = [
         check(annotated.map(\.handled) == [.replied, .replied], "a reply after both answers both")
     }),
 
+    ("a dismissed DM stays out of Needs me until the conversation has a newer message", {
+        let dm = message(.direct, "D0ANNA", ts(300))
+        let marks = SlackLogic.marking([dm], as: .dismissed, in: [:])
+        check(marks == ["D0ANNA-\(ts(300))": .dismissed], "keyed by conversation and latest ts")
+        check(SlackLogic.applying(marks, to: [dm]).map(\.handled) == [.dismissed], "dismissed")
+        let newer = message(.direct, "D0ANNA", ts(60))
+        check(SlackLogic.applying(marks, to: [newer]).map(\.handled) == [nil], "a newer message needs me again")
+        check(SlackLogic.applying(marks, to: [message(.direct, "D0BO", ts(300))]).map(\.handled) == [nil], "another conversation is unaffected")
+    }),
+
+    ("DM dismissals are pruned after the mark days and do not touch the badge counts of dismissed ones", {
+        let old = message(.direct, "D0ANNA", ts(9 * 86400))
+        let kept = SlackLogic.marks(SlackLogic.stored(SlackLogic.marking([old], as: .dismissed, in: [:])), now: now)
+        check(kept.isEmpty, "pruned")
+        var dm = message(.direct, "D0ANNA", ts(300))
+        dm.unread = 2
+        var other = message(.direct, "D0BO", ts(200))
+        other.unread = 1
+        let direct = SlackDirectMessages(messages: SlackLogic.applying(SlackLogic.marking([dm], as: .dismissed, in: [:]), to: [dm, other]),
+                                         unreadKnown: true)
+        check(SlackLogic.badge(direct) == 1, "badge counts only the DMs still needing me")
+    }),
+
+    ("marking skips what is already handled, marks everything in one go and restores", {
+        var replied = mention("C0DEV", ts(500))
+        replied.handled = .replied
+        let open = [mention("C0DEV", ts(400)), message(.direct, "D0ANNA", ts(300)), message(.direct, "G0TEAM", ts(200))]
+        let marks = SlackLogic.marking([replied] + open, as: .dismissed, in: [:])
+        check(Set(marks.keys) == Set(open.map(\.id)), "only the open ones: \(marks.keys)")
+        let shown = SlackLogic.applying(marks, to: [replied] + open)
+        check(shown.map(\.handled) == [.replied, .dismissed, .dismissed, .dismissed], "\(shown.map(\.handled))")
+        let restored = SlackLogic.unmarking([shown[2]], in: marks)
+        let again = SlackLogic.applying(restored, to: shown)
+        check(again.map(\.handled) == [.replied, .dismissed, nil, .dismissed], "restored one: \(again.map(\.handled))")
+    }),
+
+    ("a message answered in Slack stays handled when its mark is removed", {
+        var replied = message(.direct, "D0ANNA", ts(300))
+        replied.handled = .replied
+        check(SlackLogic.applying([:], to: [replied]).map(\.handled) == [.replied], "not a mark")
+    }),
+
     ("marks older than eight days are pruned and the rest read back", {
         let stored: [String: String] = ["C0DEV-\(ts(3600))": "dismissed", "C0OPS-\(ts(9 * 86400))": "viewed", "C0X-\(ts(60))": "bogus"]
         let marks = SlackLogic.marks(stored, now: now)

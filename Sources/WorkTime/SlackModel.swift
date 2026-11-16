@@ -11,6 +11,7 @@ final class SlackModel: ObservableObject {
     @Published private(set) var messages: [SlackMessage] = []
     @Published private(set) var unreadKnown = true
     @Published private(set) var badge = 0
+    @Published private(set) var undoable: [SlackMessage] = []
     @Published private(set) var error: SlackError?
     @Published private(set) var fetched: Date?
     /// `Anna Berg · Acme` once signed in.
@@ -26,7 +27,9 @@ final class SlackModel: ObservableObject {
     private var pending: SlackSignIn?
     private var renewal: Task<SlackAuth, Error>?
     private var loop: Task<Void, Never>?
+    private var undoReset: Task<Void, Never>?
     private var refreshing = false
+    private static let undoSeconds = 6
 
     var configured: Bool { hasToken }
     var ready: Bool { configured && shown }
@@ -165,13 +168,42 @@ final class SlackModel: ObservableObject {
         Task { await refresh() }
     }
 
-    /// Hides a mention from Needs me, kept for `SlackLogic.markDays`.
+    /// Hides a mention or DM from Needs me; a mention for `SlackLogic.markDays`, a DM until its conversation has a newer message.
     func mark(_ message: SlackMessage, _ reason: SlackHandled) {
-        guard message.kind == .mention, message.handled == nil else { return }
-        var marks = marks(now: Date())
-        marks[message.id] = reason
+        update(SlackLogic.marking([message], as: reason, in: marks(now: Date())))
+    }
+
+    /// Marks everything given as dismissed in one go and keeps it undoable for a few seconds.
+    func dismiss(_ messages: [SlackMessage]) {
+        let open = messages.filter { $0.handled == nil }
+        guard !open.isEmpty else { return }
+        update(SlackLogic.marking(open, as: .dismissed, in: marks(now: Date())))
+        undoable = open
+        undoReset?.cancel()
+        undoReset = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.undoSeconds) * 1_000_000_000)
+            if !Task.isCancelled { self?.undoable = [] }
+        }
+    }
+
+    func restore(_ messages: [SlackMessage]) {
+        update(SlackLogic.unmarking(messages.filter { $0.handled?.isMark == true }, in: marks(now: Date())))
+    }
+
+    func undoDismiss() {
+        undoReset?.cancel()
+        restore(undoable)
+        undoable = []
+    }
+
+    private var directBadge: Int {
+        SlackLogic.badge(SlackDirectMessages(messages: messages.filter { $0.kind == .direct }, unreadKnown: unreadKnown))
+    }
+
+    private func update(_ marks: [String: SlackHandled]) {
         UserDefaults.standard.set(SlackLogic.stored(marks), forKey: SlackLogic.marksKey)
-        if let index = messages.firstIndex(where: { $0.id == message.id && $0.kind == .mention }) { messages[index].handled = reason }
+        messages = SlackLogic.applying(marks, to: messages)
+        badge = directBadge
     }
 
     private func marks(now: Date) -> [String: SlackHandled] {
@@ -202,7 +234,7 @@ final class SlackModel: ObservableObject {
 
     /// Opens the message in Slack; a mention counts as viewed from then on.
     func open(_ message: SlackMessage) {
-        mark(message, .viewed)
+        if message.kind == .mention { mark(message, .viewed) }
         if let app = SlackLogic.deepLink(message), NSWorkspace.shared.urlForApplication(toOpen: app) != nil {
             NSWorkspace.shared.open(app)
         } else if let web = SlackLogic.webLink(message, workspace: identity?.url) {
@@ -217,9 +249,10 @@ final class SlackModel: ObservableObject {
             copy.author = message.author.map { self.names[$0] ?? $0 }
             return copy
         }
-        messages = SlackLogic.merged(mentions: mentions.map(cleaned), direct: direct.messages.map(cleaned))
+        let merged = SlackLogic.merged(mentions: mentions.map(cleaned), direct: direct.messages.map(cleaned))
+        messages = SlackLogic.applying(marks(now: Date()), to: merged)
         unreadKnown = direct.unreadKnown
-        badge = SlackLogic.badge(direct)
+        badge = directBadge
     }
 
     private func clear() {

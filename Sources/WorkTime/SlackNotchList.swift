@@ -16,7 +16,7 @@ enum SlackNotchFilter: String, CaseIterable, Identifiable {
     func includes(_ message: SlackMessage) -> Bool { self == .all || message.handled == nil }
 }
 
-/// The notch bar's Slack list: unread DMs and the mentions from the last week still waiting on me, newest first; All adds the handled mentions.
+/// The notch bar's Slack list: unread DMs and the mentions from the last week still waiting on me, newest first; All adds the ones handled or marked done.
 struct SlackNotchList: View {
     static let limit = 40
     let onOpen: () -> Void
@@ -73,10 +73,23 @@ struct SlackNotchList: View {
                 .buttonStyle(NotchChipStyle(selected: filter == option))
             }
             Spacer()
+            doneControl
         }
         .font(.caption.weight(.semibold))
         .padding(.horizontal, 8)
         .padding(.bottom, 2)
+    }
+
+    private var needsMe: [SlackMessage] { model.messages.filter(SlackNotchFilter.needsMe.includes) }
+
+    @ViewBuilder private var doneControl: some View {
+        if !model.undoable.isEmpty {
+            Button("Undo", action: model.undoDismiss)
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor).help("Put the \(model.undoable.count) back in Needs me")
+        } else if filter == .needsMe, !needsMe.isEmpty {
+            Button { model.dismiss(needsMe) } label: { Image(systemName: "checkmark.circle") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Mark everything in Needs me as done")
+        }
     }
 
     private func row(_ message: SlackMessage) -> some View {
@@ -99,14 +112,19 @@ struct SlackNotchList: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .trailing) {
-            if message.kind == .mention && message.handled == nil {
+            if message.handled == nil {
                 Button { model.mark(message, .dismissed) } label: {
                     Image(systemName: "xmark").font(.caption2).frame(width: 20, height: 20).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).foregroundStyle(.tertiary).help("Dismiss").padding(.trailing, 4)
+                .buttonStyle(.plain).foregroundStyle(.tertiary).help("Mark as done").padding(.trailing, 4)
             }
         }
         .contextMenu {
+            if message.handled == nil {
+                Button("Mark as done") { model.mark(message, .dismissed) }
+            } else if message.handled?.isMark == true {
+                Button("Mark as not done") { model.restore([message]) }
+            }
             Button("Open in Agent") {
                 onOpen()
                 TopicAgentStore.shared.open(slack: message, link: SlackLogic.webLink(message, workspace: model.identity?.url))
