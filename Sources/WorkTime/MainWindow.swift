@@ -373,11 +373,21 @@ struct MainView: View {
     @ObservedObject var library: RecordingLibrary
     @ObservedObject var activity: ActivityModel
     let playback: AudioPlayback
+    @StateObject private var navigation: NavigationModel
     @ObservedObject private var github = GitHubModel.shared
     @ObservedObject private var upgrade = AppUpgrade.shared
     @AppStorage(SidebarLogic.hiddenKey) private var sidebarHidden = false
     @AppStorage(SidebarLogic.showChatKey) private var showChat = true
     @AppStorage(LiveTranscriptLogic.enabledKey) private var liveTranscription = true
+
+    init(recorder: Recorder, processor: MeetingProcessor, library: RecordingLibrary, activity: ActivityModel, playback: AudioPlayback) {
+        self.recorder = recorder
+        self.processor = processor
+        self.library = library
+        self.activity = activity
+        self.playback = playback
+        _navigation = StateObject(wrappedValue: NavigationModel(library: library))
+    }
 
     private var columns: Binding<NavigationSplitViewVisibility> {
         Binding(get: { sidebarHidden ? .detailOnly : .all }, set: { sidebarHidden = $0 == .detailOnly })
@@ -422,6 +432,14 @@ struct MainView: View {
                 }
                 .help("\(SidebarLogic.toggleTitle(hidden: sidebarHidden)) (\u{2303}\u{2318}S)")
             }
+            ToolbarItemGroup(placement: .navigation) {
+                Button { navigation.back() } label: { Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly) }
+                    .disabled(!navigation.canGoBack)
+                    .help("Back (\u{2318}[)")
+                Button { navigation.forward() } label: { Label("Forward", systemImage: "chevron.right").labelStyle(.iconOnly) }
+                    .disabled(!navigation.canGoForward)
+                    .help("Forward (\u{2318}])")
+            }
             ToolbarItemGroup(placement: .automatic) {
                 Spacer()
                 if recorder.isRecording, liveTranscription { liveTranscriptButton }
@@ -436,6 +454,14 @@ struct MainView: View {
         .background {
             Button("New Meeting") { newMeeting() }
                 .keyboardShortcut("n")
+                .opacity(0)
+                .frame(width: 0, height: 0)
+            Button("Back") { navigation.back() }
+                .keyboardShortcut("[")
+                .opacity(0)
+                .frame(width: 0, height: 0)
+            Button("Forward") { navigation.forward() }
+                .keyboardShortcut("]")
                 .opacity(0)
                 .frame(width: 0, height: 0)
         }
