@@ -29,7 +29,7 @@ struct MCPServer {
         with speakers), tracked activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull \
         requests, the app's Claude agents, and read-only Jira and Slack lookups with the tokens set up in WorkTime. send_to_agent \
         hands a prompt to one of the app's agents, notify shows the user a notification, now or at a set time, and \
-        add_reminder and complete_reminder write to the user's Apple Reminders.
+        add_reminder and complete_reminder write to the user's WorkTime reminders.
         """
 
     let tools: [MCPTool]

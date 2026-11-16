@@ -223,6 +223,7 @@ private struct JiraRow: View {
             Button("Open in Jira") { model.browseURL(ticket.key).map { _ = NSWorkspace.shared.open($0) } }.disabled(model.site == nil)
             Button("Copy Key") { GitHubModel.copy(ticket.key) }
             Button("Copy Link") { model.browseURL(ticket.key).map { GitHubModel.copy($0.absoluteString) } }.disabled(model.site == nil)
+            RemindMeMenu(title: ticket.summary, source: .jira(key: ticket.key))
             if !prs.isEmpty {
                 Divider()
                 ForEach(prs) { pr in Button("Open \(pr.repo) #\(String(pr.number))") { model.openLinkedPullRequest(pr) } }

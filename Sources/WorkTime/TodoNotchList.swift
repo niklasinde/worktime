@@ -1,108 +1,135 @@
-import EventKit
 import SwiftUI
 
 @MainActor
 final class TodoModel: ObservableObject {
     static let shared = TodoModel()
-    @Published private(set) var todos: [TodoItem] = []
+    @Published private(set) var book = ReminderBook()
     @Published private(set) var meeting: [MeetingTodo] = []
-    @Published private(set) var access = TodoAccess.unknown
-    @Published private(set) var lists: [TodoList] = []
-    @Published private(set) var list: String?
-    private var reminders: (any ReminderStore)?
+    var openMeeting: (Int64) -> Void = { _ in }
+    private var file: URL?
     private var store: MeetingStore?
-    private var observers: [NSObjectProtocol] = []
+    private var observer: NSObjectProtocol?
 
-    func start(store: MeetingStore, reminders: RemindersStore) {
+    var reminders: [Reminder] { book.open }
+
+    func start(store: MeetingStore, file: URL = AppPaths.reminders) {
         self.store = store
-        self.reminders = reminders
-        let center = NotificationCenter.default
-        observers = [
-            center.addObserver(forName: .EKEventStoreChanged, object: reminders.events, queue: .main) { _ in
-                MainActor.assumeIsolated { TodoModel.shared.reloadReminders() }
-            },
-            center.addObserver(forName: MeetingStore.didChange, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { TodoModel.shared.reloadMeetings() }
-            },
-        ]
+        self.file = file
+        book = ReminderBook.load(from: file)
+        book.prune(now: Date())
+        observer = NotificationCenter.default.addObserver(forName: MeetingStore.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { TodoModel.shared.reloadMeetings() }
+        }
         reloadMeetings()
-        reloadReminders()
+        book.reminders.forEach(syncAlarm)
+        importFromApple()
     }
 
-    /// Asks for Reminders access the first time the list is opened, not at launch.
-    func open() {
-        guard let reminders else { return }
-        guard reminders.access == .unknown else { return reloadReminders() }
+    /// Takes the open Apple Reminders over once, the first time this version runs; with no permission there is nothing to take.
+    private func importFromApple() {
+        guard !UserDefaults.standard.bool(forKey: AppleRemindersImport.doneKey) else { return }
+        UserDefaults.standard.set(true, forKey: AppleRemindersImport.doneKey)
         Task {
-            _ = await reminders.requestAccess()
-            reloadReminders()
+            let items = await AppleRemindersImport.incomplete()
+            guard !items.isEmpty else { return }
+            apply(ReminderLogic.importing(items, into: book, now: Date(), jiraSite: JiraModel.shared.site))
         }
-    }
-
-    func reloadReminders() {
-        guard let reminders else { return }
-        access = reminders.access
-        lists = reminders.lists
-        list = TodoLogic.selectedList(stored: UserDefaults.standard.string(forKey: TodoLogic.listKey), lists: lists, defaultID: reminders.defaultListID)
-        let list = list
-        Task {
-            let items = await TodoLogic.load(from: reminders, list: list)
-            withAnimation(.easeOut(duration: 0.15)) { todos = items }
-        }
-    }
-
-    var title: String { TodoLogic.title(of: list, in: lists) }
-
-    func select(_ id: String) {
-        UserDefaults.standard.set(id, forKey: TodoLogic.listKey)
-        reloadReminders()
     }
 
     func reloadMeetings() {
         meeting = (try? store?.openActionItems(limit: 100, since: TodoLogic.meetingCutoff(now: Date()))) ?? []
     }
 
+    private func apply(_ new: ReminderBook) {
+        guard new != book else { return }
+        let before = book
+        withAnimation(.easeOut(duration: 0.2)) { book = new }
+        if let file { try? new.save(to: file) }
+        for reminder in new.reminders where before.reminder(reminder.id) != reminder { syncAlarm(reminder) }
+        for reminder in before.reminders where new.reminder(reminder.id) == nil { Notifier.withdrawReminderAlarm(reminder.id) }
+    }
+
+    private func syncAlarm(_ reminder: Reminder) {
+        if let date = ReminderLogic.alarm(for: reminder, now: Date()) {
+            Notifier.postReminderAlarm(reminder, at: date)
+        } else {
+            Notifier.withdrawReminderAlarm(reminder.id)
+        }
+    }
+
     func add(_ input: String) {
-        guard let text = TodoLogic.text(input) else { return }
-        try? reminders?.addTodo(text, to: list ?? TodoLogic.allLists)
-        reloadReminders()
+        guard let title = TodoLogic.text(input) else { return }
+        remind(title: title, source: nil, preset: .noDate)
+    }
+
+    /// A reminder about something, due as the preset says; the same one still open is not made twice.
+    func remind(title: String, source: ReminderSource?, preset: ReminderPreset) {
+        guard let title = TodoLogic.text(title).map({ String($0.prefix(NoticeLogic.titleLimit)) }) else { return }
+        let due = ReminderLogic.due(preset, now: Date())
+        guard ReminderLogic.duplicate(of: title, due: due, in: book.reminders) == nil else { return }
+        var new = book
+        new.add(Reminder(id: "", title: title, due: due, created: Date(), source: source))
+        apply(new)
     }
 
     func complete(_ id: TodoRow.ID) {
-        withAnimation(.easeOut(duration: 0.25)) {
-            switch id {
-            case .todo(let id): todos.removeAll { $0.id == id }
-            case .meeting(let id): meeting.removeAll { $0.id == id }
-            }
-        }
         switch id {
-        case .todo(let id): try? reminders?.complete(id)
-        case .meeting(let id): try? store?.setChecked(actionItem: id, true)
+        case .todo(let id):
+            var new = book
+            new.complete(id, now: Date())
+            apply(new)
+        case .meeting(let id):
+            withAnimation(.easeOut(duration: 0.25)) { meeting.removeAll { $0.id == id } }
+            try? store?.setChecked(actionItem: id, true)
         }
     }
 
     func delete(_ id: String) {
-        withAnimation(.easeOut(duration: 0.2)) { todos.removeAll { $0.id == id } }
-        try? reminders?.delete(id)
+        var new = book
+        new.delete(id)
+        apply(new)
+    }
+
+    func rename(_ id: String, to input: String) {
+        guard let title = TodoLogic.text(input) else { return }
+        var new = book
+        new.update(id) { $0.title = String(title.prefix(NoticeLogic.titleLimit)) }
+        apply(new)
+    }
+
+    func setDue(_ id: String, _ preset: ReminderPreset) {
+        var new = book
+        new.update(id) { $0.due = ReminderLogic.due(preset, now: Date()) }
+        apply(new)
+    }
+
+    /// Shows what a reminder is about: the pull request, ticket, Slack message, meeting or page.
+    func open(_ source: ReminderSource) {
+        switch source.kind {
+        case .githubPR: GitHubLink.pasted(source.reference).map { AgentModel.openPullRequestLink?($0) }
+        case .meeting: Int64(source.reference).map(openMeeting)
+        case .jira, .slack, .url: source.url(jiraSite: JiraModel.shared.site).map { _ = NSWorkspace.shared.open($0) }
+        }
+    }
+
+    /// A clicked notification of a reminder: its source, or else the notch bar.
+    func openFromNotification(_ id: String) {
+        if let source = book.reminder(id)?.source { open(source) } else { AskPanel.shared.peek(for: 20) }
     }
 
     /// An agent's add_reminder, reminders or complete_reminder, handed over by the MCP server through the agent inbox.
-    func handle(_ request: ReminderRequest) async -> NoticeReply {
-        let reply = await ReminderLogic.handle(request, store: reminders, stored: UserDefaults.standard.string(forKey: TodoLogic.listKey),
-                                               addedBy: request.source.label(titles: NoticeCenter.shared.titles()), jiraSite: JiraModel.shared.site,
-                                               now: Date())
-        if request.action != .list { reloadReminders() }
-        return reply
+    func handle(_ request: ReminderRequest) -> NoticeReply {
+        let result = ReminderLogic.handle(request, book: book, addedBy: request.source.label(titles: NoticeCenter.shared.titles()),
+                                          jiraSite: JiraModel.shared.site, now: Date())
+        apply(result.book)
+        return result.reply
     }
 
     #if DEBUG
-    /// Shows made-up items without Reminders or a database, for the previews.
-    func showSample(todos: [TodoItem], meeting: [MeetingTodo]) {
-        self.todos = todos
+    /// Shows made-up items without a file or a database, for the previews.
+    func showSample(reminders: [Reminder], meeting: [MeetingTodo]) {
+        book = ReminderBook(reminders: reminders)
         self.meeting = meeting
-        access = .granted
-        lists = [TodoList(id: "inbox", title: "Reminders", source: "iCloud")]
-        list = "inbox"
     }
     #endif
 }
@@ -114,7 +141,8 @@ enum TodoRow {
     }
 }
 
-/// The notch bar's todo list, after Apple Reminders: round checkboxes that fill and drop out, and a New Reminder row at the end.
+/// The notch bar's todo list: round checkboxes that fill and drop out, the reminders by when they are due, each with a chip
+/// that opens what it is about, and a New Reminder row at the end.
 struct TodoNotchList: View {
     static let completionDelay = 1.0
     let onHold: (Bool) -> Void
@@ -124,14 +152,17 @@ struct TodoNotchList: View {
     @State private var checking: Set<TodoRow.ID> = []
     @State private var adding = false
     @State private var draft = ""
+    @State private var editing: String?
+    @State private var edited = ""
     @FocusState private var focused: Bool
+    @FocusState private var editFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                listPicker
+                Text("Reminders").font(.title3.bold()).foregroundStyle(Color.accentColor)
                 Spacer()
-                Text("\(model.todos.count)").font(.title3.bold()).foregroundStyle(.secondary).monospacedDigit()
+                Text("\(model.reminders.count)").font(.title3.bold()).foregroundStyle(.secondary).monospacedDigit()
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 6)
@@ -139,7 +170,6 @@ struct TodoNotchList: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .onAppear { model.open() }
         .onDisappear { end(keep: true) }
     }
 
@@ -159,31 +189,63 @@ struct TodoNotchList: View {
                     separator
                 }
             }
-            if !notices.notices.isEmpty { heading(model.title, top: 10) }
-            ForEach(model.todos.prefix(TodoLogic.todoLimit)) { todo in
-                row(.todo(todo.id), text: todo.text, detail: nil)
-                    .contextMenu { Button("Delete", role: .destructive) { model.delete(todo.id) } }
-                separator
-            }
-            if model.access == .denied {
-                deniedRow
-            } else {
-                newReminder
-            }
+            reminderRows
+            newReminder
             if !model.meeting.isEmpty {
                 heading("From meetings", top: 14)
                 ForEach(model.meeting.prefix(TodoLogic.meetingLimit)) { item in
-                    row(.meeting(item.id), text: item.task, detail: [item.owner, item.title].compactMap { $0 }.joined(separator: " \u{00B7} "))
+                    row(.meeting(item.id), text: item.task) {
+                        Text([item.owner, item.title].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .contextMenu { RemindMeMenu(title: item.task, source: .meeting(id: item.meeting, title: item.title)) }
                     if item.id != model.meeting.prefix(TodoLogic.meetingLimit).last?.id { separator }
                 }
             }
         }
     }
 
-    private func heading(_ text: String, top: CGFloat) -> some View {
+    @ViewBuilder private var reminderRows: some View {
+        let now = Date()
+        let sections = ReminderLogic.sections(model.reminders, now: now)
+        let titled = sections.count > 1 || sections.first.map { $0.section != .anytime } ?? false
+        let alone = notices.waiting.isEmpty && notices.pending.isEmpty
+        ForEach(sections, id: \.section) { group in
+            if titled { heading(group.section.title, top: alone && group.section == sections.first?.section ? 0 : 10, overdue: group.section == .overdue) }
+            ForEach(group.reminders.prefix(TodoLogic.todoLimit)) { reminder in
+                reminderRow(reminder, now: now)
+                separator
+            }
+        }
+    }
+
+    private func reminderRow(_ reminder: Reminder, now: Date) -> some View {
+        let id = TodoRow.ID.todo(reminder.id)
+        let overdue = ReminderLogic.section(of: reminder, now: now) == .overdue
+        return row(id, text: reminder.title, editing: editing == reminder.id) {
+            HStack(spacing: 6) {
+                if let due = reminder.due {
+                    Text(ReminderLogic.dueLabel(due, now: now)).foregroundStyle(overdue ? Color.red : .secondary)
+                }
+                if let source = reminder.source { SourceChip(source: source) { model.open(source) } }
+                if let addedBy = reminder.addedBy { Text(addedBy).foregroundStyle(.tertiary).lineLimit(1) }
+            }
+            .font(.caption)
+        }
+        .contextMenu {
+            Button("Edit") { beginEdit(reminder) }
+            Menu("Set Due") {
+                ForEach(ReminderPreset.allCases, id: \.self) { preset in Button(preset.title) { model.setDue(reminder.id, preset) } }
+            }
+            if let source = reminder.source { Button("Open \(source.label)") { model.open(source) } }
+            Divider()
+            Button("Delete", role: .destructive) { model.delete(reminder.id) }
+        }
+    }
+
+    private func heading(_ text: String, top: CGFloat, overdue: Bool = false) -> some View {
         Text(text)
             .font(.caption.bold())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(overdue ? Color.red : .secondary)
             .padding(.horizontal, 8)
             .padding(.top, top)
             .padding(.bottom, 4)
@@ -193,15 +255,24 @@ struct TodoNotchList: View {
         Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 38)
     }
 
-    private func row(_ id: TodoRow.ID, text: String, detail: String?) -> some View {
+    private func row<Detail: View>(_ id: TodoRow.ID, text: String, editing isEditing: Bool = false,
+                                   @ViewBuilder detail: () -> Detail) -> some View {
         let checked = checking.contains(id)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Button { toggle(id) } label: { CheckCircle(checked: checked) }
                 .buttonStyle(.plain)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             VStack(alignment: .leading, spacing: 1) {
-                Text(text).lineLimit(2).foregroundStyle(checked ? .secondary : .primary)
-                if let detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if isEditing, case .todo(let reminder) = id {
+                    TextField("Reminder", text: $edited)
+                        .textFieldStyle(.plain)
+                        .focused($editFocused)
+                        .onSubmit { endEdit(reminder, save: true) }
+                        .onExitCommand { endEdit(reminder, save: false) }
+                } else {
+                    Text(text).lineLimit(2).foregroundStyle(checked ? .secondary : .primary)
+                }
+                detail()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -210,49 +281,6 @@ struct TodoNotchList: View {
         .opacity(checked ? 0.6 : 1)
         .animation(.easeOut(duration: 0.15), value: checked)
         .transition(.opacity)
-    }
-
-    private var listPicker: some View {
-        Menu {
-            Button { model.select(TodoLogic.allLists) } label: {
-                if model.list == TodoLogic.allLists { Label("All", systemImage: "checkmark") } else { Text("All") }
-            }
-            let groups = TodoLogic.grouped(model.lists)
-            ForEach(groups, id: \.source) { group in
-                Section(groups.count > 1 ? group.source : "") {
-                    ForEach(group.lists) { list in
-                        Button { model.select(list.id) } label: {
-                            if list.id == model.list { Label(list.title, systemImage: "checkmark") } else { Text(list.title) }
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(model.title).font(.title3.bold())
-                Image(systemName: "chevron.down").font(.caption.bold())
-            }
-            .foregroundStyle(Color.accentColor)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .disabled(model.access != .granted)
-    }
-
-    private var deniedRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "lock.circle").font(.system(size: 18)).foregroundStyle(.secondary)
-            Text("Allow Reminders access in System Settings").foregroundStyle(.secondary)
-            Spacer()
-            Button("Open") {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")!)
-            }
-            .buttonStyle(NotchChipStyle(selected: false))
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
     }
 
     private var newReminder: some View {
@@ -285,6 +313,20 @@ struct TodoNotchList: View {
             guard checking.remove(id) != nil else { return }
             model.complete(id)
         }
+    }
+
+    private func beginEdit(_ reminder: Reminder) {
+        edited = reminder.title
+        editing = reminder.id
+        onHold(true)
+        DispatchQueue.main.async { editFocused = true }
+    }
+
+    private func endEdit(_ id: String, save: Bool) {
+        if save { model.rename(id, to: edited) }
+        editing = nil
+        editFocused = false
+        onHold(false)
     }
 
     private func begin() {

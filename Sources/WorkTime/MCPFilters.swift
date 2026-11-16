@@ -284,18 +284,25 @@ struct NoticeFilter: Equatable {
     }
 }
 
-/// What `reminders` narrows the app's open reminders to; the list is chosen by the app.
+/// What `reminders` narrows the open reminders to.
 struct ReminderFilter: Equatable {
+    static let noSource = "none"
+    static let sourceKinds = [noSource] + ReminderSource.Kind.allCases.map(\.rawValue)
+
     var dueBefore: Date?
     var dueAfter: Date?
     var priority: ReminderPriority?
     var query: String?
+    var sourceKind: String?
+    var sourceQuery: String?
 
-    func matches(_ reminder: AgentReminder) -> Bool {
+    func matches(_ reminder: Reminder) -> Bool {
         (dueBefore.map { before in reminder.due.map { $0.date < before } ?? false } ?? true)
             && (dueAfter.map { after in reminder.due.map { $0.date >= after } ?? false } ?? true)
             && (priority.map { reminder.priority == $0 } ?? true)
             && (query.map { FilterLogic.matches(reminder.title, $0) || FilterLogic.matches(reminder.notes, $0) } ?? true)
+            && (sourceKind.map { $0 == Self.noSource ? reminder.source == nil : reminder.source?.kind.rawValue == $0 } ?? true)
+            && (sourceQuery.map { FilterLogic.matches(reminder.source?.reference, $0) || FilterLogic.matches(reminder.source?.title, $0) } ?? true)
     }
 }
 

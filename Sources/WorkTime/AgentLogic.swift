@@ -577,7 +577,7 @@ enum AgentLogic {
         jira_issue, jira_search, slack_thread and slack_search read Jira and Slack; nothing can post there, so draft any reply \
         as text for the user.
         Use notify when something needs the user and they may not be watching; with at, it reminds them later.
-        Use add_reminder for something the user should do later; it goes to their Apple Reminders.
+        Use add_reminder for something the user should do later; it goes to their WorkTime reminders, and a link to the pull request, ticket, Slack message or meeting it is about lets them open it from there.
         """
 
     /// Main's prompt for a workspace: what it is and sees, then the shared guidance.

@@ -148,16 +148,19 @@ let mcpFilterTests: [(name: String, run: () throws -> Void)] = [
         check(try kept(["due_after": "2026-11-12", "due_before": "2026-11-13", "urgency": "high"]) == ["1"], "combined")
         check(failure { try NoticeFilter(["urgency": "loud"], now: now) }.contains("normal, high"), "urgency values named")
 
-        func reminder(_ title: String, due: String?, priority: ReminderPriority = .none, notes: String? = nil) -> AgentReminder {
-            AgentReminder(id: title, title: title, due: due.map { ReminderDue(date: utc($0)) }, notes: notes, priority: priority)
+        func reminder(_ title: String, due: String?, priority: ReminderPriority = .none, notes: String? = nil, source: ReminderSource? = nil) -> Reminder {
+            Reminder(id: title, title: title, notes: notes, due: due.map { ReminderDue(date: utc($0)) }, priority: priority, created: now, source: source)
         }
-        let items = [reminder("Merge", due: "2026-11-12T10:00:00Z", priority: .high), reminder("Call", due: "2026-11-15T10:00:00Z", notes: "about Merge"),
-                     reminder("Someday", due: nil)]
+        let items = [reminder("Merge", due: "2026-11-12T10:00:00Z", priority: .high, source: .pullRequest(GitHubLink.Target(repo: "acme/api", number: 7))),
+                     reminder("Call", due: "2026-11-15T10:00:00Z", notes: "about Merge", source: .jira(key: "QDLY-9")), reminder("Someday", due: nil)]
         func open(_ filter: ReminderFilter) -> [String] { ReminderLogic.open(items, filter: filter).map(\.title) }
         check(open(ReminderFilter()) == ["Merge", "Call", "Someday"], "no filter")
         check(open(ReminderFilter(dueBefore: utc("2026-11-13T00:00:00Z"))) == ["Merge"] && open(ReminderFilter(dueAfter: utc("2026-11-13T00:00:00Z"))) == ["Call"], "due window")
         check(open(ReminderFilter(priority: .high)) == ["Merge"] && open(ReminderFilter(query: "merge")) == ["Merge", "Call"], "priority, text in title or notes")
         check(open(ReminderFilter(dueAfter: utc("2026-11-01T00:00:00Z"), priority: .high, query: "merge")) == ["Merge"], "combined")
+        check(open(ReminderFilter(sourceKind: "jira")) == ["Call"] && open(ReminderFilter(sourceKind: "none")) == ["Someday"], "source kind, none")
+        check(open(ReminderFilter(sourceQuery: "acme/api#7")) == ["Merge"] && open(ReminderFilter(sourceQuery: "qdly-9")) == ["Call"], "source key")
+        check(open(ReminderFilter(sourceKind: "jira", sourceQuery: "acme")).isEmpty, "kind and key together")
     }),
 
     ("filters: jira_search composes structured filters into JQL, quoted and escaped, and keeps raw JQL working", {

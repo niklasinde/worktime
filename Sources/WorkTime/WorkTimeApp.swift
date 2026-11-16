@@ -230,7 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         JiraModel.shared.start()
         JiraPageModel.shared.start()
         SlackModel.shared.start()
-        TodoModel.shared.start(store: store, reminders: RemindersStore())
+        TodoModel.shared.start(store: store)
         PhoneAccess.shared.configure(store: store)
         ChatWindow.shared.configure(store: store) { [weak self] in self?.mainWindow.show(meeting: $0, at: $1) }
         AgentHub.shared.showPage = { [weak self] in self?.mainWindow.show(section: .agent) }
@@ -242,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NoticeCenter.shared.start()
         AgentInboxWatcher.shared.start()
         InCallHelp.shared.openMeeting = { [weak self] in self?.mainWindow.show(meeting: $0, at: nil) }
+        TodoModel.shared.openMeeting = { [weak self] in self?.mainWindow.show(meeting: $0, at: nil) }
         InCallHelp.shared.start(recorder: recorder, store: store)
         MeetingBriefModel.shared.startRecording = { [weak self] in if self?.recorder.isRecording == false { self?.toggleRecording() } }
         MeetingBriefModel.shared.start(recorder: recorder, store: store)

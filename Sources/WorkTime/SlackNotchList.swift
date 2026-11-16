@@ -125,6 +125,9 @@ struct SlackNotchList: View {
             } else if message.handled?.isMark == true {
                 Button("Mark as not done") { model.restore([message]) }
             }
+            if let link = SlackLogic.webLink(message, workspace: model.identity?.url) {
+                RemindMeMenu(title: message.text, source: .slack(link: link, place: message.place))
+            }
             Button("Open in Agent") {
                 onOpen()
                 TopicAgentStore.shared.open(slack: message, link: SlackLogic.webLink(message, workspace: model.identity?.url))

@@ -6,64 +6,35 @@ import Foundation
 private let stockholm = TimeZone(identifier: "Europe/Stockholm")!
 private let now = ISO8601DateFormatter().date(from: "2026-11-12T09:00:00Z")!
 private let reviewer = NoticeSource(agent: "assistant:work:reviewer", workspace: "work")
-private let lists = [TodoList(id: "work", title: "Work", source: "Exchange"), TodoList(id: "home", title: "Home", source: "iCloud")]
+private let pullRequest = ReminderSource.pullRequest(GitHubLink.Target(repo: "acme/api", number: 7))
 
 private func utc(_ text: String) -> Date { ISO8601DateFormatter().date(from: text)! }
 
-private final class FakeReminders: ReminderStore, @unchecked Sendable {
-    var access = TodoAccess.granted
-    var lists = [TodoList]()
-    var defaultListID: String? = "home"
-    var items: [AgentReminder] = []
-
-    init(lists: [TodoList]) { self.lists = lists }
-
-    func requestAccess() async -> Bool { access == .granted }
-    func todos(in list: String) async throws -> [TodoItem] { [] }
-    func addTodo(_ text: String, to list: String) throws {}
-    func delete(_ id: String) throws { items.removeAll { $0.id == id } }
-    func complete(_ id: String) throws {
-        if let index = items.firstIndex(where: { $0.id == id }) { items[index].completed = true }
-    }
-    func reminders(in lists: [String]?) async throws -> [AgentReminder] {
-        items.filter { !$0.completed && (lists?.contains($0.list) ?? true) }
-    }
-    func reminder(_ id: String) -> AgentReminder? { items.first { $0.id == id } }
-    func add(_ reminder: AgentReminder) throws -> String {
-        var saved = reminder
-        saved.id = "r\(items.count + 1)"
-        items.append(saved)
-        return saved.id
-    }
+private func reminder(_ title: String, due: ReminderDue? = nil, created: TimeInterval = 0, source: ReminderSource? = nil) -> Reminder {
+    Reminder(id: title, title: title, due: due, created: now.addingTimeInterval(created), source: source)
 }
 
 private final class Box<T>: @unchecked Sendable {
     var value: T?
 }
 
-private func waiting<T>(_ work: @escaping () async -> T) -> T {
-    let box = Box<T>()
-    let done = DispatchSemaphore(value: 0)
-    Task {
-        box.value = await work()
-        done.signal()
-    }
-    done.wait()
-    return box.value!
+private func request(_ action: ReminderRequest.Action, draft: ReminderDraft? = nil, dueBefore: Date? = nil, reminder: String? = nil,
+                     created: Date = now) -> ReminderRequest {
+    ReminderRequest(id: UUID().uuidString, action: action, draft: draft, dueBefore: dueBefore, reminder: reminder, source: reviewer, created: created)
 }
 
-private func request(_ action: ReminderRequest.Action, draft: ReminderDraft? = nil, list: String? = nil, dueBefore: Date? = nil,
-                     reminder: String? = nil, created: Date = now) -> ReminderRequest {
-    ReminderRequest(id: UUID().uuidString, action: action, draft: draft, list: list, dueBefore: dueBefore, reminder: reminder,
-                    source: reviewer, created: created)
-}
-
-private func handle(_ request: ReminderRequest, store: FakeReminders?, stored: String? = nil, jiraSite: String? = nil) -> NoticeReply {
-    waiting { await ReminderLogic.handle(request, store: store, stored: stored, addedBy: "Reviewer", jiraSite: jiraSite, now: now, timeZone: stockholm) }
+private func handle(_ request: ReminderRequest, book: ReminderBook, jiraSite: String? = nil) -> (reply: NoticeReply, book: ReminderBook) {
+    ReminderLogic.handle(request, book: book, addedBy: "Reviewer", jiraSite: jiraSite, now: now, timeZone: stockholm)
 }
 
 private func draft(_ args: [String: Any]) -> Result<ReminderDraft, NoticeError> {
     ReminderLogic.draft(args, now: now, timeZone: stockholm)
+}
+
+private func temporaryFolder() throws -> URL {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("reminders-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    return folder
 }
 
 let reminderTests: [(name: String, run: () throws -> Void)] = [
@@ -87,12 +58,12 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("reminders: add_reminder's arguments become a draft, with the link and priority checked", {
-        let made = try draft(["title": " Review the PR ", "notes": "Before standup", "due": "2026-11-13", "list": "Work",
-                              "link": "acme/api#7", "priority": "HIGH"]).get()
+        let made = try draft(["title": " Review the PR ", "notes": "Before standup", "due": "2026-11-13", "link": "acme/api#7", "priority": "HIGH"]).get()
         check(made == ReminderDraft(title: "Review the PR", notes: "Before standup", due: ReminderDue(date: utc("2026-11-12T23:00:00Z"), allDay: true),
-                                    list: "Work", link: "acme/api#7", priority: .high), "\(made)")
+                                    link: "acme/api#7", priority: .high), "\(made)")
         check(try draft(["title": "x"]).get() == ReminderDraft(title: "x"), "only a title")
-        for link in ["https://github.com/acme/api/pull/7", "QDLY-1234", "https://acme.atlassian.net/browse/QDLY-1", "https://example.com/a"] {
+        for link in ["https://github.com/acme/api/pull/7", "QDLY-1234", "https://acme.atlassian.net/browse/QDLY-1", "https://example.com/a", "meeting:42",
+                     "https://acme.slack.com/archives/C0ACME1/p1730000000123456"] {
             check((try? draft(["title": "x", "link": link]).get()) != nil, link)
         }
         for bad: [String: Any] in [[:], ["title": " "], ["title": String(repeating: "a", count: 200)], ["title": "x", "priority": "urgent"],
@@ -102,84 +73,164 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
         }
     }),
 
-    ("reminders: links become urls, a Jira key only with the site set up, and the notes name the link and the sender", {
-        check(ReminderLogic.url("acme/api#7", jiraSite: nil)?.absoluteString == "https://github.com/acme/api/pull/7", "pr ref")
-        check(ReminderLogic.url("QDLY-1", jiraSite: "acme.atlassian.net")?.absoluteString == "https://acme.atlassian.net/browse/QDLY-1", "jira")
-        check(ReminderLogic.url("QDLY-1", jiraSite: nil) == nil, "no site")
-        check(ReminderLogic.url("https://example.com/a", jiraSite: nil)?.absoluteString == "https://example.com/a", "web")
-        check(ReminderLogic.notes("Do it", link: "QDLY-1", addedBy: "Main \u{00B7} work") == "Do it\nQDLY-1\nAdded by Main \u{00B7} work", "notes")
-        check(ReminderLogic.notes(nil, link: nil, addedBy: "Claude Code \u{00B7} api") == "Added by Claude Code \u{00B7} api", "only the sender")
-        check(ReminderPriority(eventKit: ReminderPriority.high.eventKit) == .high && ReminderPriority(eventKit: 0) == .none
-              && ReminderPriority(eventKit: 7) == .low, "EventKit priorities")
+    ("reminders: a link becomes a source of the right kind, and opens where it can", {
+        check(ReminderSource.parse("acme/api#7") == pullRequest && ReminderSource.parse("https://github.com/acme/api/pull/7/files") == pullRequest, "pull request")
+        check(pullRequest.reference == "acme/api#7" && pullRequest.label == "acme/api#7" && pullRequest.kind.rawValue == "github_pr", "reference")
+        check(ReminderSource.parse(" qdly-9 ") == .jira(key: "QDLY-9"), "any case")
+        check(ReminderSource.parse("QDLY-9") == .jira(key: "QDLY-9"), "jira key")
+        check(ReminderSource.parse("https://acme.atlassian.net/browse/QDLY-9") == .jira(key: "QDLY-9"), "jira url on atlassian.net")
+        check(ReminderSource.parse("https://jira.acme.com/browse/QDLY-9", jiraSite: "jira.acme.com") == .jira(key: "QDLY-9"), "jira url on the set up site")
+        check(ReminderSource.parse("https://jira.acme.com/browse/QDLY-9")?.kind == .url, "another host is a page")
+        let slack = "https://acme.slack.com/archives/C0ACME1/p1730000000123456"
+        check(ReminderSource.parse(slack)?.kind == .slack && ReminderSource.parse(slack)?.reference == slack, "slack message")
+        check(ReminderSource.parse("meeting:42") == .meeting(id: 42) && ReminderSource.meeting(id: 42).reference == "42", "meeting")
+        check(ReminderSource.parse("https://example.com/a")?.kind == .url && ReminderSource.parse("https://example.com/a")?.label == "example.com", "page")
+        check(ReminderSource.parse("http://example.com") == nil && ReminderSource.parse("ftp://x") == nil && ReminderSource.parse("main:work") == nil, "refused")
+        check(pullRequest.url(jiraSite: nil)?.absoluteString == "https://github.com/acme/api/pull/7", "pull request page")
+        check(ReminderSource.jira(key: "QDLY-1").url(jiraSite: "acme.atlassian.net")?.absoluteString == "https://acme.atlassian.net/browse/QDLY-1", "jira page")
+        check(ReminderSource.jira(key: "QDLY-1").url(jiraSite: nil) == nil && ReminderSource.meeting(id: 1).url(jiraSite: nil) == nil, "no page without a site, for a meeting")
+        check(ReminderPriority(eventKit: 1) == .high && ReminderPriority(eventKit: 0) == .none && ReminderPriority(eventKit: 7) == .low, "EventKit priorities")
     }),
 
-    ("reminders: a list by name in any case, else the notch bar's list, else the default; unknown names list the choices", {
-        func list(_ name: String?, stored: String? = nil, defaultID: String? = "home") -> String {
-            switch ReminderLogic.list(named: name, in: lists, stored: stored, defaultID: defaultID) {
-            case .success(let found): return found.id
-            case .failure(let error): return error.message
-            }
-        }
-        check(list("work") == "work", "by name")
-        check(list("Groceries") == "No Reminders list named Groceries. The lists are: Work, Home.", list("Groceries"))
-        check(list(nil, stored: "work") == "work", "the notch bar's list")
-        check(list(nil, stored: TodoLogic.allLists) == "home", "All shown: the default list")
-        check(list(nil, stored: "gone") == "home" && list(nil, defaultID: nil) == "work", "default, else the first")
-        if case .success = ReminderLogic.list(named: nil, in: [], stored: nil, defaultID: nil) { check(false, "no lists") }
+    ("reminders: the book adds under short ids, completes, deletes and drops old completed ones", {
+        var book = ReminderBook()
+        let first = book.add(reminder("First"))
+        let second = book.add(reminder("Second", due: ReminderDue(date: now)))
+        check(first.id.count == 8 && first.id != second.id && book.reminder(first.id)?.title == "First", "ids")
+        check(book.open.map(\.title) == ["Second", "First"], "due first")
+        check(book.complete(first.id, now: now) && !book.complete("nope", now: now) && book.open.map(\.title) == ["Second"], "completed")
+        check(book.reminder(first.id)?.completed == now, "kept with the time")
+        book.complete(first.id, now: now.addingTimeInterval(100))
+        check(book.reminder(first.id)?.completed == now, "completing twice keeps the first time")
+        book.prune(now: now.addingTimeInterval(29 * 86_400))
+        check(book.reminders.count == 2, "recent completed stays")
+        book.prune(now: now.addingTimeInterval(31 * 86_400))
+        check(book.reminders.map(\.title) == ["Second"], "old completed goes")
+        book.update(second.id) { $0.title = "Renamed" }
+        book.delete(second.id)
+        check(book.reminders.isEmpty, "deleted")
     }),
 
-    ("reminders: an open one with the same title and due in the same list is a duplicate", {
+    ("reminders: the book is saved and read back with its sources, and an unreadable file is kept aside", {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("sub").appendingPathComponent(ReminderBook.fileName)
+        check(ReminderBook.load(from: file) == ReminderBook(), "missing is empty")
+        var book = ReminderBook()
+        book.add(Reminder(id: "", title: "Review", notes: "Soon", due: ReminderDue(date: utc("2026-11-13T08:00:00Z")), priority: .high, created: now,
+                          source: pullRequest, addedBy: "Reviewer"))
+        book.add(Reminder(id: "", title: "Call", due: ReminderDue(date: utc("2026-11-12T23:00:00Z"), allDay: true), created: now, completed: now,
+                          source: ReminderSource(kind: .slack, reference: "https://acme.slack.com/archives/C0ACME1/p1730000000123456", title: "Slack #dev")))
+        try book.save(to: file)
+        check(ReminderBook.load(from: file) == book, "round trip")
+        try Data("not json".utf8).write(to: file)
+        check(ReminderBook.load(from: file) == ReminderBook(), "unreadable is empty")
+        check(!FileManager.default.fileExists(atPath: file.path)
+              && FileManager.default.fileExists(atPath: file.deletingLastPathComponent().appendingPathComponent("reminders.unreadable.json").path), "kept aside")
+    }),
+
+    ("reminders: the list groups by when they are due, overdue first, and the labels say today and tomorrow", {
+        let all = [reminder("Anytime"), reminder("Tomorrow", due: ReminderDue(date: utc("2026-11-13T08:00:00Z"))),
+                   reminder("Today all day", due: ReminderDue(date: utc("2026-11-11T23:00:00Z"), allDay: true)),
+                   reminder("Later today", due: ReminderDue(date: utc("2026-11-12T12:15:00Z"))),
+                   reminder("Earlier today", due: ReminderDue(date: utc("2026-11-12T08:00:00Z"))),
+                   reminder("Yesterday", due: ReminderDue(date: utc("2026-11-10T23:00:00Z"), allDay: true))]
+        let sections = ReminderLogic.sections(all, now: now, timeZone: stockholm)
+        check(sections.map(\.section) == [.overdue, .today, .upcoming, .anytime], "\(sections.map(\.section))")
+        check(sections.map { $0.reminders.map(\.title) } == [["Yesterday", "Earlier today"], ["Today all day", "Later today"], ["Tomorrow"], ["Anytime"]],
+              "\(sections.map { $0.reminders.map(\.title) })")
+        check(ReminderLogic.sections([], now: now).isEmpty, "empty")
+        func label(_ due: ReminderDue) -> String { ReminderLogic.dueLabel(due, now: now, timeZone: stockholm, locale: Locale(identifier: "en_GB")) }
+        check(label(ReminderDue(date: utc("2026-11-12T12:15:00Z"))) == "Today 13:15", label(ReminderDue(date: utc("2026-11-12T12:15:00Z"))))
+        check(label(ReminderDue(date: utc("2026-11-12T23:00:00Z"), allDay: true)) == "Tomorrow", "tomorrow")
+        check(label(ReminderDue(date: utc("2026-11-19T23:00:00Z"), allDay: true)) == "20 Nov", label(ReminderDue(date: utc("2026-11-19T23:00:00Z"), allDay: true)))
+        check(label(ReminderDue(date: utc("2026-11-20T08:00:00Z"))) == "20 Nov 09:00", label(ReminderDue(date: utc("2026-11-20T08:00:00Z"))))
+    }),
+
+    ("reminders: the menu choices mean a day, an hour on, tomorrow morning, next Monday morning or no date", {
+        func due(_ preset: ReminderPreset) -> ReminderDue? { ReminderLogic.due(preset, now: now, timeZone: stockholm) }
+        check(due(.today) == ReminderDue(date: utc("2026-11-11T23:00:00Z"), allDay: true), "today")
+        check(due(.inAnHour) == ReminderDue(date: utc("2026-11-12T10:00:00Z")), "in an hour")
+        check(due(.tomorrow) == ReminderDue(date: utc("2026-11-13T08:00:00Z")), "tomorrow at nine")
+        check(due(.nextWeek) == ReminderDue(date: utc("2026-11-16T08:00:00Z")), "Monday at nine")
+        check(due(.noDate) == nil, "no date")
+        let sunday = utc("2026-11-15T09:00:00Z"), monday = utc("2026-11-16T09:00:00Z")
+        check(ReminderLogic.due(.nextWeek, now: sunday, timeZone: stockholm)?.date == utc("2026-11-16T08:00:00Z"), "Sunday: the next day")
+        check(ReminderLogic.due(.nextWeek, now: monday, timeZone: stockholm)?.date == utc("2026-11-23T08:00:00Z"), "Monday: a week on")
+    }),
+
+    ("reminders: only an open reminder with a time still to come gets a system notification", {
+        let timed = reminder("Call", due: ReminderDue(date: utc("2026-11-12T12:15:00Z")))
+        check(ReminderLogic.alarm(for: timed, now: now) == utc("2026-11-12T12:15:00Z"), "timed")
+        check(ReminderLogic.alarm(for: timed, now: utc("2026-11-12T13:00:00Z")) == nil, "past")
+        var done = timed
+        done.completed = now
+        check(ReminderLogic.alarm(for: done, now: now) == nil, "completed")
+        check(ReminderLogic.alarm(for: reminder("Day", due: ReminderDue(date: utc("2026-11-13T23:00:00Z"), allDay: true)), now: now) == nil, "all day")
+        check(ReminderLogic.alarm(for: reminder("None"), now: now) == nil, "no due")
+    }),
+
+    ("reminders: an open one with the same title and due is a duplicate", {
         let at = utc("2026-11-12T12:15:00Z")
-        let open = [AgentReminder(id: "a", title: "Review PR", list: "work", due: ReminderDue(date: at)),
-                    AgentReminder(id: "b", title: "Call", list: "work", due: ReminderDue(date: utc("2026-11-12T23:00:00Z"), allDay: true)),
-                    AgentReminder(id: "c", title: "Done", list: "work", completed: true)]
-        func duplicate(_ title: String, list: String = "work", due: ReminderDue? = nil) -> String? {
-            ReminderLogic.duplicate(of: AgentReminder(title: title, list: list, due: due), in: open, timeZone: stockholm)?.id
+        var closed = reminder("Done")
+        closed.completed = now
+        let open = [reminder("Review PR", due: ReminderDue(date: at)), reminder("Call", due: ReminderDue(date: utc("2026-11-12T23:00:00Z"), allDay: true)), closed]
+        func duplicate(_ title: String, due: ReminderDue? = nil) -> String? {
+            ReminderLogic.duplicate(of: title, due: due, in: open, timeZone: stockholm)?.id
         }
-        check(duplicate("review pr", due: ReminderDue(date: at.addingTimeInterval(20))) == "a", "same minute, any case")
+        check(duplicate("review pr", due: ReminderDue(date: at.addingTimeInterval(20))) == "Review PR", "same minute, any case")
         check(duplicate("Review PR", due: ReminderDue(date: at.addingTimeInterval(3600))) == nil, "another time")
-        check(duplicate("Review PR", list: "home", due: ReminderDue(date: at)) == nil, "another list")
         check(duplicate("Review PR") == nil, "no due against a due one")
-        check(duplicate("Call", due: ReminderDue(date: utc("2026-11-13T10:00:00Z"), allDay: true)) == "b", "same day")
+        check(duplicate("Call", due: ReminderDue(date: utc("2026-11-13T10:00:00Z"), allDay: true)) == "Call", "same day")
         check(duplicate("Call", due: ReminderDue(date: utc("2026-11-13T10:00:00Z"))) == nil, "a time is not all day")
         check(duplicate("Done") == nil, "a completed one is not")
     }),
 
-    ("reminders: the app adds, dedupes, lists and completes, and says why when it cannot", {
-        let store = FakeReminders(lists: lists)
-        let review = ReminderDraft(title: "Review", notes: "Soon", due: ReminderDue(date: utc("2026-11-12T12:15:00Z")), link: "QDLY-9", priority: .medium)
-        let added = handle(request(.add, draft: review), store: store, stored: "work", jiraSite: "acme.atlassian.net")
-        check(added.ok && added.notice == "r1" && added.message == "Added \"Review\" to Work, due 2026-11-12 13:15; id r1.", added.message)
-        check(store.items.first == AgentReminder(id: "r1", title: "Review", list: "work", due: review.due, link: "https://acme.atlassian.net/browse/QDLY-9",
-                                                 notes: "Soon\nhttps://acme.atlassian.net/browse/QDLY-9\nAdded by Reviewer", priority: .medium),
-              "\(String(describing: store.items.first))")
-        let again = handle(request(.add, draft: ReminderDraft(title: "review", due: review.due)), store: store, stored: "work")
-        check(again.ok && again.notice == "r1" && again.message.contains("not added again") && store.items.count == 1, again.message)
-        check(handle(request(.add, draft: ReminderDraft(title: "Review", due: review.due, list: "Home")), store: store).notice == "r2", "other list")
-        check(handle(request(.add, draft: ReminderDraft(title: "x", list: "Nope")), store: store).message.contains("The lists are: Work, Home"), "unknown list")
-        _ = handle(request(.add, draft: ReminderDraft(title: "Someday")), store: store, stored: "work")
-
-        let all = handle(request(.list), store: store).message
-        check(all == "- id r1 \u{00B7} Work \u{00B7} Review \u{00B7} due 2026-11-12 13:15 \u{00B7} medium priority \u{00B7} https://acme.atlassian.net/browse/QDLY-9\n"
-              + "- id r2 \u{00B7} Home \u{00B7} Review \u{00B7} due 2026-11-12 13:15\n- id r3 \u{00B7} Work \u{00B7} Someday\n", all)
-        check(handle(request(.list, list: "work", dueBefore: utc("2026-11-13T00:00:00Z")), store: store).message.hasPrefix("- id r1") , "filtered")
-        check(handle(request(.list, dueBefore: utc("2026-11-12T10:00:00Z")), store: store).message == "No open reminders.\n", "none due yet")
-
-        check(handle(request(.complete, reminder: "r1"), store: store).message == "Completed \"Review\" in Work.", "completed")
-        check(handle(request(.complete, reminder: "r1"), store: store).message.contains("already completed"), "twice")
-        check(!handle(request(.complete, reminder: "nope"), store: store).ok, "unknown id")
-
-        store.access = .unknown
-        check(handle(request(.list), store: store).message.contains("has not been given Reminders access"), "not asked yet")
-        store.access = .denied
-        check(handle(request(.list), store: store).message.contains("System Settings"), "denied")
-        check(handle(request(.list), store: nil).message == "WorkTime has not opened Reminders yet.", "no store")
-        check(handle(request(.list, created: now.addingTimeInterval(-600)), store: store).message == "The request is too old.", "stale")
+    ("reminders: the import keeps the due date and priority, turns the url into the source and the old note lines into the sender", {
+        let imported = [ImportedReminder(title: " Merge it ", notes: "Do it now\nhttps://github.com/acme/api/pull/7\nAdded by Main \u{00B7} work",
+                                         url: "https://github.com/acme/api/pull/7", due: ReminderDue(date: utc("2026-11-13T08:00:00Z")), priority: .high,
+                                         created: utc("2026-11-01T08:00:00Z")),
+                        ImportedReminder(title: "Buy milk"), ImportedReminder(title: "  "), ImportedReminder(title: "buy MILK")]
+        var existing = ReminderBook()
+        existing.add(reminder("Already here"))
+        let book = ReminderLogic.importing(imported + [ImportedReminder(title: "already here")], into: existing, now: now, timeZone: stockholm)
+        check(book.reminders.map(\.title) == ["Already here", "Merge it", "Buy milk"], "\(book.reminders.map(\.title))")
+        let merge = book.reminders[1]
+        check(merge.notes == "Do it now" && merge.addedBy == "Main \u{00B7} work" && merge.source == pullRequest && merge.priority == .high, "\(merge)")
+        check(merge.created == utc("2026-11-01T08:00:00Z") && merge.due?.date == utc("2026-11-13T08:00:00Z") && merge.isOpen, "dates")
+        check(book.reminders[2].created == now && book.reminders[2].source == nil && book.reminders[2].notes == nil, "defaults")
+        check(ReminderLogic.importing(imported, into: book, now: now, timeZone: stockholm) == book, "importing twice adds nothing")
+        check(Set(book.reminders.map(\.id)).count == 3 && book.reminders.allSatisfy { $0.id.count == 8 || $0.id == "Already here" }, "ids")
     }),
 
-    ("reminders: the MCP tools hand requests to the app, which answers from Reminders", {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reminders-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    ("reminders: the app adds, dedupes, lists and completes, and says why when it cannot", {
+        let review = ReminderDraft(title: "Review", notes: "Soon", due: ReminderDue(date: utc("2026-11-12T12:15:00Z")), link: "QDLY-9", priority: .medium)
+        let added = handle(request(.add, draft: review), book: ReminderBook(), jiraSite: "acme.atlassian.net")
+        check(added.reply.ok && added.reply.message == "Added \"Review\", due 2026-11-12 13:15; id \(added.reply.notice ?? "").", added.reply.message)
+        let id = added.reply.notice ?? ""
+        check(added.book.reminder(id) == Reminder(id: id, title: "Review", notes: "Soon", due: review.due, priority: .medium, created: now,
+                                                  source: .jira(key: "QDLY-9"), addedBy: "Reviewer"), "\(String(describing: added.book.reminder(id)))")
+        let again = handle(request(.add, draft: ReminderDraft(title: "review", due: review.due)), book: added.book)
+        check(again.reply.ok && again.reply.notice == id && again.reply.message.contains("not added again") && again.book.reminders.count == 1, again.reply.message)
+        var book = again.book
+        book = handle(request(.add, draft: ReminderDraft(title: "Someday", link: "https://github.com/acme/api/pull/7")), book: book).book
+        let all = handle(request(.list), book: book).reply.message
+        let someday = book.reminders.last?.id ?? ""
+        check(all == "- id \(id) \u{00B7} Review \u{00B7} due 2026-11-12 13:15 \u{00B7} medium priority \u{00B7} jira QDLY-9 \u{00B7} added by Reviewer\n"
+              + "- id \(someday) \u{00B7} Someday \u{00B7} github_pr acme/api#7 \u{00B7} added by Reviewer\n", all)
+        check(handle(request(.list, dueBefore: utc("2026-11-12T10:00:00Z")), book: book).reply.message == "No open reminders.\n", "none due yet")
+
+        let done = handle(request(.complete, reminder: id), book: book)
+        check(done.reply.message == "Completed \"Review\"." && done.book.reminder(id)?.completed == now, done.reply.message)
+        check(handle(request(.complete, reminder: id), book: done.book).reply.message.contains("already completed"), "twice")
+        check(!handle(request(.complete, reminder: "nope"), book: book).reply.ok, "unknown id")
+        check(handle(request(.list), book: done.book).reply.message.contains("Someday") && !handle(request(.list), book: done.book).reply.message.contains("id \(id)"), "completed is not listed")
+        check(handle(request(.list, created: now.addingTimeInterval(-600)), book: book).reply.message == "The request is too old.", "stale")
+        check(handle(request(.add), book: book).reply.message == "title is required.", "no draft")
+    }),
+
+    ("reminders: the MCP tools hand requests to the app, which answers from its book", {
+        let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }
         let inbox = root.appendingPathComponent("inbox", isDirectory: true)
         let claude = NoticeSource(session: "s1", cwd: "/Users/me/git/api")
@@ -191,7 +242,8 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
         func run(_ name: String, _ args: [String: Any] = [:]) -> Result<String, Error> {
             Result { try tools.first { $0.name == name }!.run(args) }
         }
-        let store = FakeReminders(lists: lists)
+        let book = Box<ReminderBook>()
+        book.value = ReminderBook()
         let received = Box<[ReminderRequest]>()
         received.value = []
         let app = Thread {
@@ -203,11 +255,10 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
                    let request = AgentInbox.decode(ReminderRequest.self, from: data) {
                     try? FileManager.default.removeItem(at: inbox.appendingPathComponent(name))
                     received.value?.append(request)
-                    let reply = waiting {
-                        await ReminderLogic.handle(request, store: store, stored: nil, addedBy: request.source.label(titles: [:]), jiraSite: nil,
-                                                   now: now, timeZone: stockholm)
-                    }
-                    try? AgentInbox.encode(reply).write(to: inbox.appendingPathComponent(AgentInbox.replyName(request.id)))
+                    let result = ReminderLogic.handle(request, book: book.value ?? ReminderBook(), addedBy: request.source.label(titles: [:]), jiraSite: nil,
+                                                      now: now, timeZone: stockholm)
+                    book.value = result.book
+                    try? AgentInbox.encode(result.reply).write(to: inbox.appendingPathComponent(AgentInbox.replyName(request.id)))
                     if request.action == .complete { return }
                 }
                 Thread.sleep(forTimeInterval: 0.02)
@@ -215,21 +266,19 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
         }
         app.start()
         let added = (try? run("add_reminder", ["title": "Merge it", "due": "2026-11-13", "link": "https://github.com/acme/api/pull/7"]).get()) ?? ""
-        check(added == "Added \"Merge it\" to Home, due 2026-11-13; id r1.", added)
+        let id = book.value?.reminders.first?.id ?? ""
+        check(added == "Added \"Merge it\", due 2026-11-13; id \(id).", added)
         check(received.value?.first?.source == claude && received.value?.first?.draft?.due?.allDay == true, "request")
-        check(store.items.first?.notes == "https://github.com/acme/api/pull/7\nAdded by Claude Code \u{00B7} api", "\(String(describing: store.items.first?.notes))")
+        check(book.value?.reminders.first?.source == pullRequest && book.value?.reminders.first?.addedBy == "Claude Code \u{00B7} api", "\(String(describing: book.value?.reminders.first))")
         check((try? run("add_reminder", ["title": "x", "due": "yesterday"]).get()) == nil, "bad due refused before the app is asked")
         let listed = (try? run("reminders", ["due_before": "2026-11-13"]).get()) ?? ""
-        check(listed.hasPrefix("Filtered by due_before \u{201C}2026-11-13\u{201D}\n- id r1 \u{00B7} Home \u{00B7} Merge it \u{00B7} due 2026-11-13"), listed)
-        let narrowed = (try? run("reminders", ["due_after": "2026-11-13", "priority": "none", "query": "merge"]).get()) ?? ""
-        check(narrowed.hasPrefix("Filtered by due_after") && narrowed.contains("priority") && narrowed.contains("Merge it"), narrowed)
+        check(listed.hasPrefix("Filtered by due_before \u{201C}2026-11-13\u{201D}\n- id \(id) \u{00B7} Merge it \u{00B7} due 2026-11-13"), listed)
+        let narrowed = (try? run("reminders", ["due_after": "2026-11-13", "priority": "none", "query": "merge", "source_kind": "github_pr", "source": "acme/api#7"]).get()) ?? ""
+        check(narrowed.hasPrefix("Filtered by due_after") && narrowed.contains("source_kind") && narrowed.contains("github_pr acme/api#7"), narrowed)
+        check((try? run("reminders", ["source_kind": "jira"]).get())?.hasSuffix("No open reminders.\n") == true, "another source kind finds nothing")
         check((try? run("reminders", ["priority": "urgent"]).get()) == nil, "unknown priority refused before the app is asked")
-        if case .failure(let error) = run("reminders", ["list": "Groceries"]) {
-            check(error.localizedDescription.contains("The lists are: Work, Home"), error.localizedDescription)
-        } else {
-            check(false, "unknown list is an error")
-        }
-        check((try? run("complete_reminder", ["id": "r1"]).get()) == "Completed \"Merge it\" in Home.", "completed")
+        check((try? run("reminders", ["source_kind": "email"]).get()) == nil, "unknown source kind refused before the app is asked")
+        check((try? run("complete_reminder", ["id": id]).get()) == "Completed \"Merge it\".", "completed")
 
         let quiet = MCPServer.reminderTools(sources: MCPServer.NoticeSources(inbox: inbox, replyTimeout: 0.3, source: { claude }), now: { now })
         if case .failure(let error) = Result(catching: { try quiet[0].run(["title": "anyone?"]) }) {

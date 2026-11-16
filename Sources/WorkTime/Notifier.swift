@@ -77,6 +77,24 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: NoticeLogic.identifier(notice.id), content: content, trigger: trigger))
     }
 
+    /// A reminder's system notification at its due time, so it shows even while the app is quit.
+    static func postReminderAlarm(_ reminder: Reminder, at date: Date) {
+        let content = UNMutableNotificationContent()
+        content.title = reminder.title
+        content.subtitle = reminder.source?.label ?? ""
+        content.sound = .default
+        content.userInfo = [ReminderLogic.userInfoKey: reminder.id]
+        let trigger = UNCalendarNotificationTrigger(
+            dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date), repeats: false)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: ReminderLogic.alarmIdentifier(reminder.id), content: content, trigger: trigger))
+    }
+
+    static func withdrawReminderAlarm(_ id: String) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [ReminderLogic.alarmIdentifier(id)])
+        center.removeDeliveredNotifications(withIdentifiers: [ReminderLogic.alarmIdentifier(id)])
+    }
+
     /// A meeting brief shortly before the meeting; a click opens the brief in the notch bar.
     static func postBrief(title: String, body: String, key: String) {
         let content = UNMutableNotificationContent()
@@ -123,6 +141,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let action = response.actionIdentifier
         if let id = content.userInfo[NoticeLogic.userInfoKey] as? String {
             if action == UNNotificationDefaultActionIdentifier { await NoticeCenter.shared.open(id) }
+            return
+        }
+        if let id = content.userInfo[ReminderLogic.userInfoKey] as? String {
+            if action == UNNotificationDefaultActionIdentifier { await TodoModel.shared.openFromNotification(id) }
             return
         }
         if content.userInfo[MeetingBriefLogic.userInfoKey] != nil {

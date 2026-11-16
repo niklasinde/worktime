@@ -31,9 +31,9 @@
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>WorkTime reads the invitation of the meeting you are recording, so help during the call knows its agenda and people. Nothing leaves this Mac.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>WorkTime shows your reminders in the top notch bar so you can tick them off and add new ones.</string>
+    <string>WorkTime keeps its own reminders. If you allow this, it copies your open Apple Reminders into them once and changes nothing in Reminders.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>WorkTime shows your reminders in the top notch bar so you can tick them off and add new ones.</string>
+    <string>WorkTime keeps its own reminders. If you allow this, it copies your open Apple Reminders into them once and changes nothing in Reminders.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>WorkTime transcribes your recordings on this Mac. Audio never leaves the device.</string>
 </dict>

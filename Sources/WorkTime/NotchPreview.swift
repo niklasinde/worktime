@@ -64,9 +64,15 @@ enum NotchPreview {
             await notch("slack-many-scrolls", setup: swapped, list: .slack)
             let start = Date()
             TodoModel.shared.showSample(
-                todos: ["Book the dentist", "Renew the parking permit", "Send the invoice to Acme"].enumerated().map {
-                    TodoItem(id: "r\($0.offset)", text: $0.element)
-                },
+                reminders: [
+                    Reminder(id: "r0", title: "Answer Bj\u{00F6}rn about the debtor balance", due: ReminderDue(date: start.addingTimeInterval(-86400), allDay: true),
+                             created: start, source: .slack(link: URL(string: "https://acme.slack.com/archives/C0ACME1/p1730000000123456")!, place: "#finq-dev")),
+                    Reminder(id: "r1", title: "Review the rule engine optimisation", due: ReminderDue(date: start.addingTimeInterval(3600)), created: start,
+                             source: .pullRequest(GitHubLink.Target(repo: "acme/finq.api", number: 2682))),
+                    Reminder(id: "r2", title: "Verify the remaining ticket", due: ReminderDue(date: start.addingTimeInterval(2 * 86400), allDay: true), created: start,
+                             source: .jira(key: "QDLY-7280"), addedBy: "Main \u{00B7} work"),
+                    Reminder(id: "r3", title: "Book the dentist", created: start),
+                ],
                 meeting: (0..<40).map { index in
                     MeetingTodo(id: Int64(index), meeting: Int64(index / 3), date: start.addingTimeInterval(-Double(index / 3) * 86400),
                                 title: "Weekly sync \(40 / 3 - index / 3)", owner: ["Anna", "Bo", "Niklas"][index % 3],

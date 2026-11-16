@@ -381,6 +381,7 @@ private struct PullRequestRow: View {
                 Button("Copy Branch") { model.store?.githubHeadBranch(pr.url).map(GitHubModel.copy) }
                     .disabled(model.store?.githubHeadBranch(pr.url) == nil)
                 Button("Open Repository") { open("https://\(GitHubLogic.host)/\(pr.repo)") }
+                RemindMeMenu(title: pr.title, source: .pullRequest(GitHubLink.Target(repo: pr.repo, number: pr.number)))
                 if model.isWatched(pr) { Button("Stop Watching") { model.stopWatching(pr) } }
                 GitHubRowActions(pr: pr, targets: GitHubActions.targets(for: pr, marked: model.marked, in: model.visible), model: actions)
                 Divider()
