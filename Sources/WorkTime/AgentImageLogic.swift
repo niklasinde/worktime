@@ -35,12 +35,22 @@ enum AgentImages {
         return (max(1, Int((Double(width) * scale).rounded())), max(1, Int((Double(height) * scale).rounded())))
     }
 
-    /// What a paste or drop brings: image files first, else image bytes when no text came with them (copied cells and rich text
-    /// carry a picture of themselves beside their text, which is not what was meant). Nothing means paste the text as usual.
-    static func sources(fileURLs: [URL], imageData: Data?, hasText: Bool) -> [AgentImageSource] {
+    /// What a paste or drop brings: image files first, else image bytes when the text beside them is only a link or a file name
+    /// ("Copy image" in a browser or Slack), not the text itself (copied cells and rich text carry a picture of themselves).
+    /// Nothing means paste the text as usual.
+    static func sources(fileURLs: [URL], imageData: Data?, text: String?) -> [AgentImageSource] {
         if !fileURLs.isEmpty { return fileURLs.filter(isImageFile).map(AgentImageSource.file) }
-        guard let imageData, !hasText else { return [] }
+        guard let imageData, isIncidental(text) else { return [] }
         return [.data(imageData)]
+    }
+
+    /// Text that only names the picture it came with: nothing, a link, or the name of an image file.
+    static func isIncidental(_ text: String?) -> Bool {
+        let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        guard !trimmed.contains(where: \.isNewline) else { return false }
+        if let scheme = URL(string: trimmed)?.scheme?.lowercased(), ["http", "https", "file", "data"].contains(scheme) { return true }
+        return isImageFile(URL(fileURLWithPath: trimmed))
     }
 
     /// Why more images cannot be attached, nil when there is room.

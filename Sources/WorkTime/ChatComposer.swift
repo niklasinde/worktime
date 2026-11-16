@@ -8,6 +8,7 @@ struct ChatComposer: NSViewRepresentable {
     let placeholder: String
     var maxLines = 6
     var attach: (([AgentImageSource]) -> Void)?
+    var problem: ((String) -> Void)?
     let send: () -> Void
 
     static let inset = NSSize(width: 0, height: 4)
@@ -19,7 +20,8 @@ struct ChatComposer: NSViewRepresentable {
         textView.placeholder = placeholder
         textView.delegate = context.coordinator
         textView.attach = { [weak coordinator = context.coordinator] in coordinator?.parent.attach?($0) }
-        textView.registerForDraggedTypes([.fileURL, .png, .tiff])
+        textView.problem = { [weak coordinator = context.coordinator] in coordinator?.parent.problem?($0) }
+        textView.registerForDraggedTypes([.fileURL, .png, .tiff, .pdf] + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) })
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = .systemFont(ofSize: NSFont.systemFontSize + 1)
@@ -116,28 +118,57 @@ private final class ComposerScrollView: NSScrollView {
 private final class PlaceholderTextView: NSTextView {
     var placeholder = ""
     var attach: (([AgentImageSource]) -> Void)?
+    var problem: ((String) -> Void)?
 
-    /// The pictures on a pasteboard that a paste or drop should attach, empty when it holds only text or other files.
-    private func images(on pasteboard: NSPasteboard) -> [AgentImageSource] {
-        let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)
-        return AgentImages.sources(fileURLs: urls, imageData: data, hasText: pasteboard.string(forType: .string) != nil)
+    /// Takes a paste or drop that carries pictures; false leaves it to the text field.
+    private func take(_ board: NSPasteboard) -> Bool {
+        guard let attach else { return false }
+        switch AgentPasteboard.read(board) {
+        case .text: return false
+        case .images(let sources): attach(sources)
+        case .promised(let receivers): receive(receivers, attach: attach)
+        case .unreadable: problem?(AgentImages.unreadable)
+        }
+        return true
     }
 
-    override func paste(_ sender: Any?) {
-        let sources = images(on: .general)
-        if sources.isEmpty { super.paste(sender) } else { attach?(sources) }
+    private func receive(_ receivers: [NSFilePromiseReceiver], attach: @escaping ([AgentImageSource]) -> Void) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("WorkTimePaste-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for receiver in receivers {
+            receiver.receivePromisedFiles(atDestination: folder, options: [:], operationQueue: .main) { [weak self] url, error in
+                if error == nil, AgentImages.isImageFile(url) { attach([.file(url)]) } else { self?.problem?(AgentImages.unreadable) }
+            }
+        }
+    }
+
+    override func paste(_ sender: Any?) { if !take(.general) { super.paste(sender) } }
+    override func pasteAsPlainText(_ sender: Any?) { if !take(.general) { super.pasteAsPlainText(sender) } }
+    override func pasteAsRichText(_ sender: Any?) { if !take(.general) { super.pasteAsRichText(sender) } }
+
+    /// ⌘V reaches the field before the Edit menu, whose Paste is greyed out while the clipboard holds only a picture.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let command = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+        if command, event.charactersIgnoringModifiers == "v", window?.firstResponder === self, take(.general) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        attach == nil ? super.readablePasteboardTypes : super.readablePasteboardTypes + AgentPasteboard.imageTypes
+    }
+
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if attach != nil, item.action == #selector(NSText.paste(_:)), AgentPasteboard.hasPicture(.general) { return true }
+        return super.validateUserInterfaceItem(item)
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        images(on: sender.draggingPasteboard).isEmpty ? super.draggingEntered(sender) : .copy
+        guard attach != nil, case .text = AgentPasteboard.read(sender.draggingPasteboard) else { return attach == nil ? super.draggingEntered(sender) : .copy }
+        return super.draggingEntered(sender)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        let sources = images(on: sender.draggingPasteboard)
-        guard !sources.isEmpty else { return super.performDragOperation(sender) }
-        attach?(sources)
-        return true
+        take(sender.draggingPasteboard) || super.performDragOperation(sender)
     }
 
     override func draw(_ dirtyRect: NSRect) {

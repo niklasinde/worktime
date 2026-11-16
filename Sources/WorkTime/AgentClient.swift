@@ -497,6 +497,8 @@ final class AgentModel: ObservableObject {
         }
     }
 
+    func imageProblem(_ message: String) { imageNote = message }
+
     func removeImage(_ image: AgentImage) {
         images.removeAll { $0.id == image.id }
         imageNote = nil

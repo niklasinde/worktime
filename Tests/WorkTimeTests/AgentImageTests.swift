@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 #if canImport(WorkTime)
 @testable import WorkTime
@@ -14,14 +15,60 @@ let agentImageTests: [(name: String, run: () throws -> Void)] = [
         check(AgentImages.fitSize(width: 800, height: 600) == (800, 600), "small")
         check(AgentImages.fitSize(width: 1568, height: 1568) == (1568, 1568), "at the limit")
     }),
-    ("agent images: a paste or drop attaches image files, or image bytes when no text came with them", {
+    ("agent images: a paste or drop attaches image files, or image bytes when the text beside them is only a link or file name", {
         let png = URL(fileURLWithPath: "/a/Shot.PNG"), pdf = URL(fileURLWithPath: "/a/doc.pdf")
         let bytes = Data([9])
-        check(AgentImages.sources(fileURLs: [png, pdf], imageData: bytes, hasText: false) == [.file(png)], "only the image files")
-        check(AgentImages.sources(fileURLs: [pdf], imageData: bytes, hasText: false).isEmpty, "other files paste as text")
-        check(AgentImages.sources(fileURLs: [], imageData: bytes, hasText: false) == [.data(bytes)], "a screenshot")
-        check(AgentImages.sources(fileURLs: [], imageData: bytes, hasText: true).isEmpty, "copied text with a picture of itself stays text")
-        check(AgentImages.sources(fileURLs: [], imageData: nil, hasText: true).isEmpty, "plain text")
+        check(AgentImages.sources(fileURLs: [png, pdf], imageData: bytes, text: nil) == [.file(png)], "only the image files")
+        check(AgentImages.sources(fileURLs: [pdf], imageData: bytes, text: nil).isEmpty, "other files paste as text")
+        check(AgentImages.sources(fileURLs: [], imageData: bytes, text: nil) == [.data(bytes)], "a screenshot")
+        check(AgentImages.sources(fileURLs: [], imageData: bytes, text: "https://a.com/x.png") == [.data(bytes)], "copy image in a browser")
+        check(AgentImages.sources(fileURLs: [], imageData: bytes, text: "image.png\n") == [.data(bytes)], "a file name")
+        check(AgentImages.sources(fileURLs: [], imageData: bytes, text: "Total\t42").isEmpty, "copied cells stay text")
+        check(AgentImages.sources(fileURLs: [], imageData: bytes, text: "two\nlines").isEmpty, "copied text stays text")
+        check(AgentImages.sources(fileURLs: [], imageData: nil, text: "hello").isEmpty, "plain text")
+    }),
+    ("agent images: what the composer reads from each kind of pasteboard", {
+        let board = NSPasteboard(name: NSPasteboard.Name("worktime-test-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        func attached(_ fill: (NSPasteboard) -> Void) -> String {
+            board.clearContents()
+            fill(board)
+            switch AgentPasteboard.read(board) {
+            case .text: return "text"
+            case .unreadable: return "unreadable"
+            case .promised: return "promised"
+            case .images(let sources): return "images \(sources.count)"
+            }
+        }
+        let picture = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.red.setFill(); rect.fill(); return true }
+        let tiff = picture.tiffRepresentation!
+        let png = NSBitmapImageRep(data: tiff)!.representation(using: .png, properties: [:])!
+        let jpeg = NSBitmapImageRep(data: tiff)!.representation(using: .jpeg, properties: [:])!
+        let pdf = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 8, height: 8)
+        if let consumer = CGDataConsumer(data: pdf), let context = CGContext(consumer: consumer, mediaBox: &box, nil) {
+            context.beginPDFPage(nil)
+            context.setFillColor(NSColor.red.cgColor)
+            context.fill(box)
+            context.endPDFPage()
+            context.closePDF()
+        }
+        check(attached { $0.setData(png, forType: .png) } == "images 1", "png")
+        check(attached { $0.setData(tiff, forType: .tiff) } == "images 1", "tiff")
+        check(attached { $0.setData(jpeg, forType: NSPasteboard.PasteboardType("public.jpeg")) } == "images 1", "jpeg")
+        check(attached { $0.setData(pdf as Data, forType: .pdf) } == "images 1", "pdf")
+        check(attached { $0.setData(png, forType: .png); $0.setString("https://a.com/x.png", forType: .string) } == "images 1", "image with its link")
+        check(attached { $0.setData(tiff, forType: .tiff); $0.setString("12 | 34", forType: .string) } == "text", "cells with a picture of themselves")
+        check(attached { $0.setString("hello", forType: .string) } == "text", "text")
+        check(attached { $0.setData(Data([1, 2, 3]), forType: .pdf) } == "unreadable", "a picture nobody can read")
+        check(attached { $0.setData(Data([1, 2, 3]), forType: .png) } == "images 1", "unreadable bytes go on to the encoder, which refuses them with a message")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("paste-\(UUID().uuidString).png")
+        try png.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        check(attached { $0.writeObjects([file as NSURL]) } == "images 1", "an image file")
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent("paste-\(UUID().uuidString).txt")
+        check(attached { $0.writeObjects([other as NSURL]) } == "text", "another file")
+        check(AgentPasteboard.hasPicture({ board.clearContents(); board.setData(png, forType: .png); return board }()), "paste is enabled for a picture")
     }),
     ("agent images: at most five fit, and big files are refused", {
         check(AgentImages.refusal(adding: 2, to: 3) == nil, "fits")

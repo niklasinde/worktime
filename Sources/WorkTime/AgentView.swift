@@ -745,7 +745,7 @@ struct AgentPanel: View {
             AgentImageChips(model: model)
             HStack(alignment: .bottom, spacing: 10) {
                 ChatComposer(text: $model.draft, height: $height, placeholder: "Ask the agent \u{2014} @ to reference a file or paste an image",
-                             attach: model.attach) { model.submit() }
+                             attach: model.attach, problem: model.imageProblem) { model.submit() }
                     .frame(height: height)
                 Button {
                     if model.busy { model.stop() } else { model.send() }
