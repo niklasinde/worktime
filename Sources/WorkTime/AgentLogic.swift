@@ -17,6 +17,10 @@ enum AgentEvent: Equatable {
     /// Whether the Claude in Chrome tools work: nil once one has, the error text when the extension is not reachable.
     case chrome(problem: String?)
     case idle
+    /// A message sent while the agent worked reached it.
+    case delivered(id: String)
+    /// A message sent while the agent worked was taken back, by the user or because the turn ended.
+    case cancelled(id: String)
 
     static func decode(_ line: String, cwd: String) -> AgentEvent? {
         guard let data = line.data(using: .utf8),
@@ -46,6 +50,8 @@ enum AgentEvent: Equatable {
         case "error" where object["missingFolder"] is String: return .missingFolder(string("missingFolder"))
         case "error": return object["auth"] as? Bool == true || AgentLogic.needsSignIn(string("message")) ? .signIn : .error(string("message"))
         case "idle": return .idle
+        case "delivered": return .delivered(id: string("id"))
+        case "cancelled": return .cancelled(id: string("id"))
         case "chrome": return .chrome(problem: object["connected"] as? Bool == true ? nil : string("message").isEmpty ? "Not connected" : string("message"))
         default: return nil
         }
@@ -115,6 +121,9 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
 enum AgentRequest {
     case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
                 chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [])
+    /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
+    case message(id: String, text: String, images: [AgentImage] = [])
+    case cancelMessage(id: String)
     case permission(id: String, allow: Bool)
     /// The answer to the sidecar's `resolve_target`: the key send_to_agent would deliver to, nil when it is unclear.
     case target(id: String, key: String?)
@@ -137,6 +146,10 @@ enum AgentRequest {
             }
             if let model { object["model"] = model }
             if let appendSystemPrompt { object["appendSystemPrompt"] = appendSystemPrompt }
+        case .message(let id, let text, let images):
+            object = ["type": "message", "id": id, "text": text]
+            if !images.isEmpty { object["images"] = images.map(\.json) }
+        case .cancelMessage(let id): object = ["type": "cancel_message", "id": id]
         case .mode(let mode): object = ["type": "mode", "mode": mode.rawValue]
         case .permission(let id, let allow): object = ["type": "permission", "id": id, "allow": allow]
         case .target(let id, let key):
@@ -147,6 +160,38 @@ enum AgentRequest {
         }
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
         return String(decoding: data, as: UTF8.self) + "\n"
+    }
+}
+
+/// A message sent while the agent worked, shown above the prompt until it reaches the agent.
+struct AgentPendingSend: Identifiable, Equatable {
+    let id: String
+    /// What the user wrote, and what is sent (mentions expanded, images noted).
+    let text: String
+    let prompt: String
+    let images: [AgentImage]
+}
+
+/// The queue of messages sent while the agent works.
+enum AgentPending {
+    /// The draft with these messages put back in front of what was typed since, when a turn ended before they reached the agent.
+    static func restored(_ sends: [AgentPendingSend], draft: String) -> String {
+        let text = sends.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return [text, draft].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    /// The message that reached the agent leaves the queue and joins the transcript as the user's.
+    static func deliver(_ id: String, queue: inout [AgentPendingSend], items: inout [AgentItem]) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        let send = queue.remove(at: index)
+        items.append(AgentItem(id: "user-\(items.count)", kind: .user(send.text), images: send.images.map(\.path)))
+    }
+
+    /// Takes the messages with these ids out of the queue; the ones taken out.
+    static func take(_ ids: Set<String>, from queue: inout [AgentPendingSend]) -> [AgentPendingSend] {
+        let taken = queue.filter { ids.contains($0.id) }
+        queue.removeAll { ids.contains($0.id) }
+        return taken
     }
 }
 
@@ -189,7 +234,7 @@ enum AgentLogic {
     @discardableResult
     static func apply(_ event: AgentEvent, to items: inout [AgentItem]) -> String? {
         switch event {
-        case .ready, .chrome: return nil
+        case .ready, .chrome, .delivered, .cancelled: return nil
         case .idle:
             settleStreaming(in: &items)
             return nil

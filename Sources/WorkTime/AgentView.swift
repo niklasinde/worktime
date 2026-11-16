@@ -742,20 +742,27 @@ struct AgentPanel: View {
                     }
                 }
             }
+            AgentPendingList(model: model)
             AgentImageChips(model: model)
             HStack(alignment: .bottom, spacing: 10) {
-                ChatComposer(text: $model.draft, height: $height, placeholder: "Ask the agent \u{2014} @ to reference a file or paste an image",
+                ChatComposer(text: $model.draft, height: $height, placeholder: model.busy ? "Add a message \u{2014} it reaches the agent at its next step" : "Ask the agent \u{2014} @ to reference a file or paste an image",
                              attach: model.attach, problem: model.imageProblem) { model.submit() }
                     .frame(height: height)
-                Button {
-                    if model.busy { model.stop() } else { model.send() }
-                } label: {
-                    Image(systemName: model.busy ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(model.busy || !model.draft.trimmingCharacters(in: .whitespaces).isEmpty || !model.images.isEmpty ? Color.accentColor : .secondary.opacity(0.5))
+                let hasContent = !model.draft.trimmingCharacters(in: .whitespaces).isEmpty || !model.images.isEmpty
+                if model.busy {
+                    Button { model.stop() } label: { Image(systemName: "stop.circle.fill").font(.system(size: 24)).foregroundStyle(Color.accentColor) }
+                        .buttonStyle(.plain)
+                        .help("Stop")
                 }
-                .buttonStyle(.plain)
-                .help(model.busy ? "Stop" : "Send (Return)")
+                if !model.busy || hasContent {
+                    Button { model.send() } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(hasContent ? Color.accentColor : .secondary.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.busy ? "Send to the running agent (Return)" : "Send (Return)")
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -1125,6 +1132,28 @@ private struct AgentThumbnail: View {
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: path) { image = await Task.detached { NSImage(contentsOfFile: path) }.value }
+    }
+}
+
+/// The messages sent while the agent works that have not reached it yet, each of which can still be taken back.
+private struct AgentPendingList: View {
+    @ObservedObject var model: AgentModel
+
+    var body: some View {
+        ForEach(model.pending) { send in
+            HStack(spacing: 8) {
+                Text("Queued").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(send.text.isEmpty ? "\(send.images.count) image\(send.images.count == 1 ? "" : "s")" : send.text)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button { model.cancelPending(send) } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+                    .help("Take this message back")
+            }
+            .font(.callout)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+        }
     }
 }
 

@@ -92,4 +92,27 @@ let agentImageTests: [(name: String, run: () throws -> Void)] = [
         let item = AgentItem(id: "user-0", kind: .user("hi"), images: ["/a/a.png"])
         check(item.images == ["/a/a.png"] && AgentItem(id: "t", kind: .text("x")).images.isEmpty, "paths")
     }),
+    ("agent queue: messages sent while the agent works wait, reach the agent or come back to the prompt", {
+        check(AgentEvent.decode(#"{"type":"delivered","id":"a"}"#, cwd: "/") == .delivered(id: "a"), "delivered")
+        check(AgentEvent.decode(#"{"type":"cancelled","id":"b"}"#, cwd: "/") == .cancelled(id: "b"), "cancelled")
+        let line = AgentRequest.message(id: "a", text: "more", images: [image("p")]).line
+        check(line.contains(#""type":"message""#) && line.contains(#""id":"a""#) && line.contains(#""text":"more""#) && line.contains("images"), "message line")
+        check(AgentRequest.cancelMessage(id: "a").line.contains(#""type":"cancel_message""#), "cancel line")
+        check(!AgentRequest.message(id: "a", text: "x").line.contains("images"), "no images")
+
+        var queue = [AgentPendingSend(id: "a", text: "first", prompt: "first", images: [image("p")]),
+                     AgentPendingSend(id: "b", text: "second", prompt: "second", images: [])]
+        var items = [AgentItem(id: "text-0", kind: .text("working"))]
+        AgentPending.deliver("a", queue: &queue, items: &items)
+        check(queue.map(\.id) == ["b"], "left the queue")
+        check(items.last?.kind == .user("first") && items.last?.images == ["/a/p.png"], "joined the transcript with its pictures")
+        AgentPending.deliver("zzz", queue: &queue, items: &items)
+        check(items.count == 2 && queue.count == 1, "an unknown id changes nothing")
+
+        let taken = AgentPending.take(["b"], from: &queue)
+        check(taken.map(\.id) == ["b"] && queue.isEmpty, "taken back")
+        check(AgentPending.restored(taken, draft: "typed since") == "second\n\ntyped since", "put in front of the draft")
+        check(AgentPending.restored(taken, draft: "") == "second", "alone")
+        check(AgentPending.restored([], draft: "x") == "x", "nothing to restore")
+    }),
 ]

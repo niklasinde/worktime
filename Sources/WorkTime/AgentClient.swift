@@ -79,6 +79,7 @@ final class AgentModel: ObservableObject {
     }
     /// Prompts from Main waiting for the current turn to end.
     @Published private(set) var queued: [String] = []
+    @Published private(set) var pending: [AgentPendingSend] = []
     private(set) var updated: Date?
     private var visiblePanes = 0
     /// The permission prompts a notification was sent for, so one is not sent twice and each is taken back when answered.
@@ -291,6 +292,7 @@ final class AgentModel: ObservableObject {
         restoring = nil
         replaceItems([])
         queued = []
+        pending = []
         problem = nil
     }
 
@@ -514,12 +516,37 @@ final class AgentModel: ObservableObject {
 
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !images.isEmpty, !busy, restoring == nil else { return }
+        guard !text.isEmpty || !images.isEmpty, restoring == nil else { return }
+        if busy { return sendWhileWorking(text, images: images) }
         if start(text, images: images) {
             draft = ""
             images = []
             imageNote = nil
         }
+    }
+
+    /// A message for the turn that is running: it waits above the prompt, and can be taken back, until the agent is about to call
+    /// the model again and then continues the same turn.
+    private func sendWhileWorking(_ text: String, images: [AgentImage]) {
+        guard let client, client.isRunning else { return }
+        let prompt = AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images)
+        let send = AgentPendingSend(id: UUID().uuidString, text: text, prompt: prompt, images: images)
+        pending.append(send)
+        client.send(.message(id: send.id, text: prompt, images: images))
+        draft = ""
+        self.images = []
+        imageNote = nil
+    }
+
+    func cancelPending(_ send: AgentPendingSend) {
+        client?.send(.cancelMessage(id: send.id))
+    }
+
+    /// Puts messages that never reached the agent back in the prompt.
+    private func restore(_ sends: [AgentPendingSend]) {
+        guard !sends.isEmpty else { return }
+        draft = AgentPending.restored(sends, draft: draft)
+        images = Array((sends.flatMap(\.images) + images).prefix(AgentImages.maxCount))
     }
 
     func attach(_ sources: [AgentImageSource]) {
@@ -697,6 +724,8 @@ final class AgentModel: ObservableObject {
             event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [rule])
         }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
+        if case .delivered(let id) = event { return AgentPending.deliver(id, queue: &pending, items: &items) }
+        if case .cancelled(let id) = event { return restore(AgentPending.take([id], from: &pending)) }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
         if case .permissionRequest(let id, let tool, let summary, _, _) = event { announce(permission: id, tool: tool, summary: summary) }
         if routine != nil, case .permissionRequest = event, let asked = items.last { answer(asked, allow: false) }
@@ -714,6 +743,7 @@ final class AgentModel: ObservableObject {
 
     private func finishTurn() {
         busy = false
+        restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
         if let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
         resultSeen = visiblePanes > 0
         withdrawAttention()
@@ -722,6 +752,7 @@ final class AgentModel: ObservableObject {
 
     private func exited(status: Int32, errors: String) {
         client = nil
+        restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
         guard busy else { return }
         busy = false
         withdrawAttention()

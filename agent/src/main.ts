@@ -6,11 +6,14 @@ import { mcpServers, sessionOptions, type PromptOptions } from "./options.js";
 import { parseMode, preToolDecision, type Decision, type Mode } from "./permissions.js";
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
 import { TextStream } from "./stream.js";
-import { promptInput, type PromptImage } from "./images.js";
+import { userMessage, type PromptImage } from "./images.js";
+import { PromptQueue } from "./promptqueue.js";
 import { delegateTool, hasDelegateRules, matchDelegate, parseRules, suggestRules, type Rule } from "./rules.js";
 
 type Input =
   | ({ type: "prompt"; text: string; model?: string; permissionMode?: string; images?: PromptImage[] } & PromptOptions)
+  | { type: "message"; id: string; text: string; images?: PromptImage[] }
+  | { type: "cancel_message"; id: string }
   | { type: "permission"; id: string; allow: boolean }
   | { type: "target"; id: string; key?: string }
   | { type: "mode"; mode: string }
@@ -31,7 +34,7 @@ const stream = new TextStream(send);
 const resolving = new Map<string, (key?: string) => void>();
 const resolveTimeout = 5000;
 const pending = new Map<string, (result: PermissionResult) => void>();
-let running: { query: Query; abort: AbortController } | undefined;
+let running: { query: Query; abort: AbortController; queue: PromptQueue } | undefined;
 let nextPermission = 0;
 let mode: Mode = "default";
 /// Calls the user allowed in the PreToolUse hook, so canUseTool does not ask a second time.
@@ -170,6 +173,11 @@ function forward(message: any, model: string) {
   }
 }
 
+/// Tells the app these held messages reached the agent (`delivered`) or were taken back (`cancelled`).
+function report(type: "delivered" | "cancelled", ids: string[]) {
+  for (const id of ids) send({ type, id });
+}
+
 function denyPending(reason: string) {
   for (const resolve of pending.values()) resolve({ behavior: "deny", message: reason, interrupt: true });
   pending.clear();
@@ -185,15 +193,19 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
   const abort = new AbortController();
   const promptModel = input.model || model;
   mode = parseMode(input.permissionMode);
+  const queue = new PromptQueue(userMessage(input.text, input.images));
   const current = query({
-    prompt: promptInput(input.text, input.images),
+    prompt: queue,
     options: {
       ...sessionOptions(input, promptModel, mode),
       env,
       mcpServers: mcpServers(process.env),
       abortController: abort,
       includeHookEvents: true,
-      hooks: { PreToolUse: [{ hooks: [preToolUse(input)], timeout: hookTimeout }] },
+      hooks: {
+        PreToolUse: [{ hooks: [preToolUse(input)], timeout: hookTimeout }],
+        PostToolBatch: [{ hooks: [async () => (report("delivered", queue.release()), {})] }],
+      },
       canUseTool: async (tool, toolInput, { toolUseID }) => {
         if (hookAllowed.delete(toolUseID)) return { behavior: "allow" };
         const decision = await decide(tool, toolInput, input);
@@ -202,12 +214,15 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
       },
     },
   });
-  running = { query: current, abort };
+  running = { query: current, abort, queue };
   let finished = false;
   try {
     for await (const message of current) {
       forward(message, promptModel);
-      finished ||= message.type === "result";
+      if (message.type !== "result") continue;
+      finished = true;
+      if (queue.hasHeld) report("delivered", queue.release());
+      else queue.end();
     }
   } catch (error) {
     stream.flush();
@@ -217,6 +232,7 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
     }
   } finally {
     stream.flush();
+    report("cancelled", queue.drop());
     denyPending("The prompt ended.");
     autoAllowed.clear();
     hookAllowed.clear();
@@ -236,6 +252,15 @@ function handle(line: string) {
   switch (input.type) {
     case "prompt":
       void run(input);
+      break;
+    case "message": {
+      const queue = running?.queue;
+      if (!queue || queue.ended) return send({ type: "cancelled", id: input.id });
+      queue.hold(input.id, userMessage(input.text, input.images));
+      break;
+    }
+    case "cancel_message":
+      if (running?.queue.cancel(input.id)) send({ type: "cancelled", id: input.id });
       break;
     case "permission": {
       const resolve = pending.get(input.id);
@@ -258,6 +283,7 @@ function handle(line: string) {
       break;
     case "interrupt":
       denyPending("The user stopped the agent.");
+      if (running) report("cancelled", running.queue.drop());
       if (running) running.query.interrupt().catch(() => running?.abort.abort());
       break;
     default:

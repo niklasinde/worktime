@@ -4,21 +4,17 @@ export type PromptImage = { mediaType: string; data: string };
 
 const mediaTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-/// The prompt for the SDK: the text itself, or one user message with the pictures ahead of the text when there are any.
-export function promptInput(text: string, images: unknown): string | AsyncIterable<SDKUserMessage> {
+/// One user message for the SDK: the pictures ahead of the text when there are any.
+export function userMessage(text: string, images: unknown): SDKUserMessage {
   const blocks = validImages(images).map(({ mediaType, data }) => ({
     type: "image" as const,
     source: { type: "base64" as const, media_type: mediaType as "image/png", data },
   }));
-  if (blocks.length === 0) return text;
-  const message: SDKUserMessage = {
+  return {
     type: "user",
-    message: { role: "user", content: [...blocks, { type: "text", text }] },
+    message: { role: "user", content: blocks.length === 0 ? text : [...blocks, { type: "text", text }] },
     parent_tool_use_id: null,
   };
-  return (async function* () {
-    yield message;
-  })();
 }
 
 export function validImages(images: unknown): PromptImage[] {
