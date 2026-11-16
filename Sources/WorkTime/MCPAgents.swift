@@ -30,8 +30,8 @@ extension MCPServer {
         var workspaces = WorkspaceSource()
         var notices = NoticeSources()
         var replyTimeout: TimeInterval = 10
-        /// Slack mentions and unread DMs as Markdown, nil when Slack is not signed in.
-        var slack: () -> String? = { MCPServer.slackAttention() }
+        /// Starts reading Slack mentions and unread DMs (true: Slack alone was asked for) and returns what waits for them as Markdown, nil when Slack is not signed in.
+        var slack: (Bool) -> () -> String? = { MCPServer.slackAttention(explicit: $0) }
 
         func agents() -> [AgentState] { (try? Data(contentsOf: stateFile)).flatMap(AgentOverview.decode)?.agents ?? [] }
 
@@ -160,6 +160,8 @@ extension MCPServer {
                 let only = try FilterLogic.choice(args, "section", allowed: attentionSections)
                 let filter = try AgentFilter(args, names: ["kind", "status"])
                 func wanted(_ section: String) -> Bool { only == nil || only == section }
+                let slack = wanted("slack") && (scope.id == nil || Workspaces.workspace(scope.id, in: workspaces)?.slack != nil)
+                    ? sources.slack(only == "slack") : nil
                 var sections: [String] = []
                 if wanted("pull_requests"), let tool = github.first(where: { $0.name == "github_needs_attention" }) {
                     sections.append("## Pull requests\n" + ((try? tool.run(["limit": 8, "workspace": scope.id ?? Workspaces.allChoice]))
@@ -173,9 +175,7 @@ extension MCPServer {
                     } ?? "WorkTime has not written its agents yet.\n"))
                 }
                 if wanted("notifications"), let notices = noticeAttention(sources.notices) { sections.append("## Notifications from agents\n" + notices) }
-                if wanted("slack"), scope.id == nil || Workspaces.workspace(scope.id, in: workspaces)?.slack != nil, let slack = sources.slack() {
-                    sections.append("## Slack\n" + slack)
-                }
+                if let text = slack?() { sections.append("## Slack\n" + text) }
                 if wanted("meetings"), let items = try? openedStore(opened).openActionItems(limit: 10, since: TodoLogic.meetingCutoff(now: now())) {
                     sections.append("## Meeting action items (not tied to a workspace)\n" + (items.isEmpty ? "None open.\n" : items.map {
                         "- \(ActivityLogic.dateText($0.date)) \u{00B7} \($0.title) (meeting id \($0.meeting)) \u{00B7} "
@@ -235,37 +235,19 @@ extension MCPServer {
         throw MCPToolError("WorkTime did not take \(what) within \(Int(timeout)) seconds. Is the app running?")
     }
 
-    /// Slack mentions still needing the user and unread DMs, with the token the app saved, read without renewing it; nil when Slack is not set up.
-    static func slackAttention(secrets: URL = AppPaths.secrets, now: Date = Date()) -> String? {
+    /// Slack mentions still needing the user and unread DMs, with the token the app saved, read without renewing it. The fetch starts at once;
+    /// the returned call waits for it. Nil when Slack is not set up. `explicit` is a call that asked for Slack alone and may wait for the live answer.
+    static func slackAttention(explicit: Bool, secrets: URL = AppPaths.secrets, now: Date = Date()) -> () -> String? {
         let store = FileSecretStore(folder: secrets, name: TokenStore.slackService)
         guard let stored = store.key(for: TokenStore.slack.account).flatMap({ String(data: $0, encoding: .utf8) }),
-              let auth = SlackAuth(stored: stored) else { return nil }
-        if SlackLogic.needsRefresh(auth, now: now) { return "The Slack sign-in needs renewing; open the Slack panel in WorkTime.\n" }
+              let auth = SlackAuth(stored: stored) else { return { nil } }
+        if SlackLogic.needsRefresh(auth, now: now) { return { "The Slack sign-in needs renewing; open the Slack panel in WorkTime.\n" } }
         let client = SlackClient(token: auth.accessToken)
         let marks = SlackLogic.marks(CFPreferencesCopyAppValue(SlackLogic.marksKey as CFString, appDomain as CFString), now: now)
-        let fetched = blocking(timeout: 25) { () async throws -> String in
-            let me = try await client.identity()
-            let mentions = await client.annotate(try await client.mentions(of: me, now: now), me: me.userID, marks: marks).mentions
-                .filter { $0.handled == nil }
-            let direct = try await client.directMessages(of: me, names: [:], now: now)
-            var names = direct.names
-            let wanted = Set((mentions + direct.messages).flatMap { SlackLogic.mentionedUsers(in: $0.text) + [$0.author].compactMap { $0 } })
-            for id in wanted.filter({ names[$0] == nil }).prefix(20) { names[id] = try? await client.userName(id) }
-            let messages = SlackLogic.merged(mentions: mentions, direct: direct.messages).prefix(10)
-            guard !messages.isEmpty else { return "No mentions or unread DMs.\n" }
-            return messages.map { message in
-                let who = message.author.map { names[$0] ?? $0 } ?? "someone"
-                let kind = message.kind == .direct ? "DM" + (message.unread.map { " (\($0) unread)" } ?? "") : "mention in \(message.place)"
-                let link = SlackLogic.webLink(message, workspace: me.url).map { "\n  \($0.absoluteString)" } ?? ""
-                return "- \(kind) from \(who), \(GitHubLogic.updatedText(message.date, now: now)): "
-                    + AgentOverview.oneLine(ActivityLogic.truncate(SlackLogic.clean(message.text, names: names), to: 200)) + link
-            }.joined(separator: "\n") + "\n"
+        let section = SlackAttention.start(key: auth.accessToken, wait: explicit ? SlackAttention.timeout : SlackAttention.budget) {
+            try await SlackAttention.section(client: client, key: auth.accessToken, marks: marks, now: Date())
         }
-        switch fetched {
-        case .success(let text): return text
-        case .failure(let error): return "Slack could not be read: \(SlackError.from(error).message)\n"
-        case nil: return "Slack did not answer in time.\n"
-        }
+        return { section() }
     }
 
     /// Runs async work from the synchronous tool handlers; nil when it takes longer than `timeout`.

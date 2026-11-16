@@ -148,7 +148,7 @@ let workspaceTests: [(name: String, run: () throws -> Void)] = [
                                   AgentState(key: quiddlyPR, title: "finq.api#7", prURL: quiddlyPR, status: .waiting, pendingTool: "Bash", seen: false, workspace: "work"),
                                   AgentState(key: personalPR, title: "worktime#3", prURL: personalPR, status: .working, workspace: "personal")], now: now).write(to: state)
         func tools(_ environment: String?) -> [MCPTool] {
-            var sources = MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: folder, replyTimeout: 0.2, slack: { "- DM\n" })
+            var sources = MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: folder, replyTimeout: 0.2, slack: { _ in { "- DM\n" } })
             sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.defaults) }, environment: { environment })
             return MCPServer.agentTools(.failure(MCPToolError("no db")), sources: sources, now: { now })
         }

@@ -13,6 +13,12 @@ protocol SlackAPI: Sendable {
 }
 
 extension SlackAPI {
+    /// The names of `ids` looked up at once; the ones Slack did not answer for are left out.
+    func userNames(_ ids: [String]) async -> [String: String] {
+        let found = (try? await SlackClient.concurrentMap(ids) { id in (id, try? await self.userName(id)) }) ?? []
+        return Dictionary(found.compactMap { id, name in name.map { (id, $0) } }) { $1 }
+    }
+
     /// The mentions with why each no longer needs the user, from fresh histories filled in by `cached` where a fetch failed.
     func annotate(_ mentions: [SlackMessage], me: String, marks: [String: SlackHandled],
                   cached: SlackReadState = SlackReadState()) async -> (mentions: [SlackMessage], state: SlackReadState) {
@@ -44,23 +50,34 @@ struct SlackClient: SlackAPI {
     /// The most recent DMs and group DMs, each with its read state and latest message. Names come from `names`, then `users.info`.
     func directMessages(of identity: SlackIdentity, names: [String: String], now: Date) async throws -> SlackDirectMessages {
         let listed = try SlackLogic.parseConversations(await send("conversations.list", ["types": "im,mpim", "exclude_archived": "true", "limit": "200"]))
-        var conversations: [SlackConversation] = []
-        for var conversation in SlackLogic.recent(listed.conversations) {
-            let info = try SlackLogic.parseConversationInfo(await send("conversations.info", ["channel": conversation.id]))
+        let conversations = try await Self.concurrentMap(SlackLogic.recent(listed.conversations)) { conversation in
+            var conversation = conversation
+            let info = try SlackLogic.parseConversationInfo(await self.send("conversations.info", ["channel": conversation.id]))
             conversation.lastRead = info.lastRead
             conversation.unreadDisplay = info.unreadDisplay
             conversation.latest = info.latest
             if conversation.latest == nil && conversation.unreadDisplay != 0 {
-                conversation.latest = try SlackLogic.parseLatest(await send("conversations.history", ["channel": conversation.id, "limit": "1"]))
+                conversation.latest = try SlackLogic.parseLatest(await self.send("conversations.history", ["channel": conversation.id, "limit": "1"]))
             }
-            conversations.append(conversation)
+            return conversation
         }
         var names = names
         let people = Set(conversations.flatMap { [$0.user, $0.latest?.user].compactMap { $0 } }).filter { names[$0] == nil && !$0.hasPrefix("B") }
-        for id in people { names[id] = try? await userName(id) }
+        names.merge(await userNames(Array(people))) { $1 }
         var direct = SlackLogic.directMessages(conversations, me: identity.userID, teamID: identity.teamID, names: names, now: now)
         direct.names = names
         return direct
+    }
+
+    /// Runs `transform` on every item at once; the results come back in the order of `items`.
+    static func concurrentMap<Item: Sendable, Result: Sendable>(_ items: [Item],
+                                                              _ transform: @escaping @Sendable (Item) async throws -> Result) async throws -> [Result] {
+        try await withThrowingTaskGroup(of: (Int, Result).self) { group in
+            for (index, item) in items.enumerated() { group.addTask { (index, try await transform(item)) } }
+            var results: [(Int, Result)] = []
+            for try await result in group { results.append(result) }
+            return results.sorted { $0.0 < $1.0 }.map(\.1)
+        }
     }
 
     func userName(_ id: String) async throws -> String {
@@ -71,26 +88,26 @@ struct SlackClient: SlackAPI {
         _ = try await send("auth.revoke")
     }
 
-    /// One history per channel and one reply list per thread in `plan`. A failed call leaves its entry out; rate limiting stops the rest.
+    private func fetch<T>(_ method: String, _ parameters: [String: String], _ parse: (Data) throws -> T) async -> (value: T?, limited: Bool) {
+        do { return (try parse(await send(method, parameters)), false) } catch SlackError.rateLimited { return (nil, true) } catch { return (nil, false) }
+    }
+
+    /// One history per channel and one reply list per thread in `plan`, the channels at once. A failed call leaves its entry out;
+    /// when Slack rate limits a channel the threads are not asked for.
     func readState(_ plan: SlackReadPlan) async -> SlackReadState {
         var state = SlackReadState()
-        func fetch<T>(_ method: String, _ parameters: [String: String], _ parse: (Data) throws -> T) async throws -> T? {
-            do { return try parse(await send(method, parameters)) } catch let error as SlackError {
-                if case .rateLimited = error { throw error }
-                return nil
-            } catch { return nil }
-        }
-        do {
-            for channel in plan.channels {
-                guard var history = try await fetch("conversations.history", SlackLogic.historyParameters(channel), SlackLogic.parseReadHistory) else { continue }
-                history.lastRead = try await fetch("conversations.info", ["channel": channel.id], SlackLogic.parseConversationInfo)?.lastRead
-                state.channels[channel.id] = history
-            }
-            for thread in plan.threads {
-                state.threads[SlackLogic.threadKey(thread.channel, thread.ts)] =
-                    try await fetch("conversations.replies", SlackLogic.repliesParameters(thread), SlackLogic.parseReadHistory)
-            }
-        } catch {}
+        let channels = (try? await Self.concurrentMap(plan.channels) { channel -> (id: String, history: SlackReadHistory?, limited: Bool) in
+            let (history, limited) = await self.fetch("conversations.history", SlackLogic.historyParameters(channel), SlackLogic.parseReadHistory)
+            guard var history, !limited else { return (channel.id, nil, limited) }
+            history.lastRead = await self.fetch("conversations.info", ["channel": channel.id], SlackLogic.parseConversationInfo).value?.lastRead
+            return (channel.id, history, false)
+        }) ?? []
+        for case (let id, let history?, _) in channels { state.channels[id] = history }
+        guard !channels.contains(where: \.limited) else { return state }
+        let threads = (try? await Self.concurrentMap(plan.threads) { thread in
+            (SlackLogic.threadKey(thread.channel, thread.ts), await self.fetch("conversations.replies", SlackLogic.repliesParameters(thread), SlackLogic.parseReadHistory).value)
+        }) ?? []
+        for (key, history) in threads { state.threads[key] = history }
         return state
     }
 

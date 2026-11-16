@@ -217,7 +217,7 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
                                   AgentState(key: "assistant:personal:developer", title: "Developer", status: .idle, workspace: "personal", kind: "assistant", role: "Developer")],
                                  now: now).write(to: state)
         func tools(_ environment: String?) -> [MCPTool] {
-            var sources = MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: folder, replyTimeout: 0.2, slack: { nil })
+            var sources = MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: folder, replyTimeout: 0.2, slack: { _ in { nil } })
             sources.assistants = files
             sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.defaults) }, environment: { environment })
             return MCPServer.agentTools(.failure(MCPToolError("no db")), sources: sources, now: { now })
@@ -244,7 +244,7 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         files.ensureDefaults("work")
         files.ensureDefaults("personal")
         files.write("---\nname: Planner\n---\n", workspace: "work", slug: "planner")
-        var sources = MCPServer.AgentSources(stateFile: folder.appendingPathComponent("agents.json"), inbox: folder, projects: folder, slack: { nil })
+        var sources = MCPServer.AgentSources(stateFile: folder.appendingPathComponent("agents.json"), inbox: folder, projects: folder, slack: { _ in { nil } })
         sources.assistants = files
         sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.defaults) }, environment: { nil })
         func rule(_ workspace: String, _ args: [String: Any], tool: String = AgentDelegation.tool) -> AgentRule? {

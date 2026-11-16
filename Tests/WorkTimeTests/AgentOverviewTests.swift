@@ -152,7 +152,11 @@ let agentOverviewTests: [(name: String, run: () throws -> Void)] = [
         try AgentOverview.encode([AgentState(key: pull, title: "acme/api#7", prURL: pull, folder: "/repo", sessionID: session, status: .idle,
                                              lastResult: "Looks good", updatedAt: now, seen: false)], now: now).write(to: state)
         var sources = MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: projects, replyTimeout: 3)
-        sources.slack = { "- DM from Anna: hi\n" }
+        nonisolated(unsafe) var asked: [Bool] = []
+        sources.slack = { explicit in
+            asked.append(explicit)
+            return { "- DM from Anna: hi\n" }
+        }
         let tools = MCPServer.agentTools(.failure(MCPToolError("no db")), sources: sources, now: { now })
         func run(_ name: String, _ args: [String: Any] = [:]) -> Result<String, Error> {
             Result { try tools.first { $0.name == name }!.run(args) }
@@ -169,6 +173,11 @@ let agentOverviewTests: [(name: String, run: () throws -> Void)] = [
         let attention = (try? run("attention").get()) ?? ""
         check(attention.contains("## Agents") && attention.contains("acme/api#7") && attention.contains("## Slack\n- DM from Anna"), attention)
         check(!attention.contains("## Meeting action items"), "skipped without a database")
+        check(attention.range(of: "## Agents")!.lowerBound < attention.range(of: "## Slack")!.lowerBound && asked == [false], "Slack stays last and is not waited for alone: \(asked)")
+        _ = try? run("attention", ["section": "slack"]).get()
+        check(asked == [false, true], "section=slack waits for the live answer: \(asked)")
+        _ = try? run("attention", ["section": "agents"]).get()
+        check(asked == [false, true], "no Slack work for another section")
 
         let app = Thread {
             let deadline = Date().addingTimeInterval(3)
@@ -193,7 +202,7 @@ let agentOverviewTests: [(name: String, run: () throws -> Void)] = [
         check((try? run("send_to_agent", ["pr_url": "nope", "text": "x"]).get()) == nil, "bad url refused before the app is asked")
         let quiet = MCPServer.agentTools(.failure(MCPToolError("no db")),
                                          sources: MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: projects, replyTimeout: 0.3,
-                                                                         slack: { nil }), now: { now })
+                                                                         slack: { _ in { nil } }), now: { now })
         let timedOut = Result { try quiet.first { $0.name == "send_to_agent" }!.run(["pr_url": pull, "text": "anyone?"]) }
         if case .failure(let error) = timedOut {
             check(error.localizedDescription.contains("Is the app running?"), error.localizedDescription)

@@ -68,6 +68,55 @@ private final class Calls: @unchecked Sendable {
     var methods: [String] = []
 }
 
+private final class FakeSlack: SlackAPI, @unchecked Sendable {
+    private let lock = NSLock()
+    private var running: [String: Int] = [:]
+    private var recorded: [String] = []
+    private var peaks: [String: Int] = [:]
+    var direct: [SlackMessage] = []
+
+    var calls: [String] { lock.withLock { recorded } }
+    var peak: [String: Int] { lock.withLock { peaks } }
+
+    private func overlap(_ group: String, _ call: String) async {
+        lock.withLock {
+            recorded.append(call)
+            running[group, default: 0] += 1
+            peaks[group] = max(peaks[group] ?? 0, running[group] ?? 0)
+        }
+        for _ in 0..<300 { await Task.yield() }
+        lock.withLock { running[group, default: 0] -= 1 }
+    }
+
+    func identity() async throws -> SlackIdentity {
+        lock.withLock { recorded.append("identity") }
+        return me
+    }
+
+    func mentions(of identity: SlackIdentity, now: Date) async throws -> [SlackMessage] {
+        await overlap("mentions+dm", "mentions")
+        return (1...14).map {
+            SlackMessage(kind: .mention, teamID: "T0ACME", channelID: "C\($0)", place: "#dev", author: "U\($0)", text: "hi <@U1>", ts: ts(Double($0) * 10),
+                         permalink: nil, unread: nil)
+        }
+    }
+
+    func directMessages(of identity: SlackIdentity, names: [String: String], now: Date) async throws -> SlackDirectMessages {
+        await overlap("mentions+dm", "directMessages")
+        return SlackDirectMessages(messages: direct, unreadKnown: true)
+    }
+
+    func userName(_ id: String) async throws -> String {
+        await overlap("userName", "userName \(id)")
+        return "Name \(id)"
+    }
+
+    func readState(_ plan: SlackReadPlan) async -> SlackReadState { SlackReadState() }
+    func revoke() async throws {}
+}
+
+private func hold(_ gate: DispatchSemaphore) { gate.wait() }
+
 private func fake(_ calls: Calls, answer: @escaping @Sendable (String, [String: String]) -> (Int, Data, String?)) -> SlackTransport {
     { request in
         let url = request.url!
@@ -491,6 +540,95 @@ let slackTests: [(name: String, run: () throws -> Void)] = [
         check(result?.mentions.map(\.handled) == [.read, nil, .postedAfter, nil, nil], "\(String(describing: result?.mentions.map(\.handled)))")
         check(result?.state.channels.keys.sorted() == ["C0DEV"], "failures left out")
         check(calls.methods.filter { $0 == "conversations.history C0DEV" }.count == 1, "one history per channel: \(calls.methods)")
-        check(!calls.methods.contains { $0.contains("C0LAST") || $0.hasPrefix("conversations.replies") }, "stopped after the rate limit: \(calls.methods)")
+        check(!calls.methods.contains { $0.hasPrefix("conversations.replies") }, "no threads after the rate limit: \(calls.methods)")
+    }),
+
+    ("attention's Slack cache is fresh for a minute, then stale, and keeps the identity for five", {
+        let cache = SlackAttentionCache()
+        check(cache.lookup("k", now: now) == .missing, "empty")
+        let flight = cache.join("k") { _ in }
+        let entry = SlackAttentionCache.Entry(text: "x\n", date: now)
+        cache.finish("k", flight, text: "x\n", entry: entry)
+        check(cache.lookup("k", now: now.addingTimeInterval(59)) == .fresh(entry), "fresh")
+        check(cache.lookup("k", now: now.addingTimeInterval(61)) == .stale(entry), "stale")
+        check(cache.lookup("other", now: now) == .missing, "keyed by token")
+        cache.remember(identity: me, "k", now: now)
+        check(cache.identity("k", now: now.addingTimeInterval(299)) == me && cache.identity("k", now: now.addingTimeInterval(301)) == nil, "identity")
+        let marked = SlackAttention.marked(entry, timeZone: TimeZone(identifier: "UTC")!)
+        check(marked == "As of 07:33.\nx\n", marked)
+    }),
+
+    ("attention's Slack section serves the cache, refreshes a stale one behind it and gives a slow first call a note", {
+        nonisolated(unsafe) var clock = now
+        nonisolated(unsafe) var fetches = 0
+        let gate = DispatchSemaphore(value: 0)
+        let cache = SlackAttentionCache()
+        func ask(wait: TimeInterval = 5, _ body: @escaping @Sendable () async throws -> String) -> String {
+            SlackAttention.start(key: "k", cache: cache, wait: wait, now: { clock }, timeZone: TimeZone(identifier: "UTC")!, fetch: body)()
+        }
+        func until(_ condition: () -> Bool) { for _ in 0..<2000 where !condition() { Thread.sleep(forTimeInterval: 0.001) } }
+        let slow = ask(wait: 0.05) { hold(gate); fetches += 1; return "- DM\n" }
+        check(slow == SlackAttention.loading, "over the budget: \(slow)")
+        gate.signal()
+        until { cache.lookup("k", now: clock) != .missing }
+        check(fetches == 1 && cache.lookup("k", now: clock) == .fresh(.init(text: "- DM\n", date: now)), "the fetch finished into the cache")
+        let second = ask { fetches += 1; return "never\n" }
+        check(second == "As of 07:33.\n- DM\n" && fetches == 1, "fresh, so no new fetch: \(second)")
+        clock = now.addingTimeInterval(120)
+        let third = ask { fetches += 1; return "- newer\n" }
+        check(third == "As of 07:33.\n- DM\n", "stale is served at once: \(third)")
+        until { cache.lookup("k", now: clock) == .fresh(.init(text: "- newer\n", date: clock)) }
+        check(fetches == 2 && ask { "unused\n" } == "As of 07:35.\n- newer\n", "refreshed in the background")
+        let failing = SlackAttentionCache()
+        let failed = SlackAttention.start(key: "k", cache: failing, wait: 5, now: { clock }) { throw SlackError.offline }()
+        check(failed.hasPrefix("Slack could not be read") && failing.lookup("k", now: clock) == .missing, "a failure is not cached: \(failed)")
+    }),
+
+    ("attention's Slack section starts one fetch for calls that overlap and waits for it", {
+        nonisolated(unsafe) var fetches = 0
+        let gate = DispatchSemaphore(value: 0)
+        let cache = SlackAttentionCache()
+        let first = SlackAttention.start(key: "k", cache: cache, wait: 5) { hold(gate); fetches += 1; return "- DM\n" }
+        let second = SlackAttention.start(key: "k", cache: cache, wait: 5) { fetches += 100; return "other\n" }
+        gate.signal()
+        check(first() == "- DM\n" && second() == "- DM\n" && fetches == 1, "one fetch for both: \(fetches)")
+    }),
+
+    ("attention looks each person up once, skips the known and caps the lookups, and serves network tools beside other calls", {
+        let wanted = ["U1", "U2", "U1", "U3", "U4", "U5"]
+        let capped = SlackAttention.lookups(wanted, known: ["U2": "Bo"], cap: 3)
+        check(capped == ["U1", "U3", "U4"], "\(capped)")
+        check(SlackAttention.lookups(wanted, known: [:]).count == 5 && SlackAttention.nameCap <= 12, "default cap")
+        check(MCPServer.callsNetworkTool(#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"attention"}}"#), "attention")
+        check(!MCPServer.callsNetworkTool(#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"recent_meetings"}}"#), "local tools stay in order")
+        check(!MCPServer.callsNetworkTool(#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"attention"}}"#) && !MCPServer.callsNetworkTool("x"), "not a request")
+    }),
+
+    ("attention's Slack section leaves out a DM the user dismissed", {
+        let slack = FakeSlack()
+        slack.direct = [SlackMessage(kind: .direct, teamID: "T0ACME", channelID: "D1", place: "Anna", author: "U1", text: "lunch?", ts: ts(5), permalink: nil, unread: 1),
+                        SlackMessage(kind: .direct, teamID: "T0ACME", channelID: "D2", place: "Bo", author: "U2", text: "ping", ts: ts(6), permalink: nil, unread: 1)]
+        nonisolated(unsafe) var listed = ""
+        nonisolated(unsafe) var hidden = ""
+        try blocking {
+            listed = try await SlackAttention.section(client: slack, key: "a", cache: SlackAttentionCache(), marks: [:], now: now)
+            hidden = try await SlackAttention.section(client: slack, key: "b", cache: SlackAttentionCache(), marks: [slack.direct[0].id: .dismissed], now: now)
+        }
+        check(listed.contains("lunch?") && listed.contains("ping"), listed)
+        check(!hidden.contains("lunch?") && hidden.contains("ping"), hidden)
+    }),
+
+    ("attention's Slack section runs the searches and name lookups together and caches names and identity", {
+        let slack = FakeSlack()
+        let cache = SlackAttentionCache()
+        nonisolated(unsafe) var text = ""
+        try blocking { text = try await SlackAttention.section(client: slack, key: "k", cache: cache, marks: [:], now: now) }
+        check((slack.peak["mentions+dm"] ?? 0) >= 2, "mentions and DMs overlapped: \(slack.peak)")
+        check((slack.peak["userName"] ?? 0) >= 2, "names overlapped: \(slack.peak)")
+        let looked = slack.calls.filter { $0.hasPrefix("userName ") }
+        check(looked.count == 10 && Set(looked).count == 10, "one lookup per person shown: \(looked)")
+        check(text.components(separatedBy: "\n- ").count == 10 && text.contains("from Name U1"), text)
+        try blocking { _ = try await SlackAttention.section(client: slack, key: "k", cache: cache, marks: [:], now: now) }
+        check(slack.calls.filter { $0 == "identity" }.count == 1 && slack.calls.filter { $0.hasPrefix("userName ") }.count == 10, "identity and names cached: \(slack.calls)")
     }),
 ]

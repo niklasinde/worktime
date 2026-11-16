@@ -105,11 +105,27 @@ struct MCPServer {
         let server = MCPServer(tools: meetingTools(store) + github + agentTools(store, github: github) + topicTools() + resumeTools(store) + noticeTools()
                                    + reminderTools() + briefTools(),
                                version: version)
+        let output = DispatchQueue(label: "worktime.mcp.output"), slow = DispatchQueue(label: "worktime.mcp.slow", attributes: .concurrent)
+        let running = DispatchGroup()
         while let line = readLine() {
-            guard !line.trimmingCharacters(in: .whitespaces).isEmpty, let response = server.handle(line) else { continue }
-            FileHandle.standardOutput.write(Data((response + "\n").utf8))
+            guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            let answer = {
+                guard let response = server.handle(line) else { return }
+                output.sync { FileHandle.standardOutput.write(Data((response + "\n").utf8)) }
+            }
+            if callsNetworkTool(line) { slow.async(group: running, execute: answer) } else { answer() }
         }
+        running.wait()
         exit(0)
+    }
+
+    /// The tools that wait on a network answer; a call to one is served beside the next messages instead of holding them up.
+    static let networkTools: Set<String> = ["attention", "slack_search", "slack_thread", "jira_issue", "jira_search", "github_pr"]
+
+    static func callsNetworkTool(_ line: String) -> Bool {
+        guard let message = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], message["method"] as? String == "tools/call",
+              message["id"] != nil, let name = (message["params"] as? [String: Any])?["name"] as? String else { return false }
+        return networkTools.contains(name)
     }
 }
 

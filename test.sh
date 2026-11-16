@@ -81,6 +81,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AgentSessionLogic.swift \
     Sources/WorkTime/AgentWorkMapLogic.swift \
     Sources/WorkTime/MCPAgents.swift \
+    Sources/WorkTime/MCPSlackAttention.swift \
     Sources/WorkTime/MCPTopics.swift \
     Sources/WorkTime/AgentTopicLogic.swift \
     Sources/WorkTime/ClaudeImportLogic.swift \
