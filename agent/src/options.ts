@@ -15,6 +15,7 @@ export function sessionOptions(input: PromptOptions, model: string, mode: Mode):
     ...(input.sessionId && input.forkSession === true ? { forkSession: true } : {}),
     tools,
     ...(input.appendSystemPrompt ? { systemPrompt: { type: "preset", preset: "claude_code", append: input.appendSystemPrompt } } : {}),
+    includePartialMessages: true,
     permissionMode: mode,
     settingSources: ["project"],
     extraArgs: chromeArgs(input.chrome === true),

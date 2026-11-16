@@ -18,3 +18,7 @@ test("the MCP server gets the Main's workspace only when there is one", () => {
   assert.deepEqual(mcpServers({ WORKTIME_MCP_COMMAND: "/app", WORKTIME_WORKSPACE: "work", WORKTIME_AGENT: "topic:abc" }).worktime,
     { type: "stdio", command: "/app", args: ["--mcp"], env: { WORKTIME_WORKSPACE: "work", WORKTIME_AGENT: "topic:abc" } });
 });
+
+test("partial messages are on, so the reply streams", () => {
+  assert.equal(sessionOptions({ cwd: "/repo" }, "m", "default").includePartialMessages, true);
+});

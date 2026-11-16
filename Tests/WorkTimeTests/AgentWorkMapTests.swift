@@ -83,6 +83,15 @@ let agentWorkMapTests: [(name: String, run: () throws -> Void)] = [
         check(map.counts == [.you: 1, .model: 2, .network: 1], "\(map.counts)")
         check(map.status() == "Model: opus 5.5 \u{00B7} step 2 \u{00B7} context 10%", map.status())
     }),
+    ("work map: streamed text keeps the model running and adds no step until the complete text", {
+        var map = WorkMap()
+        map.prompt(model: "claude-opus-5-5", at: at(0))
+        map.receive(["type": "text_delta", "text": "Hel"], cwd: "/repo", at: at(1))
+        map.receive(["type": "text_delta", "text": "lo"], cwd: "/repo", at: at(1.5))
+        check(map.active == .model && map.events.count == 2 && map.step == 1, "deltas are model activity, not events")
+        map.receive(["type": "text", "text": "Hello"], cwd: "/repo", at: at(2))
+        check(map.active == nil && map.events.count == 2 && map.events[1].durationText == "2.0 s", map.events[1].durationText ?? "nil")
+    }),
     ("work map: parallel calls keep the model waiting until the last result", {
         var map = WorkMap()
         map.prompt(model: "claude-sonnet-5-5", at: at(0))

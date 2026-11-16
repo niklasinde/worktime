@@ -5,6 +5,8 @@ enum AgentEvent: Equatable {
     case ready(model: String)
     case session(String)
     case text(String)
+    /// Text generated so far; the complete `text` that follows replaces it.
+    case textDelta(String)
     case toolUse(id: String, tool: String, summary: String, detail: String)
     case toolResult(id: String, content: String, isError: Bool, auto: Bool, rule: String? = nil)
     case permissionRequest(id: String, tool: String, summary: String, detail: String, offer: [AgentRule] = [])
@@ -26,6 +28,7 @@ enum AgentEvent: Equatable {
         case "ready": return .ready(model: string("model"))
         case "session": return .session(string("sessionId"))
         case "text": return .text(string("text"))
+        case "text_delta": return .textDelta(string("text"))
         case "tool_use":
             return .toolUse(id: string("id"), tool: string("tool"), summary: AgentLogic.summary(tool: string("tool"), input: input, cwd: cwd),
                             detail: AgentLogic.detail(tool: string("tool"), input: input))
@@ -156,6 +159,8 @@ struct AgentItem: Identifiable, Equatable {
 
     let id: String
     var kind: Kind
+    /// A text still being generated: more of it can arrive, and the complete text replaces it.
+    var streaming = false
 }
 
 enum AgentLogic {
@@ -175,10 +180,24 @@ enum AgentLogic {
     @discardableResult
     static func apply(_ event: AgentEvent, to items: inout [AgentItem]) -> String? {
         switch event {
-        case .ready, .idle, .chrome: return nil
+        case .ready, .chrome: return nil
+        case .idle:
+            settleStreaming(in: &items)
+            return nil
         case .session(let id): return id
+        case .textDelta(let delta):
+            if let last = items.indices.last, items[last].streaming, case .text(let text) = items[last].kind {
+                items[last].kind = .text(text + delta)
+            } else {
+                items.append(AgentItem(id: "text-\(items.count)", kind: .text(delta), streaming: true))
+            }
         case .text(let text):
-            items.append(AgentItem(id: "text-\(items.count)", kind: .text(text)))
+            if let index = items.firstIndex(where: \.streaming) {
+                items[index].kind = .text(text)
+                items[index].streaming = false
+            } else {
+                items.append(AgentItem(id: "text-\(items.count)", kind: .text(text)))
+            }
         case .toolUse(let id, let tool, let summary, let detail):
             items.append(AgentItem(id: "tool-\(id)", kind: .tool(name: tool, summary: summary, detail: detail, result: nil, isError: false, auto: false)))
         case .toolResult(let id, let content, let isError, let auto, let rule):
@@ -189,6 +208,7 @@ enum AgentLogic {
             items.append(AgentItem(id: "permission-\(id)-\(items.count)",
                                    kind: .permission(tool: tool, summary: summary, detail: detail, offer: offer, allowed: nil)))
         case .result(let sessionID, let isError, let text, let turns, let model, let mode):
+            settleStreaming(in: &items)
             if isError, needsSignIn(text) {
                 appendSignIn(to: &items)
             } else if isError {
@@ -198,6 +218,7 @@ enum AgentLogic {
             }
             return sessionID
         case .error(let message):
+            settleStreaming(in: &items)
             items.append(AgentItem(id: "error-\(items.count)", kind: .error(message)))
         case .signIn:
             appendSignIn(to: &items)
@@ -206,6 +227,11 @@ enum AgentLogic {
             items.append(AgentItem(id: "missing-folder-\(items.count)", kind: .missingFolder(folder)))
         }
         return nil
+    }
+
+    /// The turn ended without the complete text of what was streamed (stopped or failed): what arrived stays as it is.
+    static func settleStreaming(in items: inout [AgentItem]) {
+        for index in items.indices where items[index].streaming { items[index].streaming = false }
     }
 
     static func appendSignIn(to items: inout [AgentItem]) {

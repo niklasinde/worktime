@@ -605,6 +605,7 @@ final class AgentModel: ObservableObject {
         client = nil
         guard busy else { return }
         busy = false
+        AgentLogic.settleStreaming(in: &items)
         workMap.finish(at: Date())
         resultSeen = visiblePanes > 0
         if AgentLogic.needsSignIn(errors) { return AgentLogic.appendSignIn(to: &items) }

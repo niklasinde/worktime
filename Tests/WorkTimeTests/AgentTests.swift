@@ -8,9 +8,48 @@ private let existing: Set<String> = ["/repo/Sources/App.swift", "/repo/README.md
 private let exists = { (path: String) in existing.contains(path) }
 
 let agentTests: [(name: String, run: () throws -> Void)] = [
+    ("agent: streamed text grows one item that the complete text replaces without duplicating", {
+        var items: [AgentItem] = [AgentItem(id: "user-0", kind: .user("hi"))]
+        AgentLogic.apply(.textDelta("Hel"), to: &items)
+        AgentLogic.apply(.textDelta("lo"), to: &items)
+        check(items.count == 2 && items[1].kind == .text("Hello") && items[1].streaming, "grows in place")
+        let id = items[1].id
+        AgentLogic.apply(.text("Hello there"), to: &items)
+        check(items.count == 2 && items[1].kind == .text("Hello there") && !items[1].streaming && items[1].id == id, "finalised in place")
+        AgentLogic.apply(.text("Second"), to: &items)
+        check(items.count == 3 && items[2].kind == .text("Second"), "a text that was not streamed is added")
+        AgentLogic.apply(.textDelta("Third"), to: &items)
+        check(items.count == 4 && items[3].streaming, "a new message starts a new item")
+        check(Set(items.map(\.id)).count == items.count, "ids are unique")
+    }),
+    ("agent: a tool call after streamed text keeps the text in place and the complete text still finalises it", {
+        var items: [AgentItem] = []
+        AgentLogic.apply(.textDelta("Let me look"), to: &items)
+        AgentLogic.apply(.toolUse(id: "t1", tool: "Read", summary: "a", detail: ""), to: &items)
+        AgentLogic.apply(.textDelta(" more"), to: &items)
+        check(items.count == 3 && items[0].kind == .text("Let me look") && items[2].kind == .text(" more"), "deltas after a tool call are a new item")
+        AgentLogic.apply(.text("Let me look"), to: &items)
+        check(items[0].kind == .text("Let me look") && !items[0].streaming && items[2].streaming, "oldest streamed text is finalised first")
+        AgentLogic.apply(.text("Done"), to: &items)
+        AgentLogic.apply(.result(sessionID: "s", isError: false, text: "", turns: 1, model: nil), to: &items)
+        check(items.filter { if case .text = $0.kind { true } else { false } }.count == 2, "no duplicates")
+        check(items.allSatisfy { !$0.streaming }, "nothing left streaming")
+    }),
+    ("agent: a stop or an error mid-stream keeps what arrived and ends the streaming", {
+        var items: [AgentItem] = []
+        AgentLogic.apply(.textDelta("Partial"), to: &items)
+        AgentLogic.apply(.error("Stopped."), to: &items)
+        check(items[0].kind == .text("Partial") && !items[0].streaming && items.last?.kind == .error("Stopped."), "error")
+        AgentLogic.apply(.textDelta("Again"), to: &items)
+        AgentLogic.apply(.idle, to: &items)
+        check(items[2].kind == .text("Again") && !items[2].streaming, "idle")
+        AgentLogic.apply(.textDelta("New"), to: &items)
+        check(items.count == 4 && items[3].streaming, "the next prompt streams into its own item")
+    }),
     ("agent: sidecar lines decode into events with short tool summaries", {
         check(AgentEvent.decode(#"{"type":"session","sessionId":"s1"}"#, cwd: cwd) == .session("s1"), "session")
         check(AgentEvent.decode(#"{"type":"text","text":"Hi"}"#, cwd: cwd) == .text("Hi"), "text")
+        check(AgentEvent.decode(#"{"type":"text_delta","text":"H"}"#, cwd: cwd) == .textDelta("H"), "text delta")
         if case .toolUse(let id, let tool, let summary, let detail)? = AgentEvent.decode(
             #"{"type":"tool_use","id":"t1","tool":"Read","input":{"file_path":"/repo/Sources/App.swift"}}"#, cwd: cwd) {
             check(id == "t1" && tool == "Read" && summary == "Sources/App.swift", "read summary \(summary)")

@@ -5,6 +5,7 @@ import { chromeResultStatus, chromeServerStatus, isChromeTool } from "./chrome.j
 import { mcpServers, sessionOptions, type PromptOptions } from "./options.js";
 import { parseMode, preToolDecision, type Decision, type Mode } from "./permissions.js";
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
+import { TextStream } from "./stream.js";
 import { delegateTool, hasDelegateRules, matchDelegate, parseRules, suggestRules, type Rule } from "./rules.js";
 
 type Input =
@@ -25,6 +26,7 @@ const resultLimit = 4000;
 const authErrors = ["authentication_failed", "oauth_org_not_allowed"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"].includes(key)));
 
+const stream = new TextStream(send);
 const resolving = new Map<string, (key?: string) => void>();
 const resolveTimeout = 5000;
 const pending = new Map<string, (result: PermissionResult) => void>();
@@ -114,6 +116,8 @@ function resultText(content: unknown): string {
 }
 
 function forward(message: any, model: string) {
+  if (message.type === "stream_event") return stream.receive(message);
+  stream.flush();
   switch (message.type) {
     case "system":
       if (message.subtype === "init") {
@@ -205,11 +209,13 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
       finished ||= message.type === "result";
     }
   } catch (error) {
+    stream.flush();
     if (!finished) {
       send(abort.signal.aborted ? { type: "error", message: "Stopped." }
         : missingFolderError(input.cwd) ?? { type: "error", message: String((error as Error)?.message ?? error) });
     }
   } finally {
+    stream.flush();
     denyPending("The prompt ended.");
     autoAllowed.clear();
     hookAllowed.clear();
