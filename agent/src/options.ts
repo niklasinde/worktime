@@ -1,6 +1,7 @@
 import type { McpServerConfig, Options } from "@anthropic-ai/claude-agent-sdk";
 import { chromeArgs } from "./chrome.js";
 import { userSubagents } from "./subagents.js";
+import { userContext } from "./usercontext.js";
 import type { Mode } from "./permissions.js";
 
 export const tools = ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Agent"];
@@ -9,13 +10,14 @@ export type PromptOptions = { cwd: string; sessionId?: string; forkSession?: boo
 
 /// The session options that come from the prompt; the sidecar adds its environment, MCP servers, hooks and permission callback.
 export function sessionOptions(input: PromptOptions, model: string, mode: Mode): Options {
+  const append = [userContext(process.env.HOME, input.cwd), input.appendSystemPrompt].filter(Boolean).join("\n\n");
   return {
     model,
     cwd: input.cwd,
     resume: input.sessionId,
     ...(input.sessionId && input.forkSession === true ? { forkSession: true } : {}),
     tools,
-    ...(input.appendSystemPrompt ? { systemPrompt: { type: "preset", preset: "claude_code", append: input.appendSystemPrompt } } : {}),
+    ...(append ? { systemPrompt: { type: "preset", preset: "claude_code", append } } : {}),
     includePartialMessages: true,
     permissionMode: mode,
     settingSources: ["project"],
