@@ -248,7 +248,8 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
             .appendingPathComponent("agent/src/\(AgentBuiltIn.fileName)")
         guard let builtIn = AgentBuiltIn.decode(try? Data(contentsOf: file)) else { return check(false, "\(file.path) decodes") }
         let alwaysAsk = ["send_to_agent", "send_to_main", "complete_reminder", "create_routine", "update_routine", "set_routine_enabled", "delete_routine", "compile_routine",
-                         "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant"]
+                         "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant",
+                         "create_workspace", "update_workspace", "create_space", "update_space", "delete_space", "tag_session"]
         check(builtIn.alwaysAsk == alwaysAsk.map { builtIn.mcpPrefix + $0 } && alwaysAsk.allSatisfy(MCPServer.toolNames.contains), "\(builtIn.alwaysAsk) always ask")
         let risky = builtIn.alwaysAskRisky ?? []
         check(risky.contains(builtIn.mcpPrefix + "send_to_agent") && risky.contains(builtIn.mcpPrefix + "create_routine") && Set(risky).count == risky.count

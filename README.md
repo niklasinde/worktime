@@ -750,7 +750,7 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   cannot report to itself; each agent may send 6 reports an hour and have 2 waiting at a time, and the same text twice in ten minutes
   is dropped. It asks like the other write tools (Always allow, or a Don't ask switch in Settings > Agent > Tools that ask); a routine
   or automation, which cannot be asked, is refused unless that switch is on.
-- **Tools that ask.** `send_to_agent`, `send_to_main`, `complete_reminder` and the routine, automation and assistant changes ask the user, and their permission
+- **Tools that ask.** `send_to_agent`, `send_to_main`, `complete_reminder` and the routine, automation, assistant and workspace changes ask the user, and their permission
   card offers Allow for this session and Always allow (send to agent only per agent, as above), with a warning for the ones that create or delete
   what runs on its own or send prompts. Settings > Agent > Tools that ask has a Don't ask switch per tool, with a confirmation for those; it is
   saved as a rule like any Always allow. Plan mode still asks, and routines and automations never skip the question, as nobody is there to see it
@@ -1083,6 +1083,59 @@ What it adds:
   message when the cache is empty or GitHub is off in Settings.
 - `/meeting-context [hours]` and `/time-report [week]`, and a skill telling Claude when to use the tools ("what did
   we decide in the standup", "what was I working on").
+- `/worktime-status`, and the `worktime-link` skill, which lists every tool of the server for a session that coordinates WorkTime.
+
+### Driving WorkTime from Claude Code
+
+A Claude Code session can be the user's coordinator: it observes with read tools, acts with a few write tools, and never answers for the
+user. The app publishes what the `--mcp` process reads as files next to `agents.json`: `decisions.json` (what waits for the user), `timeline.json`
+(the timeline of the 60 most recently active tickets and pull requests, 80 events each, built from the sessions' transcripts by the app, never by
+the MCP process), `app.json` (version, commit, pid, workspaces, working sessions, plan windows) and `events.json` (the last 200 events, ids that only grow).
+Writes go through the agent inbox, as for the other tools, and are applied by the running app.
+
+Observe (all read-only):
+
+- `pending_decisions(kind?)`: permission prompts (agent, tool, one-line input, age), reuse-or-new questions, missing-tool requests, blocked turns, review drafts
+  ready (pull request, verdict, comment count), automation questions and urgent notifications, each with an id and a `worktime://` link. No tool answers, approves,
+  posts or allows any of them; a test pins that no write tool takes a decision as an argument.
+- `request_status(request_id)`: pending, answered, created, started, timed_out or refused, with the session id and the resolved ticket or session.
+- `wait_for(session_id | request_id | ticket, until?, timeout_seconds?)`: long poll, `until` idle, finished, needs_you or any, at most 600 seconds; it returns the new
+  state and, when finished, the last result. It runs beside other messages and never waits past its timeout.
+- `events_since(cursor?, limit?)`: without a cursor the newest cursor and the last 20 events; with one, what came after. Events: session started, finished, errored, waiting;
+  decision raised, answered; review posted; automation fired; routine ran; app restarted. The polling alternative to `wait_for`.
+- `ticket_timeline(ticket | pr_url, limit?)` and `outcomes(ticket?, space?, since?)`: what the Timeline page shows, and a table of the latest verdict per ticket.
+- `app_info`: version, git commit (embedded by `build.sh`; the build date without it), pid, start time and uptime, data folder, workspaces and spaces, working and waiting sessions,
+  sidecar status, the plan windows when cached, and whether a restart would interrupt running work (the working sessions, queued prompts, a recording).
+- `usage_summary(range?, group_by?)`: the usage log by today, 7d or 30d, grouped by workspace, agent, routine, automation or model.
+- `workspaces(workspace?)`: workspaces with folders, GitHub owners, Jira projects, Slack and spaces. `agents_overview` also takes `since`.
+
+Act:
+
+- `send_to_agent` with `agent: "Main"` (and `workspace`) sends a prompt into that workspace's Main, shown as "From Claude Code · <folder>". It is delivered like `send_to_main`
+  (6 an hour and 2 waiting per caller, the same text twice in ten minutes dropped) and a Main cannot send to its own workspace's Main. With `async: true` it returns at once
+  with a `request_id` instead of waiting for the user's answer to a reuse-or-new question; follow it with `request_status` or `wait_for`.
+- `open_in_app(session_id | ticket | pr_url | page)`: brings WorkTime to the front on that item. It only navigates and asks nothing. The same targets work as
+  `worktime://open?agent=<key>`, `?ticket=<KEY>`, `?pr=<url>` and `?page=<name>` links.
+- `create_workspace`, `update_workspace`, `create_space`, `update_space`, `delete_space` and `tag_session(session_id | ticket, spaces)`: workspace configuration without editing
+  JSON, checked like Settings > Agent (a free name, folders that are absolute or start with ~/, GitHub names, Jira keys, SF Symbol names, at most 12 workspaces and 12 spaces)
+  and applied at once: a new workspace gets its Main and MAIN.md without a restart. They are in the always-ask list, so they ask like the routine and assistant changes.
+
+After updating WorkTime, reconnect the MCP server in Claude Code (`/mcp`): a connection keeps the tools it started with. The server declares `tools.listChanged`, puts a
+`schema_version` at the end of its instructions and sends `notifications/tools/list_changed` when its tools differ from the previous run's; `app_info` says when the app's
+schema is newer than the connection's. A test fails when a tool of the server is missing from this README or from the plugin's skills.
+
+Every tool of the server, in one line each:
+
+- Meetings: `recent_meetings`, `search_meetings`, `get_meeting`, `meetings_on`, `get_notes`, `read_transcript`, `search_in_meeting`, `open_action_items` and `meeting_brief`.
+- Activity: `activity_context`, `activity_on`, `blocks_in_range`, `block_details`, `time_report` and `resume_context`.
+- GitHub, Jira, Slack: `github_prs`, `github_pr`, `github_needs_attention`, `jira_issue`, `jira_search`, `slack_search` and `slack_thread`.
+- Agents: `agents_overview`, `agent_session`, `attention`, `send_to_agent`, `send_to_main`, `pending_decisions`, `request_status`, `wait_for`, `events_since`, `ticket_timeline`, `outcomes`,
+  `app_info`, `usage_summary` and `open_in_app`.
+- Notifications and reminders: `notify`, `scheduled_notifications`, `cancel_notification`, `reminders`, `add_reminder` and `complete_reminder`.
+- Routines and automations: `routines`, `create_routine`, `update_routine`, `set_routine_enabled`, `delete_routine`, `analyze_routine`, `compile_routine`, `automations`,
+  `create_automation`, `update_automation` and `delete_automation`.
+- Assistants: `assistants`, `create_assistant`, `update_assistant` and `delete_assistant`.
+- Workspaces: `workspaces`, `create_workspace`, `update_workspace`, `create_space`, `update_space`, `delete_space` and `tag_session`.
 
 Privacy: everything stays on the Mac. Prompt text, tool input and tool output are never written; only the prompt's
 length is. `WORKTIME_HOOK_PROMPTS=1` (or `MEETING_RECORDER_HOOK_PROMPTS=1`) in Claude Code's environment keeps the first 500 characters of each

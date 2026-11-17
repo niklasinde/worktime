@@ -50,5 +50,11 @@ if BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null)"; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
 fi
 
+if COMMIT="$(git rev-parse --short HEAD 2>/dev/null)"; then
+    [ -z "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] || COMMIT="$COMMIT-dirty"
+    /usr/libexec/PlistBuddy -c "Add :WorkTimeCommit string $COMMIT" "$APP/Contents/Info.plist"
+fi
+/usr/libexec/PlistBuddy -c "Add :WorkTimeBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" "$APP/Contents/Info.plist"
+
 codesign --force --options runtime --sign "$SIGN" --entitlements WorkTime.entitlements "$APP"
 echo "Built $APP"

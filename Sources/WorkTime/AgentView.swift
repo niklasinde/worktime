@@ -10,7 +10,7 @@ final class AgentHub: ObservableObject {
     static let lastMainKey = "agentLastMain"
 
     /// Each workspace's Main by its id.
-    let mains: [String: AgentModel]
+    private(set) var mains: [String: AgentModel]
     @Published var selected: String {
         didSet { if Workspaces.isMainKey(selected) { UserDefaults.standard.set(selected, forKey: Self.lastMainKey) } }
     }
@@ -25,6 +25,13 @@ final class AgentHub: ObservableObject {
         let last = UserDefaults.standard.string(forKey: Self.lastMainKey).flatMap(Workspaces.id(ofMainKey:))
         mains = made
         selected = Workspaces.mainKey(last.flatMap { made[$0] == nil ? nil : $0 } ?? workspaces.first?.id ?? Workspaces.defaultID)
+    }
+
+    /// A workspace made while the app runs gets its Main at once.
+    func addMain(for workspace: Workspace) {
+        guard mains[workspace.id] == nil else { return }
+        mains[workspace.id] = AgentModel(main: workspace)
+        objectWillChange.send()
     }
 
     var isMainSelected: Bool { Workspaces.isMainKey(selected) }

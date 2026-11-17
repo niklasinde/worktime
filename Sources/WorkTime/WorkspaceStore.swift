@@ -76,6 +76,23 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
+    /// A workspace tool's request, applied at once: a new workspace gets its Main and its MAIN.md without a restart.
+    func handle(_ request: WorkspaceRequest) -> NoticeReply {
+        let outcome = WorkspaceRequests.handle(request, file: file, agents: AgentStateWriter.shared.states(), now: Date())
+        guard outcome.reply.ok, let change = outcome.change else { return outcome.reply }
+        switch change {
+        case .create(let workspace):
+            file.workspaces.append(workspace)
+            instructions.ensure(workspace)
+            AgentHub.shared.addMain(for: workspace)
+            save()
+        case .update(let workspace): update(workspace)
+        case .removeSpace(let id, let workspace): removeSpace(id, from: workspace)
+        case .tag(let keys, let spaces): keys.forEach { setSpaces(spaces, for: $0) }
+        }
+        return outcome.reply
+    }
+
     func mainPrompt(for id: String) -> String {
         guard let workspace = workspace(id) else { return AgentLogic.mainBasePrompt }
         let prompt = instructions.prompt(for: workspace, others: workspaces.filter { $0.id != workspace.id })

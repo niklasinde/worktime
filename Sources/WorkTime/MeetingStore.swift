@@ -49,6 +49,14 @@ enum AppPaths {
     /// What each call to Claude used, one JSON line per call, kept for half a year.
     static var usageLog: URL { support.appendingPathComponent("usage.jsonl") }
 
+    /// What waits for the user, the sessions' timelines, the app's own facts and the feed of events, written by the app for the MCP server.
+    static var decisionState: URL { support.appendingPathComponent(PendingDecisions.fileName) }
+    static var timelineState: URL { support.appendingPathComponent(TimelineSnapshots.fileName) }
+    static var appInfo: URL { support.appendingPathComponent(AppInfos.fileName) }
+    static var eventLog: URL { support.appendingPathComponent(AppEvents.fileName) }
+    /// The tool set the last `--mcp` run offered, to tell a client when it changed.
+    static var mcpTools: URL { support.appendingPathComponent("mcp-tools.json") }
+
     /// The workspaces and the folders holding each one's MAIN.md.
     static var workspaceFile: URL { support.appendingPathComponent("workspaces.json") }
     static var workspaceFolders: URL { support.appendingPathComponent("Workspaces", isDirectory: true) }

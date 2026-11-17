@@ -189,7 +189,9 @@ final class AgentStateWriter: ObservableObject {
         scheduled = false
         revision += 1
         guard let url else { return }
-        let data = AgentOverview.encode(states(), now: Date())
+        let current = states()
+        StatePublisher.shared.publish(states: current)
+        let data = AgentOverview.encode(current, now: Date())
         DispatchQueue.global(qos: .utility).async {
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
@@ -249,6 +251,7 @@ final class AgentInboxWatcher {
         self.folder = folder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         timer?.invalidate()
+        purge()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
         }
@@ -270,6 +273,12 @@ final class AgentInboxWatcher {
         for request in take(BriefRequest.self, where: MeetingBriefLogic.isRequest) {
             Task { @MainActor in answer(await MeetingBriefModel.shared.answer(request), to: request.id) }
         }
+        for request in take(WorkspaceRequest.self, where: WorkspaceRequests.isRequest) {
+            answer(WorkspaceStore.shared.handle(request), to: request.id)
+        }
+        for request in take(OpenRequest.self, where: OpenLinks.isRequest) {
+            answer(Self.open(request), to: request.id)
+        }
         for request in take(AgentInbox.Request.self, where: AgentInbox.isRequest) {
             Task { @MainActor in answer(await Self.route(request), to: request.id) }
         }
@@ -279,6 +288,27 @@ final class AgentInboxWatcher {
     }
 
     @MainActor static var reports = AgentReports.Ledger()
+
+    /// What the app does to show an `open_in_app` target; the app delegate sets it.
+    @MainActor static var openHandler: ((OpenTarget) -> Void)?
+
+    @MainActor static func open(_ request: OpenRequest) -> NoticeReply {
+        switch OpenLinks.target(request, agents: AgentStateWriter.shared.states()) {
+        case .failure(let error): return NoticeReply(id: request.id, ok: false, notice: nil, message: error.message)
+        case .success(let target):
+            openHandler?(target)
+            return NoticeReply(id: request.id, ok: true, notice: nil, message: "Showing it in WorkTime.")
+        }
+    }
+
+    /// Async requests' records and replies nobody read are dropped after a day.
+    private func purge(now: Date = Date()) {
+        let fileManager = FileManager.default
+        for name in (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? [] where RequestStatuses.isRecord(name) || name.hasSuffix(".reply.json") {
+            let url = folder.appendingPathComponent(name)
+            if let date = (try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date, now.timeIntervalSince(date) > 86_400 { try? fileManager.removeItem(at: url) }
+        }
+    }
 
     /// An agent's send_to_main: checked against the limits, then handed to the Main it names, with a notification unless the user is looking at it.
     @MainActor static func report(_ request: ReportRequest, now: Date = Date(), hub: AgentHub? = nil) -> NoticeReply {

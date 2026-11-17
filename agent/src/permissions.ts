@@ -39,11 +39,15 @@ export function mcpDenied(tool: string, allowed: string[] | undefined): boolean 
 export const sessionRule = "this session";
 
 export const reportTool = "mcp__worktime__send_to_main";
+export const sendTool = "mcp__worktime__send_to_agent";
 
-/// A Main reporting to its own workspace's Main: refused before the user is asked, as the app would refuse it after.
+/// A Main reporting to its own workspace's Main, with send_to_main or send_to_agent addressed to Main: refused before the user is asked, as the app would refuse it after.
 export function selfReport(tool: string, input: Record<string, unknown>, delegateFrom?: string): string | undefined {
-  if (tool !== reportTool || !delegateFrom) return undefined;
-  const to = typeof input.workspace === "string" ? input.workspace.trim().toLowerCase() : "";
+  const agent = typeof input.agent === "string" ? input.agent.trim() : "";
+  const toMain = tool === reportTool || (tool === sendTool && /^main(:|$)/i.test(agent));
+  if (!toMain || !delegateFrom) return undefined;
+  const named = typeof input.workspace === "string" ? input.workspace.trim() : "";
+  const to = (named || (agent.includes(":") ? agent.slice(agent.indexOf(":") + 1) : "")).toLowerCase();
   return to === "" || to === delegateFrom.toLowerCase() ? "This is the Main of that workspace: a report goes to a Main from another agent. Say it in your own reply." : undefined;
 }
 

@@ -14,12 +14,30 @@ test("only the offered modes pass; anything else is Ask", () => {
 
 test("send_to_agent, complete_reminder and the routine and assistant changes are asked of the user in every mode", () => {
   for (const mode of modes) {
-    for (const tool of ["create_routine", "update_routine", "set_routine_enabled", "delete_routine", "compile_routine", "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant", "send_to_main"]) {
+    for (const tool of ["create_routine", "update_routine", "set_routine_enabled", "delete_routine", "compile_routine", "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant", "send_to_main", "create_workspace", "update_workspace", "create_space", "update_space", "delete_space", "tag_session"]) {
       assert.deepEqual(preToolDecision(`mcp__worktime__${tool}`, {}, cwd, rules, mode), { kind: "ask" }, `${tool} ${mode}`);
     }
     assert.deepEqual(preToolDecision("mcp__worktime__send_to_agent", { text: "x" }, cwd, rules, mode), { kind: "ask" }, mode);
     assert.deepEqual(preToolDecision("mcp__worktime__complete_reminder", { id: "x" }, cwd, rules, mode), { kind: "ask" }, mode);
   }
+});
+
+test("the coordinator's read tools and open_in_app run without asking, and none of them can answer a decision", () => {
+  for (const mode of modes) {
+    for (const tool of ["pending_decisions", "request_status", "wait_for", "ticket_timeline", "outcomes", "app_info", "usage_summary", "open_in_app", "events_since", "workspaces"]) {
+      assert.deepEqual(preToolDecision(`mcp__worktime__${tool}`, {}, cwd, [], mode), { kind: "allow" }, `${tool} ${mode}`);
+    }
+  }
+  assert.equal(roleTier("mcp__worktime__pending_decisions"), "read");
+  assert.equal(roleTier("mcp__worktime__create_workspace"), "ask");
+});
+
+test("a Main addressing its own workspace's Main with send_to_agent is refused before the user is asked, another workspace's is not", () => {
+  assert.match(selfReport("mcp__worktime__send_to_agent", { agent: "Main", text: "x" }, "work") ?? "", /Main of that workspace/);
+  assert.match(selfReport("mcp__worktime__send_to_agent", { agent: "main:work", text: "x" }, "work") ?? "", /Main of that workspace/);
+  assert.equal(selfReport("mcp__worktime__send_to_agent", { agent: "Main", workspace: "reviews", text: "x" }, "work"), undefined);
+  assert.equal(selfReport("mcp__worktime__send_to_agent", { agent: "Reviewer", text: "x" }, "work"), undefined);
+  assert.equal(selfReport("mcp__worktime__send_to_agent", { agent: "Main", text: "x" }, undefined), undefined);
 });
 
 test("a tool the user opted out of asking runs in every mode but Plan, one for this session too, and send_to_agent only by rule", () => {

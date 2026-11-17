@@ -49,7 +49,7 @@ final class TimelineModel: ObservableObject {
     }
 
     /// The reviews and comments posted for the group's pull requests, from the app's log of GitHub actions.
-    private static func postedEvents(_ group: TicketGroup) -> [TimelineEvent] {
+    static func postedEvents(_ group: TicketGroup) -> [TimelineEvent] {
         var owners: [String: (key: String, label: String)] = [:]
         for state in group.members {
             guard let url = TicketGroup.pullRequest(of: state) else { continue }

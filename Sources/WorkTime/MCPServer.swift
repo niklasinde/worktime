@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct MCPTool {
@@ -34,7 +35,11 @@ struct MCPServer {
         so the model only does the judgement; create_automation, update_automation and delete_automation manage automations (the same, \
         started by a Slack message, a pull request or a Jira ticket event instead); create_assistant, update_assistant and delete_assistant manage the role agents \
         under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
-        second. send_to_agent, send_to_main, complete_reminder, compile_routine and every routine, automation and assistant change ask the user to approve, unless the user switched that tool to not ask.
+        second. send_to_agent, send_to_main, complete_reminder, compile_routine and every routine, automation, assistant and workspace change ask the user to approve, unless the user switched that tool to not ask. \
+        To coordinate WorkTime from outside it: send_to_agent with agent Main talks to a workspace's Main; async true returns a request_id for request_status and wait_for; \
+        pending_decisions lists what waits for the user (read-only: only the user answers those, in the app); ticket_timeline, outcomes, usage_summary, app_info and \
+        events_since read what the app publishes; workspaces with create_workspace, update_workspace, create_space, update_space, delete_space and tag_session configure workspaces; \
+        open_in_app brings the app to an item. After updating WorkTime, reconnect this MCP server (/mcp) to pick up new tools. schema_version: \(schemaVersion).
         """
 
     let tools: [MCPTool]
@@ -67,7 +72,7 @@ struct MCPServer {
         case "initialize":
             let requested = params["protocolVersion"] as? String ?? ""
             return .success(["protocolVersion": Self.protocolVersions.contains(requested) ? requested : Self.protocolVersions[0],
-                             "capabilities": ["tools": ["listChanged": false]],
+                             "capabilities": ["tools": ["listChanged": true]],
                              "serverInfo": ["name": "worktime", "version": version],
                              "instructions": Self.instructions])
         case "ping":
@@ -96,11 +101,15 @@ struct MCPServer {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// The names of every tool the server offers.
-    static var toolNames: [String] {
+    /// Every tool the server offers, with sources that fail when used.
+    static var allTools: [MCPTool] {
         let none = Result<MeetingStore, Error>.failure(MCPToolError(""))
-        return (meetingTools(none) + githubTools(none) + agentTools(none) + topicTools() + resumeTools(none) + noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools() + reportTools()).map(\.name)
+        return meetingTools(none) + githubTools(none) + agentTools(none) + topicTools() + resumeTools(none) + noticeTools() + reminderTools() + routineTools() + assistantTools()
+            + briefTools() + reportTools() + coordinatorTools() + workspaceTools()
     }
+
+    /// The names of every tool the server offers.
+    static var toolNames: [String] { allTools.map(\.name) }
 
     /// `--mcp`: serves the read-only tools over stdin and stdout until stdin closes.
     static func runFromCommandLine() -> Never {
@@ -108,8 +117,11 @@ struct MCPServer {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let github = githubTools(store)
         let reading: [MCPTool] = meetingTools(store) + github + agentTools(store, github: github) + topicTools() + resumeTools(store)
-        let acting: [MCPTool] = noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools() + reportTools()
+        let acting: [MCPTool] = noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools() + reportTools() + coordinatorTools() + workspaceTools()
         let server = MCPServer(tools: reading + acting, version: version)
+        let previousTools = try? Data(contentsOf: AppPaths.mcpTools)
+        var announce = ToolSets.changed(previous: previousTools, tools: server.tools)
+        if announce || previousTools == nil { try? ToolSets.record(server.tools, version: version).write(to: AppPaths.mcpTools, options: .atomic) }
         let output = DispatchQueue(label: "worktime.mcp.output"), slow = DispatchQueue(label: "worktime.mcp.slow", attributes: .concurrent)
         let running = DispatchGroup()
         while let line = readLine() {
@@ -118,19 +130,54 @@ struct MCPServer {
                 guard let response = server.handle(line) else { return }
                 output.sync { FileHandle.standardOutput.write(Data((response + "\n").utf8)) }
             }
+            if announce, isInitialized(line) {
+                announce = false
+                output.sync { FileHandle.standardOutput.write(Data((ToolSets.changeNotice + "\n").utf8)) }
+            }
             if callsNetworkTool(line) { slow.async(group: running, execute: answer) } else { answer() }
         }
         running.wait()
         exit(0)
     }
 
-    /// The tools that wait on a network answer; a call to one is served beside the next messages instead of holding them up.
-    static let networkTools: Set<String> = ["attention", "slack_search", "slack_thread", "jira_issue", "jira_search", "github_pr"]
+    /// The tools that wait on a network answer or on the user; a call to one is served beside the next messages instead of holding them up.
+    static let networkTools: Set<String> = ["attention", "slack_search", "slack_thread", "jira_issue", "jira_search", "github_pr", "wait_for", "send_to_agent"]
+
+    static func isInitialized(_ line: String) -> Bool {
+        ((try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any])?["method"] as? String == "notifications/initialized"
+    }
 
     static func callsNetworkTool(_ line: String) -> Bool {
         guard let message = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], message["method"] as? String == "tools/call",
               message["id"] != nil, let name = (message["params"] as? [String: Any])?["name"] as? String else { return false }
         return networkTools.contains(name)
+    }
+}
+
+/// The tool set a run offered, kept so the next run can tell the client when it changed: a client that cached an older list asks again.
+enum ToolSets {
+    struct Record: Codable, Equatable {
+        var version: String
+        var schemaVersion: Int
+        var digest: String
+    }
+
+    static let changeNotice = #"{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"#
+
+    static func digest(_ tools: [MCPTool]) -> String {
+        let listing = (try? JSONSerialization.data(withJSONObject: tools.map(\.listing), options: [.sortedKeys])) ?? Data()
+        return SHA256.hash(data: listing).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func record(_ tools: [MCPTool], version: String) -> Data {
+        AgentInbox.encode(Record(version: version, schemaVersion: MCPServer.schemaVersion, digest: digest(tools)))
+    }
+
+    /// True when the tools differ from the ones the previous run saved; a first run, with nothing saved, is not a change.
+    static func changed(previous: Data?, tools: [MCPTool]) -> Bool {
+        guard let previous else { return false }
+        guard let saved = AgentInbox.decode(Record.self, from: previous) else { return true }
+        return saved.digest != digest(tools) || saved.schemaVersion != MCPServer.schemaVersion
     }
 }
 

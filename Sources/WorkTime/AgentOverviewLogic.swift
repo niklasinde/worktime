@@ -384,13 +384,19 @@ enum AgentInbox {
         var message: String
         /// What was done beyond sending: a session made or reused, the user's choice, a wait for a free slot.
         var note: String?
+        /// A new session was made for the prompt.
+        var created: Bool?
+        /// The user did not answer the reuse-or-new question in time.
+        var timedOut: Bool?
 
-        init(id: String, status: Status, sessionID: String? = nil, message: String, note: String? = nil) {
+        init(id: String, status: Status, sessionID: String? = nil, message: String, note: String? = nil, created: Bool? = nil, timedOut: Bool? = nil) {
             self.id = id
             self.status = status
             self.sessionID = sessionID
             self.message = message
             self.note = note
+            self.created = created
+            self.timedOut = timedOut
         }
     }
 

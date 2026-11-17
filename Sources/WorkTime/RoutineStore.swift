@@ -349,6 +349,7 @@ final class RoutineStore: ObservableObject {
         let model = load(routine)
         guard !model.busy, !isRunning(routine) else { return }
         let started = Date()
+        if let event { AppEventLog.shared.record(.automationFired, "\(routine.name): \(event.title)", link: event.link ?? event.pullRequest) }
         let choice = Determinism.choose(routine.determinism, every: Determinism.fullRunEvery())
         guard choice.mode != .ai, let plan = routine.determinism, let script = scripts.load(routine.id, version: plan.version) else {
             return runAgent(routine, event: event, started: started, mode: .ai, sampled: choice.sampled, prompt: nil)
@@ -410,6 +411,7 @@ final class RoutineStore: ObservableObject {
         }
         update(key) { $0.lastRun = run }
         guard let routine = routine(key) else { return }
+        if !routine.isAutomation { AppEventLog.shared.record(.routineRan, "\(routine.name): \(run.status.rawValue)") }
         if let info, run.status == .done, info.mode == .hybrid || info.sampled {
             update(key) { $0.determinism = $0.determinism.map { Determinism.counted($0, mode: info.mode, sampled: info.sampled, failure: nil) } }
         }

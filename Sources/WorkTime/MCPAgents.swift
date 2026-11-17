@@ -104,7 +104,7 @@ extension MCPServer {
     static let attentionSections = ["pull_requests", "agents", "notifications", "slack", "meetings"]
 
     static let agentProperty: [String: Any] = ["type": "string",
-                                               "description": "A pull request url, a topic agent's key (topic:<id>) or name, or an assistant's role name or key, as agents_overview lists them."]
+                                               "description": "A pull request url, a topic agent's key (topic:<id>) or name, or an assistant's role name or key, as agents_overview lists them; Main (with workspace) for a workspace's Main."]
 
     static func agentTools(_ opened: Result<MeetingStore, Error>, sources: AgentSources = AgentSources(),
                            github: [MCPTool] = [], now: @escaping () -> Date = Date.init) -> [MCPTool] {
@@ -217,7 +217,12 @@ extension MCPServer {
                         + "the user is asked whether to reuse it or start a new one and "
                         + "the call waits for the answer (up to the user's setting, 30 minutes by default; nothing is sent if it runs out); new_session "
                         + "starts a new one without asking. If a call is refused, read the error and retry with the form it suggests. "
-                        + "Returns the session id to read the outcome with agent_session later.",
+                        + "Returns the session id to read the outcome with agent_session later. "
+                        + "(3) To talk to a workspace's Main from outside it (the user's Claude Code session as coordinator): agent Main, with workspace when it is not the one your folder or "
+                        + "Main's own scope gives. It arrives in Main's chat as \u{201C}From Claude Code \u{00B7} <folder>: \u{2026}\u{201D}, starts a turn when Main is idle and waits otherwise, with the "
+                        + "limits of send_to_main (\(AgentReports.hourlyLimit) an hour and \(AgentReports.pendingLimit) waiting per caller, the same text twice in ten minutes dropped); "
+                        + "a Main cannot send to its own workspace's Main. Main reads it as a request but it is never the user's approval. "
+                        + "With async true the call returns at once with a request_id instead of waiting for the user's answer to a reuse-or-new question: follow it with request_status or wait_for.",
                     properties: ["agent": agentProperty,
                                  "pr_url": ["type": "string", "description": "Alone: talks to that pull request's own agent. With an assistant as agent and no ticket: "
                                      + "the pull request the assistant's session is for (not the pull request's own agent)."],
@@ -228,11 +233,19 @@ extension MCPServer {
                                      + "its session for this ticket gets the prompt. One ticket per call. Must be in the workspace's Jira projects."],
                                  "new_session": ["type": "boolean", "description": "With ticket: start a new session even when the assistant has one for the "
                                      + "ticket, without asking the user. False when left out."],
+                                 "async": ["type": "boolean", "description": "Return at once with a request_id and the current state instead of waiting for the app and for the user's "
+                                     + "answer to the reuse-or-new question (which can take up to the user's setting, 30 minutes by default). Read the outcome with request_status or wait_for. False when left out."],
                                  "workspace": workspaceProperty,
                                  "space": ["type": "string", "description": "A space of the workspace (a lane such as Review or Verify), by id or name, when the user names one "
                                      + "for a handoff: the session the prompt goes to is put in it as well. With an assistant it needs ticket or pr_url."],
                                  "text": ["type": "string", "maxLength": AgentInbox.textLimit, "description": "The prompt for that agent."]],
                     required: ["text"], readOnly: false) { args in
+                let wait = args["async"] as? Bool != true
+                if let main = mainAddress(args) {
+                    guard let text = FilterLogic.text(args, "text") else { throw MCPToolError("text is required.") }
+                    let request = ReportRequest(id: UUID().uuidString, workspace: main, title: nil, text: text, source: sources.notices.source(), created: now())
+                    return try sources.notices.ask(AgentInbox.encode(request), id: request.id, name: AgentReports.requestName(request.id), what: "the message").message
+                }
                 let urls = (args["pr_urls"] as? [Any])?.compactMap { $0 as? String } ?? []
                 if !urls.isEmpty {
                     let prs: [LinkedPR]
@@ -249,9 +262,7 @@ extension MCPServer {
                     switch AgentInbox.request(agent: prs[0].url, text: args["text"] as? String ?? "", now: now(), prs: prs.map(\.url), space: space) {
                     case .failure(let error): throw MCPToolError(error.message)
                     case .success(let made):
-                        let reply = try deliver(made, inbox: sources.inbox, timeout: sources.replyTimeout)
-                        if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: title)) }
-                        return AgentInbox.replyText(reply, title: title)
+                        return try submit(made, title: title, role: nil, waitsForUser: false, wait: wait, sources: sources, timeout: sources.replyTimeout, now: now())
                     }
                 }
                 guard let target = try sources.target(args) else { throw MCPToolError("agent is required.") }
@@ -283,11 +294,32 @@ extension MCPServer {
                 case .failure(let error): throw MCPToolError(error.message)
                 }
                 let timeout = ticket == nil && pr == nil ? sources.replyTimeout : max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60)
-                let reply = try deliver(request, inbox: sources.inbox, timeout: timeout)
-                if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: target.title)) }
-                return AgentInbox.replyText(reply, title: target.title)
+                let role = Assistants.isKey(target.key) ? sources.agents().first { $0.key == target.key }?.role ?? target.title : nil
+                return try submit(request, title: target.title, role: role, waitsForUser: ticket != nil || pr != nil, wait: wait, sources: sources, timeout: timeout, now: now())
             },
         ]
+    }
+
+    /// The workspace `agent: "Main"` (or a Main's key) names, as the argument of a report: empty for the caller's own; nil when the call is not for a Main.
+    static func mainAddress(_ args: [String: Any]) -> String?? {
+        guard let text = FilterLogic.text(args, "agent"), FilterLogic.text(args, "pr_url") == nil, !(args["pr_urls"] is [Any]) else { return nil }
+        if text.caseInsensitiveCompare("main") == .orderedSame { return .some(FilterLogic.text(args, "workspace")) }
+        guard Workspaces.isMainKey(text), text != Workspaces.legacyMainKey, let id = Workspaces.id(ofMainKey: text) else { return nil }
+        return .some(FilterLogic.text(args, "workspace") ?? id)
+    }
+
+    /// Hands the app a prompt and returns how it went; with `wait` false it only leaves the prompt, with a record `request_status` reads.
+    static func submit(_ request: AgentInbox.Request, title: String, role: String?, waitsForUser: Bool, wait: Bool, sources: AgentSources,
+                       timeout: TimeInterval, now: Date) throws -> String {
+        guard wait else {
+            let record = RequestStatuses.record(for: request, target: title, role: role, waitsForUser: waitsForUser, waitSeconds: RoleTools.waitSeconds(), now: now)
+            try leave(AgentInbox.encode(record), name: RequestStatuses.recordName(record.id), inbox: sources.inbox, what: "the request record")
+            try leave(AgentInbox.encode(request), name: AgentInbox.requestName(request.id), inbox: sources.inbox, what: "the prompt")
+            return RequestStatuses.markdown(RequestStatuses.status(record, reply: nil, inInbox: true, decisions: [], agents: [], now: now))
+        }
+        let reply = try deliver(request, inbox: sources.inbox, timeout: timeout)
+        if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: title)) }
+        return AgentInbox.replyText(reply, title: title)
     }
 
     /// Writes the request where the app looks and waits for its answer.
@@ -296,15 +328,20 @@ extension MCPServer {
                      what: "the prompt")
     }
 
+    /// Leaves `data` in the inbox under `name`.
+    static func leave(_ data: Data, name: String, inbox: URL, what: String) throws {
+        try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        do { try data.write(to: inbox.appendingPathComponent(name), options: .atomic) } catch {
+            throw MCPToolError("Could not hand \(what) to WorkTime: \(error.localizedDescription)")
+        }
+    }
+
     /// Leaves `data` in the inbox under `name` and waits for the app's reply file with the same id.
     static func exchange<Reply: Decodable>(_ data: Data, id: String, name: String, inbox: URL, timeout: TimeInterval, what: String) throws -> Reply {
         let fileManager = FileManager.default
-        try? fileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
         let requestURL = inbox.appendingPathComponent(name)
         let replyURL = inbox.appendingPathComponent(AgentInbox.replyName(id))
-        do { try data.write(to: requestURL, options: .atomic) } catch {
-            throw MCPToolError("Could not hand \(what) to WorkTime: \(error.localizedDescription)")
-        }
+        try leave(data, name: name, inbox: inbox, what: what)
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let data = try? Data(contentsOf: replyURL), let reply = AgentInbox.decode(Reply.self, from: data) {

@@ -250,6 +250,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RoutineStore.shared.start()
         AutomationSources.shared.start()
         AgentStateWriter.shared.start()
+        StatePublisher.shared.recording = { [weak self] in self?.recorder.isRecording ?? false }
+        StatePublisher.shared.start()
+        AgentInboxWatcher.openHandler = { [weak self] in self?.open($0) }
         NoticeCenter.shared.start()
         AgentInboxWatcher.shared.start()
         TicketAskStore.shared.restore()
@@ -338,8 +341,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         GitHubModel.shared.open(target)
     }
 
+    func open(_ target: OpenTarget) {
+        switch target {
+        case .agent(let key): AgentHub.shared.show(key)
+        case .ticket(let key): AgentHub.shared.show(SessionSubject.ticket(key).key)
+        case .pullRequest(let url): GitHubLink.pullRequest(at: url).map(openPullRequest)
+        case .page(let section): mainWindow.show(section: section)
+        }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where AppURL.accepts(scheme: url.scheme) {
+            if let target = OpenLinks.parse(url.absoluteString) {
+                open(target)
+                continue
+            }
             if SlackLogic.isCallback(url) {
                 SettingsModel.shared.show(tab: .slack, anchor: .slack)
                 Task { await SlackModel.shared.finishSignIn(url) }

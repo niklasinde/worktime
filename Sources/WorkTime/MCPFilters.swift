@@ -213,6 +213,7 @@ struct AgentFilter: Equatable {
     var ticket: String?
     /// The id of a space.
     var space: String?
+    var since: Date?
 
     static let kinds = ["main", "pr", "ticket", "ticket_session", "topic", "assistant"]
     static let statuses = ["working", "waiting", "idle", "error", "signed_out"]
@@ -222,6 +223,7 @@ struct AgentFilter: Equatable {
         "ticket": ["type": "string", "description": "Only the agents about this Jira ticket: its sessions (of any assistant), its own agent and the pull request agents whose title names it."],
         "space": ["type": "string", "description": "Only the agents in this space (a lane of the workspace such as Review or Verify), by id or name."],
         "status": ["type": "string", "enum": statuses, "description": "Only agents in this state."],
+        "since": ["type": "string", "description": "Only agents updated at or after this: a date (YYYY-MM-DD), ISO 8601 or HH:mm."],
         "needs_me": ["type": "boolean", "description": "true: only agents waiting for a permission, finished with an unseen result or errored; false: the others."],
         "query": ["type": "string", "description": "Only agents whose title, folder, last prompt or last result contain this."],
     ]
@@ -230,8 +232,10 @@ struct AgentFilter: Equatable {
 
     init() {}
 
-    init(_ args: [String: Any], names: [String] = ["kind", "status", "needs_me", "query", "ticket", "space"], spaces: [Space] = []) throws {
+    init(_ args: [String: Any], names: [String] = ["kind", "status", "needs_me", "query", "ticket", "space", "since"], spaces: [Space] = [],
+         now: Date = Date()) throws {
         let args = args.filter { names.contains($0.key) }
+        since = try FilterLogic.bound(args, "since", end: false, now: now)
         kind = try FilterLogic.choice(args, "kind", allowed: Self.kinds)
         status = try FilterLogic.choice(args, "status", allowed: Self.statuses)
         needsMe = try FilterLogic.flag(args, "needs_me")
@@ -248,7 +252,7 @@ struct AgentFilter: Equatable {
         }
     }
 
-    var applied: [String] { FilterLogic.applied(["kind": kind, "status": status, "needs_me": needsMe, "query": query, "ticket": ticket, "space": space]) }
+    var applied: [String] { FilterLogic.applied(["kind": kind, "status": status, "needs_me": needsMe, "query": query, "ticket": ticket, "space": space, "since": since]) }
 
     static func kind(of state: AgentState) -> String {
         if Workspaces.isMainKey(state.key) { return "main" }
@@ -268,6 +272,7 @@ struct AgentFilter: Equatable {
             && (needsMe.map { $0 == (AgentOverview.need(state) <= .error) } ?? true)
             && (ticket.map { Self.about(state, ticket: $0) } ?? true)
             && (space.map { Spaces.contains(state, space: $0) } ?? true)
+            && (since.map { (state.updatedAt ?? .distantPast) >= $0 } ?? true)
             && (query.map { text in [state.title, state.folder, state.lastPrompt, state.lastResult].contains { FilterLogic.matches($0, text) } } ?? true)
     }
 }

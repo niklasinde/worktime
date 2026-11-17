@@ -238,7 +238,7 @@ final class TopicAgentStore: ObservableObject {
                                       alwaysReuse: TicketSessions.alwaysReuse().contains(entry.key)) {
         case .create:
             let topic = makeSession(entry, subject: subject)
-            return send(request, to: topic, note: TicketSessions.createdNote(name: topic.name))
+            return send(request, to: topic, note: TicketSessions.createdNote(name: topic.name), created: true)
         case .reuse(let topic):
             return send(request, to: topic, note: TicketSessions.reusedNote(name: topic.name, preview: nil, now: Date()))
         case .ask(let topic):
@@ -251,7 +251,9 @@ final class TopicAgentStore: ObservableObject {
                                 pullRequest: subject.pullRequest, existing: TicketSessions.preview(of: topic, state: state), text: request.text, created: now,
                                 deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin, space: request.space)
             guard let answer = await TicketAskStore.shared.ask(ask) else {
-                return reject(TicketSessions.timeoutMessage(role: entry.role.name, subject: subject.label, minutes: max(1, seconds / 60)))
+                var timedOut = reject(TicketSessions.timeoutMessage(role: entry.role.name, subject: subject.label, minutes: max(1, seconds / 60)))
+                timedOut.timedOut = true
+                return timedOut
             }
             return await finish(ask: ask, answer: answer, request: request)
         }
@@ -270,10 +272,10 @@ final class TopicAgentStore: ObservableObject {
             return send(request, to: topic, note: TicketSessions.chosenNote(answer, name: topic.name))
         }
         let topic = makeSession(entry, subject: ask.subject)
-        return send(request, to: topic, note: TicketSessions.chosenNote(.startNew, name: topic.name))
+        return send(request, to: topic, note: TicketSessions.chosenNote(.startNew, name: topic.name), created: true)
     }
 
-    private func send(_ request: AgentInbox.Request, to topic: TopicAgent, note: String) -> AgentInbox.Reply {
+    private func send(_ request: AgentInbox.Request, to topic: TopicAgent, note: String, created: Bool = false) -> AgentInbox.Reply {
         if let space = request.space { WorkspaceStore.shared.add(space: space, to: topic.key) }
         var forTopic = request
         forTopic.space = nil
@@ -283,6 +285,7 @@ final class TopicAgentStore: ObservableObject {
         forTopic.newSession = nil
         var reply = deliver(forTopic)
         reply.note = [note, reply.note].compactMap { $0 }.joined(separator: " ")
+        if created, reply.status != .rejected { reply.created = true }
         return reply
     }
 

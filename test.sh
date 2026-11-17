@@ -159,6 +159,15 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AutomationSlack.swift \
     Sources/WorkTime/SlackSocketLogic.swift \
     Sources/WorkTime/AutomationSocket.swift \
+    Sources/WorkTime/AppEventLogic.swift \
+    Sources/WorkTime/OpenLogic.swift \
+    Sources/WorkTime/DecisionSnapshotLogic.swift \
+    Sources/WorkTime/TimelineSnapshotLogic.swift \
+    Sources/WorkTime/AppInfoLogic.swift \
+    Sources/WorkTime/RequestStatusLogic.swift \
+    Sources/WorkTime/WorkspaceRequestLogic.swift \
+    Sources/WorkTime/MCPCoordinator.swift \
+    Sources/WorkTime/MCPWorkspaces.swift \
     Tests/WorkTimeTests/Tests.swift \
     Tests/WorkTimeTests/StoreTests.swift \
     Tests/WorkTimeTests/AudioRetentionTests.swift \
@@ -244,6 +253,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/UsageTests.swift \
     Tests/WorkTimeTests/AgentListTests.swift \
     Tests/WorkTimeTests/SpaceTests.swift \
+    Tests/WorkTimeTests/CoordinatorTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

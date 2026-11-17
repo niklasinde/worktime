@@ -267,6 +267,13 @@ struct UsageLog {
         return kept
     }
 
+    /// The same records as `load`, without rewriting the file, for a process that only reads it.
+    func read(now: Date, calendar: Calendar = .current) -> [UsageRecord] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        let all = data.split(separator: 0x0A, omittingEmptySubsequences: true).compactMap { try? Self.decoder.decode(UsageRecord.self, from: Data($0)) }
+        return Usage.pruned(all, now: now, calendar: calendar).sorted { $0.date < $1.date }
+    }
+
     private func rewrite(_ records: [UsageRecord]) {
         var data = Data()
         for record in records {
