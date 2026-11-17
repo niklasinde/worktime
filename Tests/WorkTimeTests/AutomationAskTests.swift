@@ -47,8 +47,11 @@ let automationAskTests: [(name: String, run: () throws -> Void)] = [
     ("ask: the first button sends the prompt with the event's fields, the recommendation and the notes, to the assistant or the pull request's agent", {
         let ask = AutomationAsk(yes: "Review it", no: "Skip", agent: "assistant:work:reviewer", prompt: "Review {pr_url} by {pr_author}. Advice: {recommendation}\n{answer}")
         let notice = AutomationAsks.notice(for: review(ask), event: event(), run: run("Looks safe.\nRecommendation: review - small"), ask: ask, reminder: "r1")
-        check(notice == NoticeAsk(routine: "A1", yes: "Review it", no: "Skip", agent: "assistant:work:reviewer",
-                                  prompt: "Review \(pull) by Katia. Advice: small\nLooks safe.", reminder: "r1", event: event().id), "\(String(describing: notice))")
+        var kept = notice
+        kept?.eventText = nil
+        check(kept == NoticeAsk(routine: "A1", yes: "Review it", no: "Skip", agent: "assistant:work:reviewer",
+                                prompt: "Review \(pull) by Katia. Advice: small\nLooks safe.", reminder: "r1", event: event().id), "\(String(describing: notice))")
+        check(notice?.eventText?.contains(event().text) == true, "the event's text is kept for the row")
         var own = ask
         own.agent = ""
         own.prompt = ""

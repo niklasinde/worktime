@@ -301,13 +301,19 @@ enum ReviewNotices {
     static let confirmPrefix = "review-confirm-"
     static let bodyLimit = 400
 
-    /// The buttons of a notification: one pull request is posted as it likes, a set is approved all at once after a second look.
+    /// The buttons of a notification: for one pull request the one click that posts the review as the reviewer drafted it, with Open; a set
+    /// is approved all at once after a second look, and only when every review recommends approving.
     static func buttons(for drafts: [ReviewDraft]) -> [Button] {
-        guard drafts.count == 1, let draft = drafts.first else { return [.approveAll, .open, .dismiss] }
-        var buttons: [Button] = [.approve]
-        if draft.problem(for: .requestChanges) == nil { buttons.append(.changes) }
-        if !draft.comments.isEmpty { buttons.append(.comments) }
-        return buttons + [.open, .dismiss]
+        guard drafts.count == 1, let draft = drafts.first else {
+            return (ReviewBoard.canApproveAll(drafts) ? [.approveAll] : []) + [.open, .dismiss]
+        }
+        let primary: Button
+        switch ReviewRows.primary(draft) {
+        case .approve: primary = .approve
+        case .requestChanges: primary = .changes
+        case .postComments: primary = .comments
+        }
+        return (draft.problem(for: ReviewRows.primary(draft)) == nil ? [primary] : []) + [.open, .dismiss]
     }
 
     static func category(for drafts: [ReviewDraft]) -> String { category(buttons(for: drafts)) }
@@ -316,8 +322,8 @@ enum ReviewNotices {
 
     /// Every set of buttons a notification can have, for the system to know them up front.
     static var allButtonSets: [[Button]] {
-        func single(changes: Bool, comments: Bool) -> [Button] { [.approve] + (changes ? [.changes] : []) + (comments ? [.comments] : []) + [.open, .dismiss] }
-        return [true, false].flatMap { changes in [true, false].map { single(changes: changes, comments: $0) } } + [[.approveAll, .open, .dismiss]]
+        let firsts: [Button?] = [.approve, .changes, .comments, .approveAll, nil]
+        return firsts.map { first in (first.map { [$0] } ?? []) + [.open, .dismiss] }
     }
 
     static func action(_ button: Button) -> ReviewAction? {
@@ -334,13 +340,16 @@ enum ReviewNotices {
         return "Review ready: \(draft.reference) \u{00B7} \(draft.verdict.title.lowercased())"
     }
 
+    /// The two lines of a notification about one review: why, and what is in it. A set gets one line per pull request.
     static func body(for drafts: [ReviewDraft]) -> String {
         guard drafts.count == 1, let draft = drafts.first else {
-            return drafts.map { "\($0.reference): \($0.verdict.title.lowercased())" }.joined(separator: "\n")
+            return drafts.map { draft in
+                let reason = ReviewRows.reason(draft, limit: 70)
+                return "\(draft.reference) \u{00B7} \(draft.verdict.title.lowercased())" + (reason.isEmpty ? "" : " \u{2014} " + reason)
+            }.joined(separator: "\n")
         }
-        var text = draft.summary.split(whereSeparator: \.isNewline).joined(separator: " ")
-        if !draft.comments.isEmpty { text += (text.isEmpty ? "" : " ") + "(\(draft.comments.count) comment\(draft.comments.count == 1 ? "" : "s") on lines)" }
-        return text.count > bodyLimit ? String(text.prefix(bodyLimit - 1)) + "\u{2026}" : text
+        let text = [ReviewRows.reason(draft), ReviewRows.counts(draft)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+        return ReviewRows.clipped(text, bodyLimit)
     }
 
     static func notice(drafts: [ReviewDraft], agent: String, agentTitle: String, id: String = UUID().uuidString, now: Date) -> AgentNotice {

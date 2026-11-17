@@ -215,13 +215,15 @@ let reviewDraftTests: [(name: String, run: () throws -> Void)] = [
 
     ("review notices: a single draft offers every button that works, a set offers approving all, and the categories cover them", {
         let single = draft(verdict: .requestChanges, summary: "No.", comments: [.init(path: "a", line: 1, body: "b")])
-        check(ReviewNotices.buttons(for: [single]) == [.approve, .changes, .comments, .open, .dismiss], "\(ReviewNotices.buttons(for: [single]))")
-        check(ReviewNotices.buttons(for: [draft()]) == [.approve, .changes, .open, .dismiss], "no comments button without comments")
-        check(ReviewNotices.buttons(for: [draft(summary: "")]) == [.approve, .open, .dismiss], "no request for changes without text")
+        check(ReviewNotices.buttons(for: [single]) == [.changes, .open, .dismiss], "a request for changes posts as one: \(ReviewNotices.buttons(for: [single]))")
+        check(ReviewNotices.buttons(for: [draft()]) == [.approve, .open, .dismiss], "an approval posts as one")
+        check(ReviewNotices.buttons(for: [draft(verdict: .comment, comments: [.init(path: "a", line: 1, body: "b")])]) == [.comments, .open, .dismiss], "a comment")
+        check(ReviewNotices.buttons(for: [draft(verdict: .requestChanges, summary: "")]) == [.open, .dismiss], "nothing to post, so only Open")
         let set = [draft(), draft(pr: "https://github.com/acme/orbit.api/pull/13")]
-        check(ReviewNotices.buttons(for: set) == [.approveAll, .open, .dismiss], "a set")
+        check(ReviewNotices.buttons(for: set) == [.approveAll, .open, .dismiss], "a set that recommends approving")
+        check(ReviewNotices.buttons(for: [draft(), draft(verdict: .requestChanges, pr: "https://github.com/acme/orbit.api/pull/13")]) == [.open, .dismiss], "not every one approves")
         let categories = Set(ReviewNotices.allButtonSets.map(ReviewNotices.category))
-        for drafts in [[single], [draft()], [draft(summary: "")], set] { check(categories.contains(ReviewNotices.category(for: drafts)), "known category for \(drafts.count)") }
+        for drafts in [[single], [draft()], [draft(verdict: .requestChanges, summary: "")], set] { check(categories.contains(ReviewNotices.category(for: drafts)), "known category for \(drafts.count)") }
         check(ReviewNotices.action(.approve) == .approve && ReviewNotices.action(.changes) == .requestChanges && ReviewNotices.action(.comments) == .postComments && ReviewNotices.action(.open) == nil, "button to action")
         check(Set(ReviewNotices.Button.allCases.map(\.rawValue)).count == ReviewNotices.Button.allCases.count, "ids are distinct")
     }),
@@ -229,11 +231,11 @@ let reviewDraftTests: [(name: String, run: () throws -> Void)] = [
     ("review notices: the notification names the pull request and verdict, is urgent and leads to the pull request or the agent", {
         let single = draft(verdict: .requestChanges, summary: "Blocks\nthe sync.", comments: [.init(path: "a", line: 1, body: "b")])
         let notice = ReviewNotices.notice(drafts: [single], agent: "assistant:work:reviewer", agentTitle: "Reviewer", id: "n1", now: Date(timeIntervalSince1970: 100))
-        check(notice.title == "Review ready: orbit.api#12 \u{00B7} request changes" && notice.body == "Blocks the sync. (1 comment on lines)", "\(notice.title) | \(String(describing: notice.body))")
+        check(notice.title == "Review ready: orbit.api#12 \u{00B7} request changes" && notice.body == "Blocks the sync.\n1 comment on lines", "\(notice.title) | \(String(describing: notice.body))")
         check(notice.urgency == .high && notice.link == url && notice.reviews == [single] && Decisions.needsAnswer(notice), "urgent, linked, kept until answered")
         let set = [draft(), draft(verdict: .comment, pr: "https://github.com/acme/orbit.api/pull/13")]
         let many = ReviewNotices.notice(drafts: set, agent: "agent-key", agentTitle: "Set", id: "n2", now: Date())
-        check(many.title == "Review ready: 2 pull requests" && many.body == "orbit.api#12: approve\norbit.api#13: comment" && many.link == "agent-key", "\(many.title) | \(String(describing: many.body))")
+        check(many.title == "Review ready: 2 pull requests" && many.body == "orbit.api#12 \u{00B7} approve \u{2014} Looks right.\norbit.api#13 \u{00B7} comment \u{2014} Looks right." && many.link == "agent-key", "\(many.title) | \(String(describing: many.body))")
     }),
 
     ("review notices: a posted draft leaves the set, the last one turns the notification into the result and a failure keeps it with the reason", {

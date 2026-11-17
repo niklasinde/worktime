@@ -78,7 +78,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         switch button {
         case .approve: return UNNotificationAction(identifier: button.rawValue, title: "Approve", options: [.authenticationRequired])
         case .changes: return UNNotificationAction(identifier: button.rawValue, title: "Request changes", options: [.authenticationRequired])
-        case .comments: return UNNotificationAction(identifier: button.rawValue, title: "Post comments", options: [.authenticationRequired])
+        case .comments: return UNNotificationAction(identifier: button.rawValue, title: "Post as comment", options: [.authenticationRequired])
         case .approveAll: return UNNotificationAction(identifier: button.rawValue, title: "Approve all", options: [.authenticationRequired])
         case .open: return UNNotificationAction(identifier: button.rawValue, title: "Open", options: [.foreground])
         case .dismiss: return UNNotificationAction(identifier: button.rawValue, title: "Dismiss", options: [])
