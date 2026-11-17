@@ -55,7 +55,7 @@ let determinismTests: [(name: String, run: () throws -> Void)] = [
 
     ("script: steps run in order, a step's result reaches the later ones, and keep, drop and limit cut by line", {
         var calls: [String] = []
-        let steps = [step("tickets", "jira_search", ["jql": .text("updated >= {yesterday}"), "limit": .number(10)], keep: "^QDLY|^ACME", drop: "Done", limit: 2),
+        let steps = [step("tickets", "jira_search", ["jql": .text("updated >= {yesterday}"), "limit": .number(10)], keep: "^PROJ|^ACME", drop: "Done", limit: 2),
                      step("first", "jira_issue", ["key": .text("{tickets}")])]
         let result = RoutineScripts.run(script(steps, output: "{date}\n{tickets}\n--\n{first}"), context: ["date": "2026-11-16", "yesterday": "2026-11-15"]) { tool, args in
             calls.append("\(tool) \(args.keys.sorted().map { "\($0)=\(args[$0] ?? "")" }.joined(separator: ","))")
