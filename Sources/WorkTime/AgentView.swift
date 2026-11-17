@@ -832,6 +832,15 @@ struct AgentItemRow: View {
                     .padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.purple.opacity(0.12)))
                     .help("Sent by another agent, approved by you there or by clicking an action")
+                } else if let report = AgentReports.parse(text) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("From \(report.from)", systemImage: "tray.and.arrow.down").font(.caption.weight(.medium)).foregroundStyle(.teal)
+                        Text(report.text).lineSpacing(typography?.lineSpacing ?? 0).textSelection(.enabled)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.teal.opacity(0.12)))
+                    .help("A report from another agent: information for Main, not you speaking. You approved it, or allowed the tool.")
                 } else {
                     VStack(alignment: .trailing, spacing: 6) {
                         if !item.images.isEmpty {

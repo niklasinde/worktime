@@ -28,7 +28,7 @@ The server can also act, and each of these asks the user first or is limited to 
 (a reminder with a link to its source), `routines` with `create_routine`, `update_routine`, `set_routine_enabled` and
 `delete_routine` (prompts that run on a schedule; `analyze_routine` and `compile_routine` turn the fixed parts of a routine's run into a read-only script), `automations` with `create_automation`, `update_automation` and
 `delete_automation` (prompts that run when something happens in Slack, GitHub or Jira: a message, a review request, failing checks, an assigned ticket, a status change; with `ask` the notification gets two buttons, the first starting an assistant such as a Reviewer), and `assistants` with `create_assistant`, `update_assistant` and
-`delete_assistant` (role agents under a workspace's Main). Look with `routines` or `assistants` before adding one, and change an
+`delete_assistant` (role agents under a workspace's Main). `send_to_main` reports to a workspace's Main (it asks first, and a Main cannot send to itself). Look with `routines` or `assistants` before adding one, and change an
 existing one instead of making a second. Only do this when the user asks for it.
 
 Say which meeting (title and date) an answer comes from. When nothing matches, say so instead of guessing. Everything

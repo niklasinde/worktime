@@ -3,7 +3,7 @@ import { missingFolderError } from "./folder.js";
 import { query, type HookCallback, type PermissionResult, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { chromeResultStatus, chromeServerStatus, isChromeTool } from "./chrome.js";
 import { mcpServers, sessionOptions, type PromptOptions } from "./options.js";
-import { parseMode, preToolDecision, type Decision, type Mode } from "./permissions.js";
+import { parseMode, preToolDecision, selfReport, type Decision, type Mode } from "./permissions.js";
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
 import { TextStream } from "./stream.js";
 import { userMessage, type PromptImage } from "./images.js";
@@ -75,6 +75,8 @@ function resolveTarget(input: Record<string, unknown>): Promise<string | undefin
 
 /// The decision for a call; a send_to_agent from a Main is looked at against its delegate rules first.
 async function decide(tool: string, input: Record<string, unknown>, options: PromptOptions) {
+  const own = selfReport(tool, input, options.delegateFrom);
+  if (own) return { kind: "deny", reason: own } as Decision;
   const check = tool === delegateTool && hasDelegateRules(rules, options.delegateFrom);
   const delegated = check ? matchDelegate(rules, options.delegateFrom, await resolveTarget(input)) : undefined;
   return preToolDecision(tool, input, options.cwd, rules, mode, options.allowedMcpTools, delegated, sessionAllowed);

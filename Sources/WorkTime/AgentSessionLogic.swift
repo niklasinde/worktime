@@ -24,7 +24,7 @@ enum AgentSessions {
 
     /// What a session is called in the list: its first prompt in one line, with the app's own prompts named.
     static func title(prompt: String) -> String {
-        let text = AgentInbox.fromMain(prompt).map { "From Main: " + $0 } ?? prompt
+        let text = AgentInbox.fromMain(prompt).map { "From Main: " + $0 } ?? AgentReports.parse(prompt).map { "From \($0.from): " + $0.text } ?? prompt
         if text == AgentLogic.catchUpPrompt { return "Catch up" }
         if text.hasPrefix("Review https://"), let url = text.dropFirst("Review ".count).split(separator: " ").first,
            let pr = GitHubLink.pullRequest(at: url.trimmingCharacters(in: CharacterSet(charactersIn: "."))) {

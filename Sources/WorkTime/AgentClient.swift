@@ -700,6 +700,21 @@ final class AgentModel: ObservableObject {
         return decision
     }
 
+    /// A report from another agent: started now when this Main is idle, queued while it works or waits for a permission.
+    func deliver(report prompt: String) -> AgentInbox.Decision {
+        let decision = AgentReports.route(busy: busy, queued: queued.count)
+        switch decision {
+        case .start:
+            if !start(prompt) { return .reject(problem ?? AgentFolders.missingMessage(folder)) }
+        case .queue: queued.append(prompt)
+        case .reject: break
+        }
+        return decision
+    }
+
+    /// Whether the user is looking at this agent right now, so a report to it needs no notification.
+    var isBeingWatched: Bool { isInFront }
+
     @discardableResult
     private func start(_ text: String, images: [AgentImage] = []) -> Bool {
         guard FileManager.default.fileExists(atPath: folder) else {

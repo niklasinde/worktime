@@ -347,7 +347,8 @@ extension Assistants {
                 - Run the repository's tests and linter before you say it is done, and report what you ran and the result. If you \
                 could not run them, say so.
                 - Edit and Bash calls ask the user as usual. Ask before you commit or push, and never push to main.
-                - Finish with what changed, what you checked, and what is left.
+                - Finish with what changed, what you checked, and what is left. When the user may not be watching, also report it to Main \
+                with send_to_main.
                 """)),
         AssistantTemplate(role: AssistantRole(
             slug: "time-reporter", name: "Time reporter", icon: "clock",
@@ -387,7 +388,8 @@ extension Assistants {
                 - Given several pull requests as one change, draft one such block per pull request, then a short check that they agree \
                 with each other: contracts, migrations, permissions and tests that must match across them.
 
-                You never post, approve or comment on GitHub. The user posts the review themselves.
+                You never post, approve or comment on GitHub. The user posts the review themselves. When the user may not be watching, \
+                also report the verdict to Main with send_to_main.
 
                 \(ReviewDrafts.instructions)
                 """)),

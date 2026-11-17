@@ -263,6 +263,31 @@ final class AgentInboxWatcher {
         for request in take(AgentInbox.Request.self, where: AgentInbox.isRequest) {
             Task { @MainActor in answer(await Self.route(request), to: request.id) }
         }
+        for request in take(ReportRequest.self, where: AgentReports.isRequest) {
+            Task { @MainActor in answer(Self.report(request), to: request.id) }
+        }
+    }
+
+    @MainActor static var reports = AgentReports.Ledger()
+
+    /// An agent's send_to_main: checked against the limits, then handed to the Main it names, with a notification unless the user is looking at it.
+    @MainActor static func report(_ request: ReportRequest, now: Date = Date(), hub: AgentHub? = nil) -> NoticeReply {
+        let hub = hub ?? AgentHub.shared
+        func answer(ok: Bool, _ message: String) -> NoticeReply { NoticeReply(id: request.id, ok: ok, notice: nil, message: message) }
+        switch AgentReports.decide(request, workspaces: WorkspaceStore.shared.workspaces, titles: NoticeCenter.shared.titles(),
+                                   queued: { hub.mains[$0]?.queued ?? [] }, ledger: reports, now: now) {
+        case .reject(let why): return answer(ok: false, why)
+        case .duplicate: return answer(ok: true, AgentReports.duplicateText)
+        case .deliver(let workspace, let name, let prompt):
+            guard let main = hub.mains[workspace] else { return answer(ok: false, "WorkTime has no Main for the workspace \(workspace) yet; restart it to add one.") }
+            let decision = main.deliver(report: prompt)
+            if case .reject(let why) = decision { return answer(ok: false, why) }
+            reports.record(caller: request.source.identity, text: request.text, now: now)
+            if !main.isBeingWatched {
+                Notifier.postReport(title: "\(name) \u{2192} Main", body: request.text, agent: main.attentionID)
+            }
+            return answer(ok: true, AgentReports.replyText(decision, workspace: workspace))
+        }
     }
 
     /// Hands the prompt to the agent it names: an assistant, a topic agent or a pull request's.

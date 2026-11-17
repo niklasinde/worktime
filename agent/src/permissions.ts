@@ -24,6 +24,15 @@ export function mcpDenied(tool: string, allowed: string[] | undefined): boolean 
 
 export const sessionRule = "this session";
 
+export const reportTool = "mcp__worktime__send_to_main";
+
+/// A Main reporting to its own workspace's Main: refused before the user is asked, as the app would refuse it after.
+export function selfReport(tool: string, input: Record<string, unknown>, delegateFrom?: string): string | undefined {
+  if (tool !== reportTool || !delegateFrom) return undefined;
+  const to = typeof input.workspace === "string" ? input.workspace.trim().toLowerCase() : "";
+  return to === "" || to === delegateFrom.toLowerCase() ? "This is the Main of that workspace: a report goes to a Main from another agent. Say it in your own reply." : undefined;
+}
+
 /// Claude in Chrome acts in the user's own browser, so only its reads and the calls the user allowed (for this session, or
 /// with a saved rule for that tool or computer action) run without asking, in every mode. `sessionAllowed` holds those calls' `sessionKey`s.
 /// `delegated` is the delegate rule that lets this call of send_to_agent through, the only thing that does.

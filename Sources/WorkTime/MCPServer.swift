@@ -28,13 +28,13 @@ struct MCPServer {
         Access to WorkTime on this Mac. Reading: the user's meetings (summaries, action items, notes, transcripts with speakers), tracked \
         activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull requests, the app's Claude agents, \
         routines, automations and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
-        one of the app's agents (pr_urls: one agent for several pull requests that belong together); notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
+        one of the app's agents (pr_urls: one agent for several pull requests that belong together) and send_to_main reports back to a workspace's Main; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
         the user's WorkTime reminders; create_routine, update_routine, set_routine_enabled and delete_routine manage routines (a prompt \
         that runs on a schedule in an agent of its own); analyze_routine and compile_routine turn the fixed parts of a routine's or automation's run into a read-only script, \
         so the model only does the judgement; create_automation, update_automation and delete_automation manage automations (the same, \
         started by a Slack message, a pull request or a Jira ticket event instead); create_assistant, update_assistant and delete_assistant manage the role agents \
         under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
-        second. send_to_agent, complete_reminder, compile_routine and every routine, automation and assistant change ask the user to approve, unless the user switched that tool to not ask.
+        second. send_to_agent, send_to_main, complete_reminder, compile_routine and every routine, automation and assistant change ask the user to approve, unless the user switched that tool to not ask.
         """
 
     let tools: [MCPTool]
@@ -99,7 +99,7 @@ struct MCPServer {
     /// The names of every tool the server offers.
     static var toolNames: [String] {
         let none = Result<MeetingStore, Error>.failure(MCPToolError(""))
-        return (meetingTools(none) + githubTools(none) + agentTools(none) + topicTools() + resumeTools(none) + noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools()).map(\.name)
+        return (meetingTools(none) + githubTools(none) + agentTools(none) + topicTools() + resumeTools(none) + noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools() + reportTools()).map(\.name)
     }
 
     /// `--mcp`: serves the read-only tools over stdin and stdout until stdin closes.
@@ -107,9 +107,9 @@ struct MCPServer {
         let store = Result { try MeetingStore.openReadOnly() }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let github = githubTools(store)
-        let server = MCPServer(tools: meetingTools(store) + github + agentTools(store, github: github) + topicTools() + resumeTools(store) + noticeTools()
-                                   + reminderTools() + routineTools() + assistantTools() + briefTools(),
-                               version: version)
+        let reading: [MCPTool] = meetingTools(store) + github + agentTools(store, github: github) + topicTools() + resumeTools(store)
+        let acting: [MCPTool] = noticeTools() + reminderTools() + routineTools() + assistantTools() + briefTools() + reportTools()
+        let server = MCPServer(tools: reading + acting, version: version)
         let output = DispatchQueue(label: "worktime.mcp.output"), slow = DispatchQueue(label: "worktime.mcp.slow", attributes: .concurrent)
         let running = DispatchGroup()
         while let line = readLine() {

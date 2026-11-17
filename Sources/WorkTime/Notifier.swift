@@ -145,6 +145,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
+    /// An agent reported to Main while the user was elsewhere; a click opens that Main.
+    static func postReport(title: String, body: String, agent: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = String(body.prefix(AgentAttention.handoffLimit))
+        content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: ""]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
     /// An agent stopped on a permission prompt; Allow once, Allow for this session (where offered) and Deny answer it without opening the app, a click opens the agent.
     static func postApproval(agent: String, permission: String, text: (title: String, body: String), sessionOffered: Bool = false, quiet: Bool = false) {
         post(text, category: AgentAttention.approvalCategory(sessionOffered: sessionOffered), agent: agent, request: permission,

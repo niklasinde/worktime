@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modes, parseMode, preToolDecision } from "./permissions.js";
+import { modes, parseMode, preToolDecision, selfReport } from "./permissions.js";
+import { builtInAllowed } from "./readonly.js";
 
 const cwd = "/repo";
 const rules = [{ kind: "bash" as const, value: "npm test" }, { kind: "edits" as const, value: "/repo" }];
@@ -13,7 +14,7 @@ test("only the offered modes pass; anything else is Ask", () => {
 
 test("send_to_agent, complete_reminder and the routine and assistant changes are asked of the user in every mode", () => {
   for (const mode of modes) {
-    for (const tool of ["create_routine", "update_routine", "set_routine_enabled", "delete_routine", "compile_routine", "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant"]) {
+    for (const tool of ["create_routine", "update_routine", "set_routine_enabled", "delete_routine", "compile_routine", "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant", "send_to_main"]) {
       assert.deepEqual(preToolDecision(`mcp__worktime__${tool}`, {}, cwd, rules, mode), { kind: "ask" }, `${tool} ${mode}`);
     }
     assert.deepEqual(preToolDecision("mcp__worktime__send_to_agent", { text: "x" }, cwd, rules, mode), { kind: "ask" }, mode);
@@ -101,4 +102,22 @@ test("a session allowance does not reach Bash or the edit tools", () => {
   const session = new Set(["Bash", "Edit"]);
   assert.deepEqual(preToolDecision("Bash", { command: "rm -rf build" }, cwd, [], "default", undefined, undefined, session), { kind: "defer" });
   assert.deepEqual(preToolDecision("Edit", { file_path: `${cwd}/x` }, cwd, [], "default", undefined, undefined, session), { kind: "defer" });
+});
+
+test("send_to_main asks in every mode, can be opted out of or allowed for the session, and is open to an unattended run only by the app's own list", () => {
+  const send = "mcp__worktime__send_to_main";
+  assert.ok(builtInAllowed.alwaysAsk.includes(send) && !builtInAllowed.alwaysAskRisky.includes(send));
+  assert.deepEqual(builtInAllowed.unattendedAllowed, [send]);
+  for (const mode of modes) assert.deepEqual(preToolDecision(send, { text: "x" }, cwd, [], mode), { kind: "ask" }, mode);
+  assert.deepEqual(preToolDecision(send, { text: "x" }, cwd, [{ kind: "tool", value: send }], "default"), { kind: "allow", rule: send });
+  assert.deepEqual(preToolDecision(send, { text: "x" }, cwd, [], "default", undefined, undefined, new Set([send])), { kind: "allow", rule: "this session" });
+});
+
+test("a Main reporting to its own workspace's Main is refused before anyone is asked, another workspace's is not", () => {
+  const send = "mcp__worktime__send_to_main";
+  assert.match(selfReport(send, { text: "x" }, "work") ?? "", /Main of that workspace/);
+  assert.match(selfReport(send, { text: "x", workspace: " Work " }, "work") ?? "", /Main of that workspace/);
+  assert.equal(selfReport(send, { text: "x", workspace: "reviews" }, "work"), undefined);
+  assert.equal(selfReport(send, { text: "x" }, undefined), undefined, "an assistant is not a Main");
+  assert.equal(selfReport("mcp__worktime__send_to_agent", { text: "x" }, "work"), undefined);
 });

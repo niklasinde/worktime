@@ -657,6 +657,7 @@ enum AgentLogic {
         to a Jira ticket or Slack thread. Delegate to them the same way, with send_to_agent and their key or name. \
         jira_issue, jira_search, slack_thread and slack_search read Jira and Slack; nothing can post there, so draft any reply \
         as text for the user.
+        \(AgentReports.mainNote)
         Use notify when something needs the user and they may not be watching; with at, it reminds them later.
         Use add_reminder for something the user should do later; it goes to their WorkTime reminders, and a link to the pull request, ticket, Slack message or meeting it is about lets them open it from there.
         A routine is a prompt that runs on a schedule in an agent of its own (only while WorkTime is open). When the user asks for something \

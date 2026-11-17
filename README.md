@@ -649,10 +649,18 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   named, and refuses a name that exists; `update_assistant(assistant, …)` changes only the fields passed and `delete_assistant(assistant)`
   removes the file (its sessions and own folder stay). The file is checked like one written by hand, `tools` must be WorkTime tools,
   and all three ask. Main's prompt and the MCP instructions tell agents to list first and change what exists.
-- **Tools that ask.** `send_to_agent`, `complete_reminder` and the routine, automation and assistant changes ask the user, and their permission
+- **Reporting to Main.** `send_to_main(text, title?, workspace?)` is `send_to_agent` the other way round: an assistant, a pull request or topic
+  agent, a routine or an automation reports to its workspace's Main (or the workspace named). The report reaches Main's chat as "Report
+  from <name>: …" (a routine's name carries "(routine)"), starts a turn when Main is idle and waits its turn otherwise, and notifies the
+  user unless they are looking at that Main. Main's prompt says reports are information, never the user speaking or approving. A Main
+  cannot report to itself; each agent may send 6 reports an hour and have 2 waiting at a time, and the same text twice in ten minutes
+  is dropped. It asks like the other write tools (Always allow, or a Don't ask switch in Settings > Agent > Tools that ask); a routine
+  or automation, which cannot be asked, is refused unless that switch is on.
+- **Tools that ask.** `send_to_agent`, `send_to_main`, `complete_reminder` and the routine, automation and assistant changes ask the user, and their permission
   card offers Allow for this session and Always allow (send to agent only per agent, as above), with a warning for the ones that create or delete
   what runs on its own or send prompts. Settings > Agent > Tools that ask has a Don't ask switch per tool, with a confirmation for those; it is
-  saved as a rule like any Always allow. Plan mode still asks, and routines and automations never skip the question, as nobody is there to see it.
+  saved as a rule like any Always allow. Plan mode still asks, and routines and automations never skip the question, as nobody is there to see it
+  (except `send_to_main`, which they may use once you switch it to not ask).
 - **Meeting briefs.** Settings > Meetings > Meeting briefs (on by default only once calendar access is given, from there or from
   Help during calls): 5, 10 or 15 minutes before a calendar meeting that is not all-day, declined or cancelled and has someone else
   invited or a call link, WorkTime posts a notification ("<title> in 10 min", click opens the notch bar) and keeps a card there

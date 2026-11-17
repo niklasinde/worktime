@@ -122,6 +122,8 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/MCPReminders.swift \
     Sources/WorkTime/RoutineRequestLogic.swift \
     Sources/WorkTime/MCPRoutines.swift \
+    Sources/WorkTime/MCPReports.swift \
+    Sources/WorkTime/AgentReportLogic.swift \
     Sources/WorkTime/AssistantRequestLogic.swift \
     Sources/WorkTime/MCPAssistants.swift \
     Sources/WorkTime/MCPFilters.swift \
@@ -211,6 +213,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/DecisionTests.swift \
     Tests/WorkTimeTests/AgentSetTests.swift \
     Tests/WorkTimeTests/AgentActionTests.swift \
+    Tests/WorkTimeTests/AgentReportTests.swift \
     Tests/WorkTimeTests/ReviewDraftTests.swift \
     Tests/WorkTimeTests/AgentTranscriptTests.swift \
     Tests/WorkTimeTests/QuickChatTests.swift \

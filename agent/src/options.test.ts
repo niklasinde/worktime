@@ -36,5 +36,7 @@ test("every agent is told how to offer a next step as buttons", () => {
   assert.match(append, /prompt: \|/);
   assert.match(append, /```worktime-review\n\{"pr":/);
   assert.match(append, /never post, approve or comment yourself/);
+  assert.match(append, /send_to_main/);
+  assert.match(append, /Report from <name>/);
   assert.ok(append.endsWith("Be brief."));
 });

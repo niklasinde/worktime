@@ -100,6 +100,7 @@ enum AgentRules {
     static func riskNote(_ tool: String) -> String {
         let name = tool.replacingOccurrences(of: "mcp__worktime__", with: "")
         if name == "send_to_agent" { return "Sends prompts to your other agents without asking, from every agent." }
+        if name == "send_to_main" { return "Lets every agent, scheduled runs included, write into a workspace's Main without asking." }
         if name == "compile_routine" { return "Replaces what a routine runs with a script, without asking." }
         if name.hasPrefix("create_") { return "Creates routines, assistants or automations that then run on their own, without asking." }
         if name.hasPrefix("delete_") { return "Deletes routines, assistants or automations without asking." }
@@ -110,7 +111,8 @@ enum AgentRules {
     /// default, as nobody is there to see what it changes.
     static func sent(_ rules: [AgentRule], unattended: Bool, builtIn: AgentBuiltIn? = builtIn) -> [AgentRule] {
         guard unattended, let asked = builtIn?.alwaysAsk else { return rules }
-        return rules.filter { !($0.kind == .tool && asked.contains($0.value)) }
+        let kept = Set(builtIn?.unattendedAllowed ?? [])
+        return rules.filter { !($0.kind == .tool && asked.contains($0.value) && !kept.contains($0.value)) }
     }
 
     /// The rule that stops a tool asking.
@@ -207,6 +209,8 @@ struct AgentBuiltIn: Decodable, Equatable {
     let mcpPrefix: String
     let alwaysAsk: [String]
     var alwaysAskRisky: [String]?
+    /// Tools in `alwaysAsk` an unattended run may still be allowed to use by the user's own Don't ask switch.
+    var unattendedAllowed: [String]?
     let commands: [Command]
 
     static let fileName = "builtin-allowed.json"
