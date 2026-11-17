@@ -14,6 +14,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private static let reviewApproveAction = "review-approve"
     private static let reviewChangesAction = "review-changes"
     private static let reviewDismissAction = "review-dismiss"
+    private static let reviewConfirmCategory = "review-confirm"
 
     private let onRecord: @MainActor @Sendable () async -> Void
     private let onOpen: @MainActor @Sendable (URL) -> Void
@@ -46,7 +47,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let reviewApprove = UNNotificationAction(identifier: reviewApproveAction, title: "Approve\u{2026}", options: [.foreground])
         let reviewChanges = UNNotificationAction(identifier: reviewChangesAction, title: "Request changes\u{2026}", options: [.foreground])
         let reviewDismiss = UNNotificationAction(identifier: reviewDismissAction, title: "Dismiss", options: [])
-        return [
+        let drafted = ReviewNotices.allButtonSets.map {
+            UNNotificationCategory(identifier: ReviewNotices.category($0), actions: $0.map(draftedReviewAction), intentIdentifiers: [], options: [])
+        }
+        let confirm = UNNotificationCategory(identifier: reviewConfirmCategory, actions: [draftedReviewAction(.confirmAll), draftedReviewAction(.cancelAll)],
+                                             intentIdentifiers: [], options: [])
+        return drafted + [confirm,
             UNNotificationCategory(identifier: reviewCategory, actions: [reviewApprove, reviewChanges, reviewAgent, reviewDismiss], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: meetingCategory, actions: [record], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
@@ -55,6 +61,20 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: AgentAttention.questionCategory, actions: [reply], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.handoffCategory, actions: [stopAgent], intentIdentifiers: [], options: []),
         ]
+    }
+
+    /// The buttons of a drafted review. The ones that post ask for the Mac to be unlocked and run without bringing the app forward.
+    private static func draftedReviewAction(_ button: ReviewNotices.Button) -> UNNotificationAction {
+        switch button {
+        case .approve: return UNNotificationAction(identifier: button.rawValue, title: "Approve", options: [.authenticationRequired])
+        case .changes: return UNNotificationAction(identifier: button.rawValue, title: "Request changes", options: [.authenticationRequired])
+        case .comments: return UNNotificationAction(identifier: button.rawValue, title: "Post comments", options: [.authenticationRequired])
+        case .approveAll: return UNNotificationAction(identifier: button.rawValue, title: "Approve all", options: [.authenticationRequired])
+        case .open: return UNNotificationAction(identifier: button.rawValue, title: "Open", options: [.foreground])
+        case .dismiss: return UNNotificationAction(identifier: button.rawValue, title: "Dismiss", options: [])
+        case .confirmAll: return UNNotificationAction(identifier: button.rawValue, title: "Yes, approve", options: [.authenticationRequired])
+        case .cancelAll: return UNNotificationAction(identifier: button.rawValue, title: "Cancel", options: [])
+        }
     }
 
     /// The buttons of an automation's question are its own names, so each pair of names is a category of its own, added as they are needed.
@@ -165,6 +185,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if let ask = notice.ask {
             register(asks: [ask])
             content.categoryIdentifier = AutomationAsks.category(ask)
+        } else if let reviews = notice.reviews {
+            content.categoryIdentifier = ReviewNotices.category(for: reviews)
         } else if NoticeLogic.isReview(notice) {
             content.categoryIdentifier = reviewCategory
         }
@@ -206,9 +228,28 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     static func withdrawNotice(_ id: String) {
         Task { @MainActor in DecisionKeeper.shared.release(NoticeLogic.identifier(id)) }
+        let identifiers = [NoticeLogic.identifier(id), ReviewNotices.confirmIdentifier(id)]
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [NoticeLogic.identifier(id)])
-        center.removeDeliveredNotifications(withIdentifiers: [NoticeLogic.identifier(id)])
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
+    /// The second look before approving several pull requests at once: which ones, and a button that does it.
+    static func postReviewConfirmation(notice id: String, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.categoryIdentifier = reviewConfirmCategory
+        content.userInfo = [NoticeLogic.userInfoKey: id]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: ReviewNotices.confirmIdentifier(id), content: content, trigger: nil))
+    }
+
+    static func withdrawReviewConfirmation(_ id: String) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [ReviewNotices.confirmIdentifier(id)])
+        center.removeDeliveredNotifications(withIdentifiers: [ReviewNotices.confirmIdentifier(id)])
     }
 
     func withdrawMeetingStarted() {
@@ -250,6 +291,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             case UNNotificationDefaultActionIdentifier, AutomationAsks.openAction: await NoticeCenter.shared.open(id)
             case AutomationAsks.yesAction: await NoticeCenter.shared.answer(id, yes: true)
             case AutomationAsks.noAction: await NoticeCenter.shared.answer(id, yes: false)
+            case ReviewNotices.Button.approve.rawValue: await NoticeCenter.shared.postFromNotification(id, .approve)
+            case ReviewNotices.Button.changes.rawValue: await NoticeCenter.shared.postFromNotification(id, .requestChanges)
+            case ReviewNotices.Button.comments.rawValue: await NoticeCenter.shared.postFromNotification(id, .postComments)
+            case ReviewNotices.Button.approveAll.rawValue: await NoticeCenter.shared.approveAll(id)
+            case ReviewNotices.Button.confirmAll.rawValue: await NoticeCenter.shared.confirmApproveAll(id)
+            case ReviewNotices.Button.cancelAll.rawValue: await NoticeCenter.shared.cancelApproveAll(id)
+            case ReviewNotices.Button.open.rawValue: await NoticeCenter.shared.open(id)
+            case ReviewNotices.Button.dismiss.rawValue: await NoticeCenter.shared.dismissUnanswered(id)
             case Self.reviewApproveAction: await NoticeCenter.shared.review(id, requestChanges: false)
             case Self.reviewChangesAction: await NoticeCenter.shared.review(id, requestChanges: true)
             case Self.reviewAgentAction: await NoticeCenter.shared.openAgent(id)

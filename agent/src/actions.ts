@@ -14,3 +14,14 @@ export const actionInstructions = [
   "Keep the sentence before the block short. The user clicks Do it here (you get the prompt as their next message) or Ask an assistant (the assistant gets it); nothing runs until they click. " +
     "Never ask anyone in the prompt to approve, merge, post or send on the user's behalf: ask for a draft instead. Write a block only for a step worth taking, at most three.",
 ].join("\n");
+
+/// What every agent is told about drafting a review of a pull request; the app reads these blocks in `ReviewDraftLogic.swift`.
+export const reviewInstructions = [
+  "When you review a pull request and have a verdict, write the draft as a block the app shows as buttons the user clicks to post it. You never post, approve or comment yourself:",
+  "",
+  `${fence}worktime-review`,
+  '{"pr": "<the pull request url>", "sha": "<the head commit you reviewed, from gh pr view <url> --json headRefOid>", "verdict": "approve | request_changes | comment", "summary": "<the review text>", "comments": [{"file": "<path>", "line": <line in the new version of the file>, "body": "<the comment>"}]}',
+  fence,
+  "",
+  "One block per pull request. Start the summary and every comment with [AI]. The block must be valid JSON on the lines between the fences.",
+].join("\n");

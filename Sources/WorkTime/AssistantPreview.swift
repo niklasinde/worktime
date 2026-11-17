@@ -43,6 +43,7 @@ enum AssistantPreview {
             .text("I read ACME-123 and the repository\u{2019}s CLAUDE.md. `VAT_ENABLED` is only set locally, so CI skips the test (tests/test_vat.py:12). "
                   + "I will default it to true in `conftest.py`, run `pytest tests/test_vat.py`, and ask before I push."),
             .text(actionReply),
+            .text(reviewReply),
             .result(sessionID: "preview-developer", isError: false, text: "", turns: 3, model: "claude-opus-5-5", mode: .ask),
         ]
         events.forEach { AgentLogic.apply($0, to: &items) }
@@ -79,6 +80,16 @@ enum AssistantPreview {
         assistant: Reviewer
         prompt: |
           Draft a test in tests/test_vat.py that fails when VAT_ENABLED is unset. Show it, do not commit.
+        ```
+        """
+
+    private static let reviewReply = """
+        The sync change is right, but it drops rows when two orders share a timestamp:
+
+        ```worktime-review
+        {"pr": "https://github.com/acme-com/orbit.api/pull/2803", "sha": "0123456789abcdef0123456789abcdef01234567", "verdict": "request_changes",
+         "summary": "[AI] The sync drops rows when two orders share a timestamp. Order by id as well.",
+         "comments": [{"file": "sync.py", "line": 42, "body": "[AI] Add the id to the ordering."}, {"file": "tests/test_sync.py", "line": 12, "body": "[AI] Cover the tie."}]}
         ```
         """
 

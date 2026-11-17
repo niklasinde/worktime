@@ -12,15 +12,31 @@ final class GitHubActionDraft: ObservableObject, Identifiable {
     @Published private(set) var checking = true
     @Published private(set) var note: String?
     @Published fileprivate(set) var running = false
+    /// Why a drafted review is shown here instead of being posted with one click.
+    let reasons: [String]
 
     init(_ action: GitHubAction, pr: GitHubPR, detail: GitHubPRDetail?) {
         self.pr = pr
         request = GitHubActionRequest(action, pr: pr)
         target = GitHubActionTarget(pr: pr, detail: detail)
+        reasons = []
         adoptMergeMethod()
     }
 
-    var confirmation: GitHubActionConfirmation { GitHubActions.confirmation(for: request, target: target) }
+    /// A drafted review, with its text and comments, to be confirmed.
+    init(request: GitHubActionRequest, pr: GitHubPR, detail: GitHubPRDetail?, reasons: [String]) {
+        self.pr = pr
+        self.request = request
+        target = GitHubActionTarget(pr: pr, detail: detail)
+        self.reasons = reasons
+        adoptMergeMethod()
+    }
+
+    var confirmation: GitHubActionConfirmation {
+        var confirmation = GitHubActions.confirmation(for: request, target: target)
+        confirmation.warnings.insert(contentsOf: reasons.map { GitHubActionConfirmation.Warning(text: $0) }, at: 0)
+        return confirmation
+    }
 
     private func adoptMergeMethod() {
         request.method = GitHubMergeMethod.choose(request.method, from: target.mergeMethods)
@@ -48,6 +64,7 @@ final class GitHubActionDraft: ObservableObject, Identifiable {
         self.target = target
         self.checking = checking
         self.running = running
+        reasons = []
         adoptMergeMethod()
     }
     #endif
@@ -201,7 +218,11 @@ final class GitHubActionsModel: ObservableObject {
     func run(_ draft: GitHubActionDraft) async -> GitHubBulk.Outcome? {
         guard enabled, !draft.running, !draft.checking, draft.confirmation.canConfirm else { return nil }
         draft.running = true
-        let outcomes = await execute([draft.request], stop: StopFlag()) { _, _ in }
+        var request = draft.request
+        request.commitID = request.commitID ?? draft.target.headOid
+        request.actor = request.actor ?? draft.target.viewer
+        request.via = request.via ?? "sheet"
+        let outcomes = await execute([request], stop: StopFlag()) { _, _ in }
         afterActions()
         return outcomes[0]
     }
@@ -307,6 +328,118 @@ final class GitHubActionsModel: ObservableObject {
         GitHubModel.shared.refreshAfterAction()
     }
 
+
+    // MARK: Drafted reviews
+
+    private struct PreparedReview {
+        let pr: GitHubPR
+        let detail: GitHubPRDetail?
+        let request: GitHubActionRequest
+        let route: ReviewApproval.Route
+    }
+
+    /// Looks at the pull request now and decides how the draft may be posted: with this click alone, or only after the sheet.
+    private func prepare(_ draft: ReviewDraft, _ action: ReviewAction, via: String) async -> PreparedReview? {
+        guard let link = draft.target else { return nil }
+        let pr = GitHubModel.shared.knownPullRequest(link)
+        let cli = GitHubLogic.findCLI(), repo = link.repo, number = link.number
+        let (result, viewer) = await Task.detached {
+            (GitHubClient.fetchDetail(cli: cli, repo: repo, number: number), GitHubActionRunner.viewer(cli: cli))
+        }.value
+        var detail: GitHubPRDetail?
+        if case .success(let fetched) = result { detail = fetched.detail }
+        let target = GitHubActionTarget(pr: pr, detail: detail, viewer: viewer)
+        let request = draft.request(action, pr: pr, commit: target.headOid, actor: viewer, via: via)
+        let route = ReviewApproval.route(action, draft: draft, target: target, request: request, currentSHA: target.headOid, stateKnown: detail != nil,
+                                         enabled: enabled, oneClick: GitHubActions.isReviewFromNotifications())
+        return PreparedReview(pr: pr, detail: detail, request: request, route: route)
+    }
+
+    /// The user's click on a button of a drafted review: it is posted when that is safe to do without the sheet, otherwise the sheet
+    /// or the pull request opens and says why. Nothing here runs unless a person clicked.
+    func postReview(_ draft: ReviewDraft, _ action: ReviewAction, via: String) async -> ReviewOutcome {
+        guard let prepared = await prepare(draft, action, via: via) else { return .failed("The review does not name a pull request.") }
+        switch prepared.route {
+        case .blocked(let reason):
+            openPullRequest(prepared.pr)
+            return .opened(reason)
+        case .confirm(let reasons):
+            showReview(prepared, reasons: reasons)
+            return .confirming(reasons.joined(separator: " "))
+        case .post:
+            let outcomes = await execute([prepared.request], stop: StopFlag()) { _, _ in }
+            afterActions()
+            show(outcomes[0], for: prepared.request)
+            switch outcomes[0] {
+            case .done: return .posted(GitHubActions.successText(prepared.request))
+            case .failed(let error): return .failed(GitHubActions.failureText(prepared.request, error))
+            case .skipped(let reason): return .failed(reason)
+            }
+        }
+    }
+
+    /// Why these cannot all be approved with one click, one line per pull request; empty when they can.
+    func approvalProblems(_ drafts: [ReviewDraft]) async -> [String] {
+        var problems: [String] = []
+        for draft in drafts {
+            guard let prepared = await prepare(draft, .approve, via: "notification") else { problems.append("\(draft.reference): not a pull request"); continue }
+            switch prepared.route {
+            case .post: break
+            case .confirm(let reasons): problems.append("\(draft.reference): \(reasons.joined(separator: " "))")
+            case .blocked(let reason): problems.append("\(draft.reference): \(reason)")
+            }
+        }
+        return problems
+    }
+
+    /// Approves each pull request that is still fine to approve, one after another; the others are reported, not touched.
+    func approveAll(_ drafts: [ReviewDraft]) async -> [(draft: ReviewDraft, outcome: ReviewOutcome)] {
+        var ready: [(draft: ReviewDraft, prepared: PreparedReview)] = []
+        var results: [String: ReviewOutcome] = [:]
+        for draft in drafts {
+            guard let prepared = await prepare(draft, .approve, via: "notification") else { results[draft.id] = .failed("Not a pull request."); continue }
+            switch prepared.route {
+            case .post: ready.append((draft, prepared))
+            case .confirm(let reasons): results[draft.id] = .failed("Not approved: \(reasons.joined(separator: " "))")
+            case .blocked(let reason): results[draft.id] = .failed("Not approved: \(reason)")
+            }
+        }
+        let requests = ready.map(\.prepared.request)
+        let outcomes = await execute(requests, stop: StopFlag()) { _, _ in }
+        afterActions()
+        for (index, item) in ready.enumerated() {
+            switch outcomes[index] {
+            case .done: results[item.draft.id] = .posted(GitHubActions.successText(requests[index]))
+            case .failed(let error): results[item.draft.id] = .failed(GitHubActions.failureText(requests[index], error))
+            case .skipped(let reason): results[item.draft.id] = .failed(reason)
+            }
+        }
+        if !outcomes.isEmpty {
+            banner = Banner(text: GitHubBulk.summary(.approve, outcomes), isError: outcomes.contains { $0 != .done })
+            expireBanner()
+        }
+        return drafts.map { ($0, results[$0.id] ?? .failed("Not tried.")) }
+    }
+
+    /// The page's own confirmation with the drafted text and comments in it, for a draft that may not be posted with one click.
+    private func showReview(_ prepared: PreparedReview, reasons: [String]) {
+        openPullRequest(prepared.pr)
+        var request = prepared.request
+        request.via = nil
+        let draft = GitHubActionDraft(request: request, pr: prepared.pr, detail: prepared.detail, reasons: reasons)
+        Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            present(.single(draft))
+            await draft.refresh()
+        }
+    }
+
+    private func openPullRequest(_ pr: GitHubPR) {
+        guard let target = GitHubLink.pullRequest(at: pr.url) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        AgentModel.openPullRequestLink?(target)
+    }
+
     // MARK: Log
 
     func loadRecords() {
@@ -330,11 +463,25 @@ final class GitHubActionsModel: ObservableObject {
 }
 
 extension GitHubModel {
+    /// The pull request as the lists know it, or a bare one for an address they have not seen.
+    func knownPullRequest(_ target: GitHubLink.Target) -> GitHubPR {
+        (prs.values.flatMap { $0 } + watchedPRs).first { $0.url == target.url }
+            ?? GitHubPR(url: target.url, number: target.number, title: "", repo: target.repo, updated: .distantPast)
+    }
+
+    /// The user's click on a button of a drafted review.
+    func postReview(_ draft: ReviewDraft, _ action: ReviewAction, via: String) async -> ReviewOutcome {
+        await GitHubActionsModel.shared.postReview(draft, action, via: via)
+    }
+
+    func approvalProblems(_ drafts: [ReviewDraft]) async -> [String] { await GitHubActionsModel.shared.approvalProblems(drafts) }
+
+    func approveAll(_ drafts: [ReviewDraft]) async -> [(draft: ReviewDraft, outcome: ReviewOutcome)] { await GitHubActionsModel.shared.approveAll(drafts) }
+
     /// A review notification's Approve or Request changes: asks the page's own confirmation for the pull request once its page is
     /// up. Nothing is sent until the user confirms there, and not at all while actions on GitHub are off.
     func beginReview(of target: GitHubLink.Target, requestChanges: Bool) {
-        let pr = (prs.values.flatMap { $0 } + watchedPRs).first { $0.url == target.url }
-            ?? GitHubPR(url: target.url, number: target.number, title: "", repo: target.repo, updated: .distantPast)
+        let pr = knownPullRequest(target)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 600_000_000)
             GitHubActionsModel.shared.begin(requestChanges ? .requestChanges : .approve, pr)

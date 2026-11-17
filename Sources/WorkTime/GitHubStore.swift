@@ -190,9 +190,9 @@ extension MeetingStore {
     @discardableResult
     func saveGitHubAction(_ record: GitHubActionRecord) throws -> Int64 {
         try write(notify: Self.githubDidChange) {
-            try db.run("INSERT INTO github_actions (at, action, repo, number, title, command, result, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            try db.run("INSERT INTO github_actions (at, action, repo, number, title, command, result, error, sha, actor, via) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        [record.at.timeIntervalSince1970, record.action.rawValue, record.repo, record.number, record.title, record.command,
-                        record.succeeded ? "success" : "failed", record.error])
+                        record.succeeded ? "success" : "failed", record.error, record.sha, record.actor, record.via])
             return try db.lastInsertID
         }
     }
@@ -200,12 +200,13 @@ extension MeetingStore {
     /// The newest actions first.
     func githubActions(limit: Int = GitHubActions.recentLimit) throws -> [GitHubActionRecord] {
         try read {
-            try db.query("SELECT id, at, action, repo, number, title, command, result, error FROM github_actions ORDER BY id DESC LIMIT ?",
+            try db.query("SELECT id, at, action, repo, number, title, command, result, error, sha, actor, via FROM github_actions ORDER BY id DESC LIMIT ?",
                          [limit]) { row -> GitHubActionRecord? in
                 guard let action = GitHubAction(rawValue: row.string(2)) else { return nil }
                 return GitHubActionRecord(id: row.int64(0), at: Date(timeIntervalSince1970: row.double(1)), action: action, repo: row.string(3),
                                           number: Int(row.int64(4)), title: row.string(5), command: row.string(6),
-                                          succeeded: row.string(7) == "success", error: row.optionalString(8))
+                                          succeeded: row.string(7) == "success", error: row.optionalString(8),
+                                          sha: row.optionalString(9), actor: row.optionalString(10), via: row.optionalString(11))
             }.compactMap { $0 }
         }
     }

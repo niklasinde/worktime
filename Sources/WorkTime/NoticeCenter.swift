@@ -8,6 +8,9 @@ final class NoticeCenter: ObservableObject {
     static let shared = NoticeCenter()
     static let grace: TimeInterval = 2
     @Published private(set) var notices: [AgentNotice] = []
+    /// The drafted reviews being posted now, and what became of the last click on each, for the rows that have buttons for them.
+    @Published private(set) var reviewWorking: Set<String> = []
+    @Published private(set) var reviewResults: [String: String] = [:]
     private var recent: [AgentNotice] = []
     private var file: URL?
     private var timer: Timer?
@@ -70,7 +73,7 @@ final class NoticeCenter: ObservableObject {
     /// Opens what the notification links to (or the agent that sent it) and takes it off the list.
     func open(_ id: String) {
         guard let notice = notices.first(where: { $0.id == id }) else { return }
-        if notice.ask == nil { dismiss(id) }
+        if notice.ask == nil, notice.reviews == nil { dismiss(id) }
         switch notice.link.flatMap(NoticeLogic.link) {
         case .pullRequest(let target)?: AgentModel.openPullRequestLink?(target)
         case .agent(let key)?: AgentHub.shared.show(key)
@@ -119,6 +122,104 @@ final class NoticeCenter: ObservableObject {
         open(id)
         GitHubModel.shared.beginReview(of: target, requestChanges: requestChanges)
     }
+
+
+    // MARK: Drafted reviews
+
+    /// A notification for the reviews an agent drafted and did not post, with buttons that post them; one for the same drafts is updated.
+    func addReview(_ drafts: [ReviewDraft], agent: String, agentTitle: String) {
+        let open = drafts.filter { ReviewPostStore.shared.posted($0.id)?.ok != true }
+        guard !open.isEmpty else { return }
+        let now = Date()
+        var notice = ReviewNotices.notice(drafts: open, agent: agent, agentTitle: agentTitle, now: now)
+        if case .replace(let id) = NoticeLogic.admit(notice, existing: notices, recent: [], now: now) {
+            notice.id = id
+            notices.removeAll { $0.id == id }
+        }
+        notices.append(notice)
+        Notifier.postNotice(notice)
+        keepOnScreen(notice)
+        save()
+    }
+
+    /// A button of a notification about one drafted review.
+    func postFromNotification(_ id: String, _ action: ReviewAction) async {
+        guard let drafts = notices.first(where: { $0.id == id })?.reviews, drafts.count == 1 else { return }
+        await post(drafts[0], action, via: "notification")
+    }
+
+    /// The user's click on a button of a drafted review, from a notification, the notch bar or a chat. Whether it posts at once or opens
+    /// the page's confirmation is decided by what the pull request is like now.
+    @discardableResult
+    func post(_ draft: ReviewDraft, _ action: ReviewAction, via: String) async -> ReviewOutcome {
+        reviewWorking.insert(draft.id)
+        reviewResults[draft.id] = nil
+        let outcome = await GitHubModel.shared.postReview(draft, action, via: via)
+        reviewWorking.remove(draft.id)
+        reviewResults[draft.id] = outcome.text
+        switch outcome {
+        case .posted(let text): ReviewPostStore.shared.record(ReviewPosted(action: action, text: text, ok: true, date: Date()), draft: draft.id)
+        case .failed(let text): ReviewPostStore.shared.record(ReviewPosted(action: action, text: text, ok: false, date: Date()), draft: draft.id)
+        case .confirming, .opened: break
+        }
+        settle(draft, outcome: outcome, loud: via == "notification")
+        return outcome
+    }
+
+    /// What a click did to the notification that holds the draft: the posted draft goes, and with the last one the notification
+    /// becomes the result; a failure stays with its reason.
+    private func settle(_ draft: ReviewDraft, outcome: ReviewOutcome, loud: Bool) {
+        guard let index = notices.firstIndex(where: { $0.reviews?.contains { $0.id == draft.id } == true }) else { return }
+        let notice = notices[index]
+        switch outcome {
+        case .posted(let text):
+            let updated = ReviewNotices.afterPosting(notice, draft: draft, text: text)
+            if !loud, updated.reviews == nil { return dismiss(notice.id) }
+            replace(updated, at: index, show: loud)
+        case .failed(let text):
+            replace(ReviewNotices.afterFailure(notice, text: text), at: index, show: loud)
+        case .confirming, .opened:
+            break
+        }
+    }
+
+    private func replace(_ notice: AgentNotice, at index: Int, show: Bool) {
+        notices[index] = notice
+        if !Decisions.needsAnswer(notice) { DecisionKeeper.shared.release(NoticeLogic.identifier(notice.id)) }
+        if show { Notifier.postNotice(notice) }
+        save()
+    }
+
+    /// The first step of approving a set at once: every pull request is looked at again, and when each is fine to approve the user
+    /// is asked once more, naming them. Otherwise the notification says which one is not and why.
+    func approveAll(_ id: String) async {
+        guard let notice = notices.first(where: { $0.id == id }), let drafts = notice.reviews, !drafts.isEmpty else { return }
+        let problems = await GitHubModel.shared.approvalProblems(drafts)
+        guard problems.isEmpty else {
+            if let index = notices.firstIndex(where: { $0.id == id }) {
+                replace(ReviewNotices.afterFailure(notice, text: "Not approved in one go:\n" + problems.joined(separator: "\n")), at: index, show: true)
+            }
+            return
+        }
+        Notifier.postReviewConfirmation(notice: id, title: ReviewNotices.confirmTitle(drafts), body: ReviewNotices.confirmBody(drafts))
+    }
+
+    /// The second step: each pull request is checked once more, as the commit may have changed meanwhile, and the ones that pass are approved.
+    func confirmApproveAll(_ id: String) async {
+        Notifier.withdrawReviewConfirmation(id)
+        guard let notice = notices.first(where: { $0.id == id }), let drafts = notice.reviews, !drafts.isEmpty else { return }
+        drafts.forEach { reviewWorking.insert($0.id) }
+        let results = await GitHubModel.shared.approveAll(drafts)
+        drafts.forEach { reviewWorking.remove($0.id) }
+        for (draft, outcome) in results {
+            reviewResults[draft.id] = outcome.text
+            if outcome.posted { ReviewPostStore.shared.record(ReviewPosted(action: .approve, text: outcome.text, ok: true, date: Date()), draft: draft.id) }
+        }
+        guard let index = notices.firstIndex(where: { $0.id == id }) else { return }
+        replace(ReviewNotices.afterApproving(notices[index], results: results), at: index, show: true)
+    }
+
+    func cancelApproveAll(_ id: String) { Notifier.withdrawReviewConfirmation(id) }
 
     /// The cross on a decision: it is put aside without an answer, and what it was about stays in Resolved.
     func dismissUnanswered(_ id: String) {

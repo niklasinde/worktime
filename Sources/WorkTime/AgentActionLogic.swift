@@ -26,11 +26,12 @@ enum AgentActions {
     enum Segment: Equatable {
         case markdown(String)
         case action(AgentAction)
+        case review(ReviewDraft)
     }
 
     /// The reply's text in order: Markdown, and the action blocks that are complete and well formed. A block that is not stays
     /// in the Markdown, where it shows as the code it is, and so does one still being written.
-    static func segments(_ text: String) -> [Segment] {
+    static func segments(_ text: String, actions: Bool = true) -> [Segment] {
         var segments: [Segment] = []
         var markdown: [String] = []
         var seen: [String: Int] = [:]
@@ -49,7 +50,12 @@ enum AgentActions {
                 if isClosing(trimmed, of: fence) { otherFence = nil }
                 markdown.append(line)
             } else if let fence = opening(trimmed) {
-                if fence.info == info, let end = lines[(index + 1)...].firstIndex(where: { isClosing($0.trimmingCharacters(in: .whitespaces), of: fence.marker) }),
+                if fence.info == ReviewDrafts.info, let end = lines[(index + 1)...].firstIndex(where: { isClosing($0.trimmingCharacters(in: .whitespaces), of: fence.marker) }),
+                   let draft = ReviewDrafts.parse(block: lines[(index + 1)..<end].joined(separator: "\n")) {
+                    flush()
+                    segments.append(.review(draft))
+                    index = end
+                } else if actions, fence.info == info, let end = lines[(index + 1)...].firstIndex(where: { isClosing($0.trimmingCharacters(in: .whitespaces), of: fence.marker) }),
                    let fields = fields(Array(lines[(index + 1)..<end])) {
                     flush()
                     let base = id(title: fields.title, prompt: fields.prompt)
@@ -58,7 +64,7 @@ enum AgentActions {
                     segments.append(.action(AgentAction(id: count == 0 ? base : "\(base)-\(count)", title: fields.title, assistant: fields.assistant, prompt: fields.prompt)))
                     index = end
                 } else {
-                    if fence.info != info { otherFence = fence.marker }
+                    if fence.info != info || !actions { otherFence = fence.marker }
                     markdown.append(line)
                 }
             } else {
@@ -70,14 +76,14 @@ enum AgentActions {
         return segments
     }
 
-    private static func opening(_ line: String) -> (marker: String, info: String)? {
+    static func opening(_ line: String) -> (marker: String, info: String)? {
         guard let first = line.first, first == "`" || first == "~" else { return nil }
         let marker = String(line.prefix { $0 == first })
         guard marker.count >= 3 else { return nil }
         return (marker, line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces))
     }
 
-    private static func isClosing(_ line: String, of marker: String) -> Bool {
+    static func isClosing(_ line: String, of marker: String) -> Bool {
         guard let first = marker.first, line.count >= marker.count else { return false }
         return line.allSatisfy { $0 == first }
     }

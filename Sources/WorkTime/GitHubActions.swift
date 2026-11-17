@@ -82,6 +82,13 @@ struct GitHubActionRequest: Equatable {
     var comment = ""
     var deleteBranch = false
     var method = GitHubMergeMethod.squash
+    /// Comments on lines, for a review drafted by an agent; they make it a request to GitHub's review API.
+    var inline: [ReviewDraft.Comment] = []
+    /// The commit the person is acting on, and who is signed in, kept in the log.
+    var commitID: String?
+    var actor: String?
+    /// Where the click was: a sheet, a notification, the notch bar or a chat.
+    var via: String?
 
     init(_ action: GitHubAction, pr: GitHubPR) {
         self.action = action
@@ -122,6 +129,7 @@ struct GitHubActionTarget: Equatable {
     var checks = GitHubPR.Checks.none
     var review: GitHubPR.Review?
     var head: String?
+    var headOid: String?
     var base: String?
     var mergeable = GitHubPRDetail.Mergeable.unknown
     var mergeState = GitHubPRDetail.MergeState.unknown
@@ -137,6 +145,7 @@ struct GitHubActionTarget: Equatable {
         checks = detail.map { $0.rollup == .none ? pr.checks : $0.rollup } ?? pr.checks
         review = detail?.review ?? pr.review
         head = detail.flatMap { $0.head.isEmpty ? nil : $0.head }
+        headOid = detail?.headOid.flatMap { $0.isEmpty ? nil : $0 }
         base = detail.flatMap { $0.base.isEmpty ? nil : $0.base }
         mergeable = detail?.mergeable ?? .unknown
         mergeState = detail?.mergeState ?? .unknown
@@ -254,11 +263,17 @@ struct GitHubActionConfirmation: Equatable {
 enum GitHubActions {
     static let enabledKey = "githubActionsEnabled"
     static let explainedKey = "githubActionsExplained"
+    static let reviewFromNotificationsKey = "githubReviewFromNotifications"
+    static let oneClickNote = "A review an agent drafted can be approved, sent back with changes or posted as comments with one click on its notification, "
+        + "in the notch bar or in a chat, without this sheet. It is posted only for the commit the agent reviewed and only for an open pull request that is "
+        + "not a draft, and otherwise the sheet opens and says why. Off until you turn it on."
+    static let oneClickOffText = "Approving from notifications is off, so you confirm here."
     static let disabledHelp = "Turn on \u{201C}Allow actions on GitHub\u{201D} in Settings \u{2192} GitHub first."
     static let settingNote = "Runs gh on your behalf. Every action, merging included, asks you to confirm first."
     static let explanation = "The app can now approve, merge and close pull requests, and comment on them, by running the GitHub CLI (gh) with your own "
         + "sign-in. It never does so by itself, and nothing else in the app can: not Claude, not the terminal here, not the chat, not the "
-        + "iPhone. Each action opens a sheet that shows the exact command and waits for your click. Every action is written to a local "
+        + "iPhone. Each action opens a sheet that shows the exact command and waits for your click, unless you turn on posting a drafted review from "
+        + "its notification, which then posts that one review with your click on its button. Every action is written to a local "
         + "log in Settings \u{2192} GitHub. Approvals cannot be undone from here, and a merge cannot be undone at all: GitHub only lets you revert it "
         + "with a new pull request. Merges never skip branch protection and never wait for automatic merging."
     static let reopenWindow: TimeInterval = 30
@@ -270,6 +285,8 @@ enum GitHubActions {
     static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: enabledKey) }
     static func setEnabled(_ on: Bool, _ defaults: UserDefaults = .standard) { defaults.set(on, forKey: enabledKey) }
     static func isExplained(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: explainedKey) }
+    /// One-click posting of a drafted review needs actions on GitHub on as well.
+    static func isReviewFromNotifications(_ defaults: UserDefaults = .standard) -> Bool { isEnabled(defaults) && defaults.bool(forKey: reviewFromNotificationsKey) }
     static func setExplained(_ defaults: UserDefaults = .standard) { defaults.set(true, forKey: explainedKey) }
 
     /// The row menu offers actions only while they are allowed; the page shows them disabled, with `disabledHelp`.
@@ -278,9 +295,12 @@ enum GitHubActions {
     // MARK: Command line
 
     /// Arguments for `gh`, one entry per word; text the person wrote is a single entry and never part of a shell string.
-    static func arguments(_ request: GitHubActionRequest) -> [String] {
+    static func arguments(_ request: GitHubActionRequest, inputFile: String = "review.json") -> [String] {
         let comment = request.trimmedComment
         let base = ["--repo", request.repo]
+        if request.action.isReview, !request.inline.isEmpty {
+            return ["api", "--method", "POST", "repos/\(request.repo)/pulls/\(request.number)/reviews", "--input", inputFile]
+        }
         switch request.action {
         case .approve:
             return ["pr", "review", String(request.number)] + base + ["--approve"] + (comment.isEmpty ? [] : ["--body", comment])
@@ -297,6 +317,15 @@ enum GitHubActions {
         case .reopen:
             return ["pr", "reopen", String(request.number)] + base + (comment.isEmpty ? [] : ["--comment", comment])
         }
+    }
+
+    /// What a review with comments on lines sends to GitHub: the event, the body, the commit and each comment on its file and line.
+    static func reviewPayload(_ request: GitHubActionRequest) -> Data {
+        var body: [String: Any] = ["event": request.action == .approve ? "APPROVE" : request.action == .requestChanges ? "REQUEST_CHANGES" : "COMMENT"]
+        if !request.trimmedComment.isEmpty { body["body"] = request.trimmedComment }
+        if let commit = request.commitID, !commit.isEmpty { body["commit_id"] = commit }
+        body["comments"] = request.inline.map { ["path": $0.path, "line": $0.line, "side": "RIGHT", "body": $0.body] as [String: Any] }
+        return (try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])) ?? Data()
     }
 
     /// The same command as a line to read and paste into a terminal.
@@ -373,6 +402,13 @@ enum GitHubActions {
             facts.append(.init(label: "Base", value: target.base ?? "unknown"))
             facts.append(.init(label: "Conflicts", value: GitHubLogic.mergeText(target.mergeable) ?? "Not known yet",
                                tone: target.mergeable == .conflicting ? .bad : target.mergeable == .mergeable ? .good : .normal))
+        }
+        if request.action.isReview, !request.inline.isEmpty {
+            let files = Set(request.inline.map(\.path)).count
+            facts.append(.init(label: "Comments on lines", value: "\(request.inline.count) on \(files) file\(files == 1 ? "" : "s")"))
+        }
+        if request.action.isReview, let commit = request.commitID, !commit.isEmpty {
+            facts.append(.init(label: "Commit", value: ReviewApproval.short(commit)))
         }
         if request.action.isReview || merging {
             facts.append(.init(label: "Checks", value: checksText(target.checks), tone: tone(target.checks)))
@@ -501,7 +537,14 @@ enum GitHubActionRunner {
     /// that is already in the wanted state with a warning and exit 0; that is reported as the failure it is.
     nonisolated static func perform(_ request: GitHubActionRequest, cli: URL?) -> Result<String, GitHubActionError> {
         guard let cli else { return .failure(.cliMissing) }
-        guard let output = GitHubClient.run(cli, GitHubActions.arguments(request), directory: FileManager.default.temporaryDirectory) else {
+        var input: URL?
+        if request.action.isReview, !request.inline.isEmpty {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("worktime-review-\(UUID().uuidString).json")
+            guard (try? GitHubActions.reviewPayload(request).write(to: file, options: .atomic)) != nil else { return .failure(.failed("Could not write the review to a file.")) }
+            input = file
+        }
+        defer { if let input { try? FileManager.default.removeItem(at: input) } }
+        guard let output = GitHubClient.run(cli, GitHubActions.arguments(request, inputFile: input?.path ?? "review.json"), directory: FileManager.default.temporaryDirectory) else {
             return .failure(.cliMissing)
         }
         if output.status != 0 { return .failure(GitHubActionError.classify(output.stderr)) }
@@ -579,6 +622,10 @@ struct GitHubActionRecord: Equatable, Identifiable {
     let command: String
     let succeeded: Bool
     var error: String?
+    /// The commit acted on, who was signed in and where the click was.
+    var sha: String?
+    var actor: String?
+    var via: String?
 
     init(id: Int64 = 0, at: Date, request: GitHubActionRequest, succeeded: Bool, error: String? = nil) {
         self.id = id
@@ -590,9 +637,13 @@ struct GitHubActionRecord: Equatable, Identifiable {
         command = GitHubActions.commandLine(request)
         self.succeeded = succeeded
         self.error = error
+        sha = request.commitID
+        actor = request.actor
+        via = request.via
     }
 
-    init(id: Int64, at: Date, action: GitHubAction, repo: String, number: Int, title: String, command: String, succeeded: Bool, error: String?) {
+    init(id: Int64, at: Date, action: GitHubAction, repo: String, number: Int, title: String, command: String, succeeded: Bool, error: String?,
+         sha: String? = nil, actor: String? = nil, via: String? = nil) {
         self.id = id
         self.at = at
         self.action = action
@@ -602,6 +653,9 @@ struct GitHubActionRecord: Equatable, Identifiable {
         self.command = command
         self.succeeded = succeeded
         self.error = error
+        self.sha = sha
+        self.actor = actor
+        self.via = via
     }
 
     var reference: String { "\(GitHubLogic.repoName(repo).name) #\(number)" }

@@ -121,7 +121,7 @@ enum PullRequestSets {
         "Review these \(prs.count) pull requests as one change. For each, read it with github_pr and the diff, then draft a verdict "
             + "(approve, request changes or needs the author's input) with the blocking problems and the small ones. Then check that they are "
             + "consistent with each other: the contracts, migrations, permissions and tests that must agree across them. "
-            + "You only draft: do not post, approve or comment.\n\n" + lines(prs)
+            + "You only draft: do not post, approve or comment. " + ReviewDrafts.instructions + "\n\n" + lines(prs)
     }
 
     static func systemPrompt(_ topic: TopicAgent) -> String {

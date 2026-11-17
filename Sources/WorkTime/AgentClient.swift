@@ -229,6 +229,16 @@ final class AgentModel: ObservableObject {
         }
     }
 
+    /// The reviews the turn ended with, drafted and not posted: one notification whose buttons post them with the user's click.
+    @discardableResult
+    private func announceReviews() -> Bool {
+        guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront) else { return false }
+        let drafts = ReviewDrafts.drafts(inTurn: items)
+        guard !drafts.isEmpty else { return false }
+        NoticeCenter.shared.addReview(drafts, agent: attentionID, agentTitle: attentionTitle)
+        return true
+    }
+
     private func announceQuestion() {
         guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
               let question = AgentAttention.question(in: items) else { return }
@@ -870,7 +880,7 @@ final class AgentModel: ObservableObject {
         if let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
         resultSeen = visiblePanes > 0
         withdrawAttention()
-        if queued.isEmpty { announceQuestion() } else { start(queued.removeFirst()) }
+        if queued.isEmpty { if !announceReviews() { announceQuestion() } } else { start(queued.removeFirst()) }
     }
 
     private func exited(status: Int32, errors: String) {

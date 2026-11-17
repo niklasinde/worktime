@@ -44,19 +44,21 @@ final class AgentActionStore: ObservableObject {
     }
 }
 
-/// An agent's reply with its action blocks as rows of buttons; without a context to send from, the blocks stay code.
+/// An agent's reply with its action blocks as rows of buttons, and its drafted reviews as cards that post them; without a context to
+/// send from, the action blocks stay code.
 struct AgentReply: View {
     let text: String
     let linkify: (String) -> String
     @Environment(\.agentActions) private var context
 
     var body: some View {
-        let segments = context == nil ? [AgentActions.Segment.markdown(text)] : AgentActions.segments(text)
+        let segments = AgentActions.segments(text, actions: context != nil)
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .markdown(let text): AnswerText(text: linkify(text))
                 case .action(let action): if let context { AgentActionRow(action: action, context: context) }
+                case .review(let draft): ReviewDraftCard(draft: draft)
                 }
             }
         }

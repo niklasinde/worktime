@@ -58,6 +58,8 @@ struct AgentNotice: Codable, Equatable, Identifiable, Sendable {
     var state = State.shown
     /// An automation's question, answered with the notification's buttons.
     var ask: NoticeAsk?
+    /// Reviews an agent drafted and did not post: the buttons post them, with the user's click.
+    var reviews: [ReviewDraft]?
 
     var date: Date { at ?? created }
 }
@@ -217,6 +219,7 @@ enum NoticeLogic {
     static func admit(_ notice: AgentNotice, existing: [AgentNotice], recent: [AgentNotice], now: Date) -> Decision {
         let identity = notice.source.identity
         if let event = notice.ask?.event, let same = existing.first(where: { $0.ask?.event == event }) { return .replace(same.id) }
+        if let reviews = notice.reviews, let same = existing.first(where: { $0.reviews?.map(\.id) == reviews.map(\.id) }) { return .replace(same.id) }
         if let at = notice.at, let same = existing.first(where: {
             $0.state == .scheduled && $0.source.identity == identity && $0.title == notice.title && $0.at == at
         }) {

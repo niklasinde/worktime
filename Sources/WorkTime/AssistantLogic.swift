@@ -381,12 +381,15 @@ extension Assistants {
                 - Read the linked ticket with jira_issue when there is one, and check the change does what it asks.
                 - Look for bugs, missing tests, risky migrations, security problems and anything that breaks the repository's \
                 conventions (its CLAUDE.md). Skip style nits a linter would catch.
-                - Draft the review in one fenced block: a verdict (approve, request changes or comment) and the comments, each \
-                with file and line and a sentence on why.
+                - Draft the review as one `worktime-review` block per pull request: the pull request, the head commit you reviewed, a \
+                verdict (approve, request_changes or comment), a summary and the comments, each with file and line and a sentence on \
+                why. The app turns the block into buttons that post it when the user clicks; its exact format is below.
                 - Given several pull requests as one change, draft one such block per pull request, then a short check that they agree \
                 with each other: contracts, migrations, permissions and tests that must match across them.
 
                 You never post, approve or comment on GitHub. The user posts the review themselves.
+
+                \(ReviewDrafts.instructions)
                 """)),
         AssistantTemplate(role: AssistantRole(
             slug: "support", name: "Support", icon: "lifepreserver",

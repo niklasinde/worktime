@@ -422,6 +422,7 @@ final class MeetingStore: @unchecked Sendable {
         );
         """,
         "UPDATE meetings SET status = 'stopped' WHERE status = 'failed' AND status_message LIKE 'Transcription stopped%'",
+        "ALTER TABLE github_actions ADD COLUMN sha TEXT; ALTER TABLE github_actions ADD COLUMN actor TEXT; ALTER TABLE github_actions ADD COLUMN via TEXT;",
     ]
 
     private static let meetingColumns = """

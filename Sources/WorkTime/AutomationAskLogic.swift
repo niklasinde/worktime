@@ -131,7 +131,7 @@ enum AutomationAsks {
 
     /// What the first button sends to the one agent for several pull requests.
     static let defaultSetPrompt = "Review these pull requests together as one change:\n{pr_urls}\nDraft one verdict per pull request and what must agree across them. "
-        + "You only draft: do not post, approve or comment. Notes from the first look:\n{answer}"
+        + "You only draft: do not post, approve or comment. " + ReviewDrafts.instructions + "\nNotes from the first look:\n{answer}"
 
     /// What the first button sends when the automation names nothing.
     static func defaultPrompt(for kind: AutomationTrigger.Kind) -> String {
@@ -140,7 +140,8 @@ enum AutomationAsks {
             "Work on {ticket} ({ticket_title}): {url}. Read it with jira_issue, then say what you would change and how. Notes from the first look:\n{answer}"
         case .github, .slack:
             "Review {pr_url}. Read the diff and the code around it, then draft the review: a verdict (approve, request changes or needs the author's input), "
-                + "the problems that block it and the small ones. You only draft: do not post, approve or comment. Notes from the first look:\n{answer}"
+                + "the problems that block it and the small ones. You only draft: do not post, approve or comment. " + ReviewDrafts.instructions
+                + "\nNotes from the first look:\n{answer}"
         }
     }
 

@@ -336,11 +336,16 @@ struct MarkedBar: View {
 struct ActionSettingsRows: View {
     @ObservedObject var model: GitHubActionsModel
     @State private var confirming = false
+    @AppStorage(GitHubActions.reviewFromNotificationsKey) private var reviewFromNotifications = false
 
     var body: some View {
         Group {
             SettingsRow("Allow actions on GitHub (approve, merge, close)", detail: GitHubActions.settingNote) {
                 Toggle("Allow actions on GitHub", isOn: Binding(get: { model.enabled }, set: model.setEnabled)).labelsHidden().toggleStyle(.switch)
+            }
+            Divider().padding(.leading, 14)
+            SettingsRow("Approve from notifications", detail: GitHubActions.oneClickNote) {
+                Toggle("Approve from notifications", isOn: $reviewFromNotifications).labelsHidden().toggleStyle(.switch).disabled(!model.enabled)
             }
             Divider().padding(.leading, 14)
             SettingsRow("Recent actions", detail: model.records.isEmpty ? "Nothing done from here yet. Kept on this Mac." : "The last \(model.records.count), kept on this Mac.") {

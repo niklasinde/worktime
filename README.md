@@ -572,6 +572,20 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   and **Copy** show exactly what will run. Nothing runs until you click; a clicked row stays marked "Sent to…" across restarts. A
   block that is incomplete, has no prompt or is over 4000 characters stays plain code. Every agent is told about the format; routines
   are told not to use it. The prompts are told never to ask for an approval, merge, post or send.
+- **Drafted reviews.** An agent that reviews a pull request writes its draft as a fenced `worktime-review` block: JSON with `pr`,
+  `sha` (the head commit it reviewed), `verdict` (`approve`, `request_changes` or `comment`), `summary` and `comments` (`file`,
+  `line`, `body`). The transcript shows it as a card, and when the turn ends with the agent out of sight a notification says "Review
+  ready" with **Approve**, **Request changes**, **Post comments** (when there are comments on lines), **Open** and **Dismiss**; the
+  notch bar's From agents list and the card have the same buttons, one set per pull request when several were reviewed together
+  (the notification then offers **Approve all**, which looks at each pull request again and asks a second time, naming them). The
+  agent never posts: only your click does. With Settings → GitHub → "Approve from notifications" on (off by default, and it needs
+  "Allow actions on GitHub") the click posts the review at once, from the background, with the Mac unlocked; the summary and each
+  comment get the `[AI]` tag, and comments on lines go through GitHub's review API with the commit they were written for.
+  The click posts only when the pull request is open, not a draft, the commit is still the one the agent reviewed, the checks are
+  not failing or running (for an approval), nothing was requested in an earlier review and the button matches the verdict. In
+  every other case, and always while the setting is off, the pull request opens with the usual confirmation sheet, the draft in
+  it and the reason shown. Every post is logged with the time, the commit, who was signed in and where the click was; approvals
+  cannot be undone from the app, so the result says to dismiss the review on GitHub.
 - **Notifications.** Any agent, and Claude Code sessions with the plugin, can call `notify(title, body?, link?, urgency?, at?)`:
   the running app posts a macOS notification (now, or at `at`: ISO 8601 or `HH:mm`, up to 30 days ahead) and keeps it under
   From agents / Scheduled in the notch bar's Reminders list until opened or dismissed. A click opens the link (a pull request

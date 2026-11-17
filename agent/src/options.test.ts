@@ -34,5 +34,7 @@ test("every agent is told how to offer a next step as buttons", () => {
   const append = (options.systemPrompt as { append: string }).append;
   assert.match(append, /```worktime-action\ntitle:/);
   assert.match(append, /prompt: \|/);
+  assert.match(append, /```worktime-review\n\{"pr":/);
+  assert.match(append, /never post, approve or comment yourself/);
   assert.ok(append.endsWith("Be brief."));
 });

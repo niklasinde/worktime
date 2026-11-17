@@ -244,6 +244,7 @@ struct TodoNotchList: View {
                 heading("From agents", top: attention.approvals.isEmpty ? 0 : 10)
                 ForEach(notices.waiting) { notice in
                     NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, answer: { notices.answer(notice.id, yes: $0) },
+                              review: { draft, action in Task { await notices.post(draft, action, via: "notch") } },
                               remove: { notices.dismissUnanswered(notice.id) })
                     separator
                 }
@@ -251,7 +252,7 @@ struct TodoNotchList: View {
             if !notices.pending.isEmpty {
                 heading("Scheduled", top: notices.waiting.isEmpty ? 0 : 10)
                 ForEach(notices.pending) { notice in
-                    NoticeRow(notice: notice, open: nil, answer: nil, remove: { notices.dismiss(notice.id) })
+                    NoticeRow(notice: notice, open: nil, answer: nil, review: nil, remove: { notices.dismiss(notice.id) })
                     separator
                 }
             }
@@ -351,7 +352,9 @@ private struct NoticeRow: View {
     let notice: AgentNotice
     let open: (() -> Void)?
     let answer: ((Bool) -> Void)?
+    let review: ((ReviewDraft, ReviewAction) -> Void)?
     let remove: () -> Void
+    @ObservedObject private var center = NoticeCenter.shared
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -361,7 +364,7 @@ private struct NoticeRow: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(Decisions.readable(notice.title)).lineLimit(2)
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(notice.ask == nil ? 1 : 3)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(notice.ask == nil && notice.reviews == nil ? 1 : 3)
                 if let ask = notice.ask, let answer {
                     HStack(spacing: 6) {
                         Button(ask.yes) { answer(true) }.buttonStyle(.borderedProminent)
@@ -369,6 +372,9 @@ private struct NoticeRow: View {
                     }
                     .controlSize(.small)
                     .padding(.top, 3)
+                }
+                if let reviews = notice.reviews, let review {
+                    ForEach(reviews) { draft in reviewButtons(draft, many: reviews.count > 1, review: review) }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -381,6 +387,23 @@ private struct NoticeRow: View {
         .contentShape(Rectangle())
         .onTapGesture { open?() }
         .transition(.opacity)
+    }
+
+    /// The buttons that post a drafted review, one row per pull request when a set is waiting, and what the last click came to.
+    private func reviewButtons(_ draft: ReviewDraft, many: Bool, review: @escaping (ReviewDraft, ReviewAction) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if many { Text("\(draft.reference) \u{00B7} \(draft.verdict.title.lowercased())").font(.caption.weight(.medium)) }
+            HStack(spacing: 6) {
+                Button("Approve") { review(draft, .approve) }.buttonStyle(.borderedProminent)
+                if draft.problem(for: .requestChanges) == nil { Button("Request changes") { review(draft, .requestChanges) }.buttonStyle(.bordered) }
+                if !draft.comments.isEmpty { Button("Post comments") { review(draft, .postComments) }.buttonStyle(.bordered) }
+                if center.reviewWorking.contains(draft.id) { ProgressView().controlSize(.small) }
+            }
+            .disabled(center.reviewWorking.contains(draft.id))
+            .controlSize(.small)
+            if let text = center.reviewResults[draft.id] { Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+        }
+        .padding(.top, 3)
     }
 
     private var detail: String {

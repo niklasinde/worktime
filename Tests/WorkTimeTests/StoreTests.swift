@@ -150,12 +150,13 @@ let storeTests: [(name: String, run: () throws -> Void)] = [
         check(meeting?.transcriptEngine == "x" && meeting?.transcribedAt == nil, "old meeting has no time")
     }),
 
-    ("the last migration turns a meeting stopped by hand into a stopped one", {
+    ("the migration that follows turns a meeting stopped by hand into a stopped one", {
         let folder = try tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let url = folder.appendingPathComponent("meetings.sqlite")
         let old = try SQLiteDatabase(path: url.path)
-        try MeetingStore.migrate(old, Array(MeetingStore.migrations.dropLast()))
+        guard let index = MeetingStore.migrations.firstIndex(where: { $0.hasPrefix("UPDATE meetings SET status = 'stopped'") }) else { return check(false, "the migration is there") }
+        try MeetingStore.migrate(old, Array(MeetingStore.migrations.prefix(index)))
         try old.run("""
             INSERT INTO meetings (audio_file, created, status, status_message) VALUES
                 ('a.m4a', 0, 'failed', 'Transcription stopped. Press Re-transcribe to run it again.'),
