@@ -135,6 +135,7 @@ enum AgentPreview {
         let model = AgentModel(folder: repo)
         model.preview(sample(), busy: true)
         model.preview(workMap: sampleWorkMap(cwd: repo))
+        model.preview(mentions: sampleMentions, projects: ["ACME"])
         AgentModel.defaults.set(true, forKey: AgentWorkMap.shownKey)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             await save(AgentView(model: model), size: NSSize(width: 1100, height: 760), appearance: appearance,
@@ -144,6 +145,15 @@ enum AgentPreview {
         }
         AgentModel.defaults.removeObject(forKey: AgentWorkMap.shownKey)
     }
+
+    /// What a session read about the work it is on: tickets and pull requests, made up.
+    static let sampleMentions: [AgentItem] = [
+        AgentItem(id: "m1", kind: .user("Fix ACME-8332: the export drops the last row. The release note goes in orbit.api")),
+        AgentItem(id: "m2", kind: .tool(name: "Bash", summary: "gh pr view 42", detail: "gh pr view https://github.com/acme-com/orbit.api/pull/42",
+                                        result: "ACME-8332 Keep the last row in exports", isError: false, auto: true)),
+        AgentItem(id: "m3", kind: .text("The admin side is acme-com/orbit.web#17, which depends on ACME-8340 and https://github.com/acme-com/orbit.api/pull/40.")),
+        AgentItem(id: "m4", kind: .text("Branch NI/ACME-8332-last-row also touches ACME-8301, ACME-8302 and ACME-8303.")),
+    ]
 
     /// Four model steps of a session that read files, ran commands and asked GitHub, with a call still running.
     static func sampleWorkMap(cwd: String) -> WorkMap {

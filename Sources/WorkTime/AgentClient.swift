@@ -49,7 +49,10 @@ final class AgentClient: @unchecked Sendable {
 @MainActor
 final class AgentModel: ObservableObject {
     @Published private(set) var items: [AgentItem] = [] {
-        didSet { touch() }
+        didSet {
+            touch()
+            refreshRelated()
+        }
     }
     @Published private(set) var busy = false {
         didSet { touch() }
@@ -128,6 +131,8 @@ final class AgentModel: ObservableObject {
     @Published private(set) var transcriptRevision = 0
     /// What this session has done since it was shown, for the work map; kept in memory only.
     @Published private(set) var workMap = WorkMap()
+    /// The tickets and pull requests the transcript mentions, for the list under the work map.
+    @Published private(set) var related = SessionLinks()
     @Published private(set) var problem: String?
     @Published private(set) var files: [String] = []
     @Published var folder: String
@@ -328,13 +333,41 @@ final class AgentModel: ObservableObject {
     }
 
     private func replaceItems(_ new: [AgentItem]) {
+        related = SessionLinks()
         items = new
         transcriptRevision += 1
         workMap = WorkMap()
+        refreshRelated(all: true)
     }
+
+    /// What this session was made for: its pull request, its ticket and the pull requests linked to it.
+    var relatedPinned: [SessionRef] {
+        let own = prURL.flatMap(GitHubLink.pullRequest(at:)).map { [SessionRef($0)] } ?? []
+        let ticket = topic?.jiraKey.map { [SessionRef.jira($0)] } ?? []
+        return ticket + own + (topic?.linked.map { SessionRef($0.target) } ?? [])
+    }
+
+    var relatedProjects: Set<String> {
+        SessionProjects.set(configured: WorkspaceStore.shared.workspaces.flatMap(\.jiraProjects), pinned: relatedPinned)
+    }
+
+    /// Reads the newest items, or all of them after the transcript was replaced; the older ones were read when they came.
+    private func refreshRelated(all: Bool = false) {
+        var next = related
+        let recent = all || items.count <= Self.relatedWindow ? items : Array(items.suffix(Self.relatedWindow))
+        if next.update(recent, projects: relatedProjects) { related = next }
+    }
+
+    private static let relatedWindow = 60
 
     #if DEBUG
     func preview(workMap: WorkMap) { self.workMap = workMap }
+
+    func preview(mentions items: [AgentItem], projects: Set<String>) {
+        var links = SessionLinks()
+        links.update(items, projects: projects)
+        related = links
+    }
     #endif
 
     /// Continues an earlier session: its folder, and its transcript read back from Claude Code's file.
@@ -710,6 +743,8 @@ final class AgentModel: ObservableObject {
     static var openAgentLink: ((GitHubLink.Target) -> Void)?
     /// Opens a pull request on the GitHub page, the same as a `worktime://pr` link; the app delegate sets it.
     static var openPullRequestLink: ((GitHubLink.Target) -> Void)?
+    /// Opens a Jira ticket on the Jira page; the app delegate sets it.
+    static var openJiraLink: ((String) -> Void)?
 
     func open(_ url: URL) -> OpenURLAction.Result {
         if let target = GitHubLink.parseAgent(url.absoluteString), let open = Self.openAgentLink {

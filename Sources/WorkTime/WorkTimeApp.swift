@@ -236,6 +236,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentHub.shared.showPage = { [weak self] in self?.mainWindow.show(section: .agent) }
         AgentModel.openAgentLink = { [weak self] in self?.openAgent($0) }
         AgentModel.openPullRequestLink = { [weak self] in self?.openPullRequest($0) }
+        AgentModel.openJiraLink = { [weak self] key in
+            self?.mainWindow.show(section: .jira)
+            JiraPageModel.shared.select(key)
+        }
         TranscriptPullRequestMenu.shared.start()
         AssistantStore.shared.start()
         RoutineStore.shared.start()

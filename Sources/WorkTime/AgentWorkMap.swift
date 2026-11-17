@@ -34,26 +34,27 @@ struct AgentWorkMapView: View {
     @ObservedObject var model: AgentModel
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            let map = model.workMap
-            VStack(spacing: 0) {
+        let map = model.workMap
+        VStack(spacing: 0) {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 WorkMapDiagram(map: map, selected: model.model, now: timeline.date)
                     .frame(height: 318)
-                Text(map.status(selected: model.model))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                Divider().overlay(AgentWorkMap.line.opacity(0.2))
-                log(map)
             }
-            .background(AgentWorkMap.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .padding(10)
+            Text(map.status(selected: model.model))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+            Divider().overlay(AgentWorkMap.line.opacity(0.2))
+            SessionLinksView(model: model)
+            log(map)
         }
+        .background(AgentWorkMap.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(10)
     }
 
     @ViewBuilder
