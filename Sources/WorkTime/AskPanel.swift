@@ -9,6 +9,9 @@ final class AskPanel {
 
     private var bars: [NotchBar] = []
     private var lists: AnyCancellable?
+    private var decisions: AnyCancellable?
+    /// The decisions the bar has already dropped down for, so one is shown once and not again every time something else changes.
+    private var dropped: Set<String> = []
 
     func start() {
         UserDefaults.standard.register(defaults: [Self.shownKey: true])
@@ -28,6 +31,9 @@ final class AskPanel {
         lists = Publishers.MergeMany(models).sink { _ in
             MainActor.assumeIsolated { AskPanel.shared.bars.filter(\.expanded).forEach { $0.position() } }
         }
+        decisions = Publishers.Merge(NoticeCenter.shared.objectWillChange, AgentAttentionCenter.shared.objectWillChange).sink { _ in
+            DispatchQueue.main.async { AskPanel.shared.updateDecisions() }
+        }
         rebuild()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.screensChanged() }
     }
@@ -41,6 +47,21 @@ final class AskPanel {
     /// Opens the bar on the main screen for a few seconds unless the pointer comes over it.
     func peek(for seconds: TimeInterval = 8) {
         (bars.first { $0.screen == NSScreen.main } ?? bars.first)?.peek(for: seconds)
+    }
+
+    /// Drops the bar down on the reminders when a decision starts waiting and the user is in none of the app's windows, and keeps it
+    /// there until every decision has been dealt with or the user closes it. It takes no keyboard focus.
+    func updateDecisions() {
+        let waiting = NoticeCenter.shared.decisions.map(\.id) + AgentAttentionCenter.shared.approvals.map(\.id)
+        guard !waiting.isEmpty else {
+            dropped = []
+            return bars.forEach { $0.unpin() }
+        }
+        let fresh = Decisions.shouldDrop(waiting: waiting, dropped: dropped, enabled: Decisions.dropsDown(), appActive: NSApp.isActive)
+        dropped.formIntersection(waiting)
+        guard fresh else { return }
+        dropped.formUnion(waiting)
+        (bars.first { $0.screen == NSScreen.main } ?? bars.first)?.pin(.todo)
     }
 
     private func screensChanged() {
@@ -81,11 +102,13 @@ final class NotchBar: ObservableObject {
     private var typing = false
     private var held = false
     private var pendingCollapse: DispatchWorkItem?
+    /// Dropped down for decisions that wait: the bar stays open when the pointer leaves or another app has the keyboard.
+    @Published private(set) var pinned = false
 
     init(screen: NSScreen) {
         self.screen = screen
         resign = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.collapse() }
+            MainActor.assumeIsolated { self?.autoCollapse() }
         }
         resized = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.place() }
@@ -117,8 +140,23 @@ final class NotchBar: ObservableObject {
         peeking = true
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, self.peeking, self.openedByHover, !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
-            self.collapse()
+            self.autoCollapse()
         }
+    }
+
+    /// Opens on `list` without taking the keyboard and keeps it open; one the user already has open stays on what they are looking at.
+    func pin(_ list: NotchPanelID) {
+        pinned = true
+        pendingCollapse?.cancel()
+        guard !expanded else { return }
+        expand(list, byHover: true)
+    }
+
+    /// Every decision has been dealt with: the bar goes back, unless the user is using it.
+    func unpin() {
+        guard pinned else { return }
+        pinned = false
+        if openedByHover && !panel.frame.contains(NSEvent.mouseLocation) { collapse() }
     }
 
     /// A click inside makes the panel key, so the field, the hotkeys and Esc work; it then stays open until Esc or a click outside.
@@ -127,9 +165,16 @@ final class NotchBar: ObservableObject {
         pendingCollapse?.cancel()
     }
 
+    /// A collapse nobody asked for, as the pointer leaving or another window taking the keyboard: a pinned bar ignores it.
+    private func autoCollapse() {
+        guard !pinned else { return }
+        collapse()
+    }
+
     func collapse() {
         guard expanded else { return }
         pendingCollapse?.cancel()
+        pinned = false
         typing = false
         held = false
         peeking = false
@@ -155,7 +200,7 @@ final class NotchBar: ObservableObject {
         guard !inside, expanded, openedByHover, !typing, !held else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
-            self.collapse()
+            self.autoCollapse()
         }
         pendingCollapse = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
@@ -294,6 +339,7 @@ private struct AskPanelView: View {
     @ObservedObject private var inCall = InCallHelp.shared
     @ObservedObject private var briefs = MeetingBriefModel.shared
     @ObservedObject private var notices = NoticeCenter.shared
+    @ObservedObject private var attention = AgentAttentionCenter.shared
     @AppStorage(SidebarLogic.showChatKey) private var showChat = true
 
     var body: some View {
@@ -307,11 +353,12 @@ private struct AskPanelView: View {
                     if panel.hasNotch && !wings.middle.isEmpty {
                         marks(wings.middle, height: 22).padding(.bottom, -8)
                     }
+                    if panel.pinned { DecisionBanner(count: notices.decisions.count + attention.approvals.count, onClose: panel.collapse) }
                     if let card = resume.card { ResumeCardView(card: card, onClose: panel.collapse) }
                     if !briefs.visible.isEmpty { MeetingBriefNotchStack() }
                     if inCall.meeting != nil && !inCall.visible.isEmpty { InCallNotchStack() }
                     if !panel.peeking && showChat { AskBar(onSubmit: panel.collapse, onType: panel.type, autofocus: !panel.openedByHover) }
-                    if !panel.peeking && shown.contains(panel.list) {
+                    if !panel.peeking && (shown.contains(panel.list) || panel.pinned && panel.list == .todo) {
                         switch panel.list {
                         case .gitHub: WaitingPullRequests(onOpen: panel.collapse, onHold: panel.hold)
                         case .jira: AssignedTickets(onOpen: panel.collapse)
@@ -387,6 +434,23 @@ private struct AskPanelView: View {
             .contentShape(Rectangle())
             .onTapGesture { panel.expand(list) }
             .background(HoverArea { if $0 { panel.expand(list, byHover: true) } })
+    }
+}
+
+/// Shown while the bar is dropped down for decisions: what waits, and a way to close it without answering.
+private struct DecisionBanner: View {
+    let count: Int
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack {
+            Label("Waiting for you", systemImage: "exclamationmark.circle.fill").foregroundStyle(Color.orange)
+            Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+            Spacer()
+            Button("Close", action: onClose).buttonStyle(.plain).foregroundStyle(.secondary).help("Close the bar; the decisions stay in Reminders")
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, 16)
     }
 }
 

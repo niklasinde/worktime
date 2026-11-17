@@ -14,11 +14,14 @@ final class NoticeCenter: ObservableObject {
 
     var pending: [AgentNotice] { NoticeLogic.pending(notices) }
     var waiting: [AgentNotice] { NoticeLogic.waiting(notices) }
+    /// What waits for the user's answer.
+    var decisions: [AgentNotice] { Decisions.waiting(notices) }
 
     func start(file: URL = AppPaths.notices) {
         self.file = file
         notices = NoticeLogic.decode(try? Data(contentsOf: file))
         Notifier.register(asks: notices.compactMap(\.ask))
+        notices.forEach(keepOnScreen)
         fireDue()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -52,12 +55,13 @@ final class NoticeCenter: ObservableObject {
             case .replace(let id):
                 notice.id = id
                 notices.removeAll { $0.id == id }
-                message = "Updated the notification already scheduled for that time."
+                message = "Updated the notification that was already there."
             case .add: break
             }
             recent.append(notice)
             notices.append(notice)
             Notifier.postNotice(notice)
+            keepOnScreen(notice)
             save()
             return reply(true, notice.id, message)
         }
@@ -114,6 +118,22 @@ final class NoticeCenter: ObservableObject {
               case .pullRequest(let target)? = notice.link.flatMap(NoticeLogic.link) else { return }
         open(id)
         GitHubModel.shared.beginReview(of: target, requestChanges: requestChanges)
+    }
+
+    /// The cross on a decision: it is put aside without an answer, and what it was about stays in Resolved.
+    func dismissUnanswered(_ id: String) {
+        if let notice = notices.first(where: { $0.id == id }), Decisions.needsAnswer(notice) { TodoModel.shared.resolveWithoutAnswer(notice) }
+        dismiss(id)
+    }
+
+    /// A decision's notification comes back, quietly, if macOS sweeps it away before it is answered.
+    private func keepOnScreen(_ notice: AgentNotice) {
+        guard Decisions.needsAnswer(notice) else { return }
+        let id = notice.id
+        DecisionKeeper.shared.keep(NoticeLogic.identifier(id)) { [weak self] in
+            guard let current = self?.notices.first(where: { $0.id == id }) else { return }
+            Notifier.postNotice(current, quiet: true)
+        }
     }
 
     /// Takes a notification off the list, and a scheduled one off the system's schedule too.

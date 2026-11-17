@@ -1002,6 +1002,9 @@ struct AgentSettingsSection: View {
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
     @AppStorage(AgentLogic.chromeDefaultKey) private var chromeByDefault = false
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
+    @AppStorage(Decisions.keepKey) private var keepDecisions = true
+    @AppStorage(Decisions.dropDownKey) private var dropDownDecisions = true
+    @State private var alertWarning: String?
     @AppStorage(Automations.enabledKey) private var automationsOn = true
     @State private var confirming: String?
     @AppStorage(Determinism.autoAnalyzeKey) private var autoAnalyze = true
@@ -1016,6 +1019,15 @@ struct AgentSettingsSection: View {
             WorkspacesSettings()
             sections
         }
+        .task { await refreshAlertStyle() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await refreshAlertStyle() }
+        }
+    }
+
+    private func refreshAlertStyle() async {
+        let current = await Permissions.notificationAlert
+        alertWarning = Decisions.styleWarning(current.style, authorized: current.authorized)
     }
 
     private var transcriptTypography: TranscriptTypography {
@@ -1087,8 +1099,18 @@ struct AgentSettingsSection: View {
         }
         transcriptSection
         SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "
-                        + "Allow once, Deny and Reply work from the notification. Routines never ask.") {
+                        + "Allow once, Deny and Reply work from the notification. Routines never ask. A decision, such as an automation\u{2019}s question or "
+                        + "an approval, stays until you answer: macOS must show WorkTime\u{2019}s notifications as Alerts for one to stay on screen.") {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
+            SettingsRow("Keep decisions on screen", detail: "A decision whose notification was swept away comes back quietly after 10 and 30 minutes and an hour.") {
+                Toggle("Keep decisions on screen", isOn: $keepDecisions).labelsHidden()
+            }
+            SettingsRow("Drop down the notch for decisions", detail: "When one starts waiting and you are in none of WorkTime\u{2019}s windows, the notch bar opens on it and stays open until you have answered or closed it.") {
+                Toggle("Drop down the notch for decisions", isOn: $dropDownDecisions).labelsHidden()
+            }
+            SettingsRow("Notification style", detail: alertWarning ?? "Alerts: a decision stays on screen until you answer.") {
+                Button("Open Notification Settings") { Permissions.openNotificationSettings() }
+            }
         }
         QuickChatSettings()
         SettingsSection("Automations", footer: "Automations run an agent when something happens in Slack, GitHub or Jira. Off, none runs and none searches. "

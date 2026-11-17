@@ -90,6 +90,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AgentRules.swift \
     Sources/WorkTime/AgentOverviewLogic.swift \
     Sources/WorkTime/AgentAttentionLogic.swift \
+    Sources/WorkTime/DecisionLogic.swift \
     Sources/WorkTime/AgentSessionLogic.swift \
     Sources/WorkTime/AgentToolGroupLogic.swift \
     Sources/WorkTime/AgentImageLogic.swift \
@@ -200,6 +201,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/AutomationAskTests.swift \
     Tests/WorkTimeTests/SlackSocketTests.swift \
     Tests/WorkTimeTests/AgentAttentionTests.swift \
+    Tests/WorkTimeTests/DecisionTests.swift \
     Tests/WorkTimeTests/AgentSetTests.swift \
     Tests/WorkTimeTests/QuickChatTests.swift \
     Tests/Runner/main.swift \

@@ -201,14 +201,16 @@ enum Automations {
     static func slackEvent(_ message: SlackMessage, link: URL?, kind: AutomationTrigger.Kind = .slackMessage) -> AutomationEvent {
         let mentions = GitHubLink.mentions(in: message.text)
         let mentioned = mentions.first
-        var fields = ["slack_text": message.text, "slack_place": message.place, "slack_author": message.author ?? message.place,
+        let text = SlackLogic.plain(message.text)
+        let line = text.replacingOccurrences(of: "\n", with: " ")
+        var fields = ["slack_text": text, "slack_place": message.place, "slack_author": message.author ?? message.place,
                       "slack_link": link?.absoluteString ?? ""]
         if let mentioned { fields["pr_url"] = mentioned.url }
         let several = PullRequestSets.urls(in: message.text)
         if let several { fields["pr_urls"] = several.joined(separator: "\n") }
         if let ticket = ActivityLogic.ticket(in: message.text) { fields["ticket"] = ticket }
-        return AutomationEvent(id: "\(kind.idPrefix):" + message.id, kind: kind, title: String(message.text.prefix(titleLimit)), place: message.place,
-                               text: message.text, fields: fields, pullRequest: mentioned?.url, pullRequests: several, link: link?.absoluteString, date: message.date)
+        return AutomationEvent(id: "\(kind.idPrefix):" + message.id, kind: kind, title: String(line.prefix(titleLimit)), place: message.place,
+                               text: line, fields: fields, pullRequest: mentioned?.url, pullRequests: several, link: link?.absoluteString, date: message.date)
     }
 
     /// A pull request as an event. `suffix` tells apart the events one pull request makes, such as each review or each push.

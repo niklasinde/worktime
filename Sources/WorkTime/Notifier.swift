@@ -126,21 +126,21 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// An agent stopped on a permission prompt; Allow once, Allow for this session (where offered) and Deny answer it without opening the app, a click opens the agent.
-    static func postApproval(agent: String, permission: String, text: (title: String, body: String), sessionOffered: Bool = false) {
+    static func postApproval(agent: String, permission: String, text: (title: String, body: String), sessionOffered: Bool = false, quiet: Bool = false) {
         post(text, category: AgentAttention.approvalCategory(sessionOffered: sessionOffered), agent: agent, request: permission,
-             identifier: AgentAttention.approvalIdentifier(agent: agent, permission: permission))
+             identifier: AgentAttention.approvalIdentifier(agent: agent, permission: permission), quiet: quiet)
     }
 
     /// An agent finished a turn on a question; Reply sends what is typed to it as the next prompt.
-    static func postQuestion(agent: String, text: (title: String, body: String)) {
-        post(text, category: AgentAttention.questionCategory, agent: agent, request: nil, identifier: AgentAttention.questionIdentifier(agent: agent))
+    static func postQuestion(agent: String, text: (title: String, body: String), quiet: Bool = false) {
+        post(text, category: AgentAttention.questionCategory, agent: agent, request: nil, identifier: AgentAttention.questionIdentifier(agent: agent), quiet: quiet)
     }
 
-    private static func post(_ text: (title: String, body: String), category: String, agent: String, request: String?, identifier: String) {
+    private static func post(_ text: (title: String, body: String), category: String, agent: String, request: String?, identifier: String, quiet: Bool) {
         let content = UNMutableNotificationContent()
         content.title = text.title
         content.body = text.body
-        content.sound = .default
+        content.sound = quiet ? nil : .default
         content.categoryIdentifier = category
         content.interruptionLevel = .timeSensitive
         content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: request ?? ""]
@@ -148,18 +148,19 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     static func withdraw(identifiers: [String]) {
+        Task { @MainActor in identifiers.forEach(DecisionKeeper.shared.release) }
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
     /// An agent's notification, at once or with a calendar trigger at its time so it shows even while the app is busy or quit.
-    static func postNotice(_ notice: AgentNotice) {
+    static func postNotice(_ notice: AgentNotice, quiet: Bool = false) {
         let content = UNMutableNotificationContent()
-        content.title = notice.title
+        content.title = Decisions.readable(notice.title)
         content.subtitle = notice.source.title ?? ""
-        content.body = notice.body ?? ""
-        content.sound = .default
+        content.body = Decisions.readable(notice.body ?? "")
+        content.sound = quiet ? nil : .default
         content.userInfo = [NoticeLogic.userInfoKey: notice.id]
         if let ask = notice.ask {
             register(asks: [ask])
@@ -167,7 +168,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         } else if NoticeLogic.isReview(notice) {
             content.categoryIdentifier = reviewCategory
         }
-        if notice.urgency == .high { content.interruptionLevel = .timeSensitive }
+        if notice.urgency == .high || Decisions.needsAnswer(notice) { content.interruptionLevel = .timeSensitive }
         let trigger = notice.at.map {
             UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: $0),
                                           repeats: false)
@@ -204,6 +205,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     static func withdrawNotice(_ id: String) {
+        Task { @MainActor in DecisionKeeper.shared.release(NoticeLogic.identifier(id)) }
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [NoticeLogic.identifier(id)])
         center.removeDeliveredNotifications(withIdentifiers: [NoticeLogic.identifier(id)])

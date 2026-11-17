@@ -66,7 +66,7 @@ struct ReminderRow: View {
                         .onSubmit { endEdit(save: true) }
                         .onExitCommand { endEdit(save: false) }
                 } else {
-                    Text(reminder.title).lineLimit(2).foregroundStyle(checked ? .secondary : .primary)
+                    Text(Decisions.readable(reminder.title)).lineLimit(2).foregroundStyle(checked ? .secondary : .primary)
                 }
                 HStack(spacing: 6) {
                     if let due = reminder.due {
@@ -240,7 +240,7 @@ struct ResolvedReminders: View {
                 .help(help)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).strikethrough().foregroundStyle(.secondary).lineLimit(2)
+                Text(Decisions.readable(title)).strikethrough().foregroundStyle(.secondary).lineLimit(2)
                 HStack(spacing: 6) {
                     if let detail { Text(detail) }
                     if let source { SourceChip(source: source) { model.open(source) } }

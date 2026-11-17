@@ -1,11 +1,33 @@
 import Foundation
 
 /// Finds the agent a notification came from and does what the user tapped, also while the app is in the background.
+/// It also lists the approvals still waiting, so the notch bar can show them with the same buttons.
 @MainActor
-final class AgentAttentionCenter {
+final class AgentAttentionCenter: ObservableObject {
     static let shared = AgentAttentionCenter()
     private struct Entry { weak var model: AgentModel? }
     private var models: [String: Entry] = [:]
+
+    struct Approval: Identifiable, Equatable {
+        var id: String { AgentAttention.approvalIdentifier(agent: agent, permission: permission) }
+        let agent: String
+        let permission: String
+        let title: String
+        let body: String
+        let sessionOffered: Bool
+        let created: Date
+    }
+
+    @Published private(set) var approvals: [Approval] = []
+
+    func add(_ approval: Approval) {
+        guard !approvals.contains(where: { $0.id == approval.id }) else { return }
+        approvals.append(approval)
+    }
+
+    func remove(agent: String, permission: String? = nil) {
+        approvals.removeAll { $0.agent == agent && (permission == nil || $0.permission == permission) }
+    }
 
     func register(_ model: AgentModel, id: String) {
         models[id] = Entry(model: model)

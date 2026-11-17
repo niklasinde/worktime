@@ -30,6 +30,8 @@ struct NoticeAsk: Codable, Equatable, Sendable {
     var reminder: String?
     /// The pull requests the first button hands to one agent that works on them together, when the event names several.
     var pullRequests: [String]?
+    /// The event it asks about, so the same event never asks twice.
+    var event: String?
 }
 
 /// The user's last answer to an automation's question, for its row.
@@ -124,7 +126,7 @@ enum AutomationAsks {
         text = text.replacingOccurrences(of: "{recommendation}", with: advice?.reason ?? "")
         text = text.replacingOccurrences(of: "{answer}", with: String(answer(run.summary).prefix(answerLimit)))
         return NoticeAsk(routine: routine.id, yes: ask.yes, no: ask.no, agent: agent, prompt: String(text.prefix(AgentInbox.textLimit)), reminder: reminder,
-                         pullRequests: several)
+                         pullRequests: several, event: event.id)
     }
 
     /// What the first button sends to the one agent for several pull requests.

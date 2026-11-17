@@ -214,8 +214,14 @@ final class AgentModel: ObservableObject {
         guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
               notifiedApprovals.insert(id).inserted else { return }
         AgentAttentionCenter.shared.register(self, id: attentionID)
-        Notifier.postApproval(agent: attentionID, permission: id, text: AgentAttention.approval(agent: attentionTitle, tool: tool, summary: summary),
-                              sessionOffered: AgentRules.sessionOffered(tool: tool))
+        let text = AgentAttention.approval(agent: attentionTitle, tool: tool, summary: summary)
+        let sessionOffered = AgentRules.sessionOffered(tool: tool)
+        let agent = attentionID
+        Notifier.postApproval(agent: agent, permission: id, text: text, sessionOffered: sessionOffered)
+        AgentAttentionCenter.shared.add(.init(agent: agent, permission: id, title: text.title, body: text.body, sessionOffered: sessionOffered, created: Date()))
+        DecisionKeeper.shared.keep(AgentAttention.approvalIdentifier(agent: agent, permission: id)) {
+            Notifier.postApproval(agent: agent, permission: id, text: text, sessionOffered: sessionOffered, quiet: true)
+        }
     }
 
     private func announceQuestion() {
@@ -223,7 +229,10 @@ final class AgentModel: ObservableObject {
               let question = AgentAttention.question(in: items) else { return }
         AgentAttentionCenter.shared.register(self, id: attentionID)
         notifiedQuestion = true
-        Notifier.postQuestion(agent: attentionID, text: AgentAttention.question(agent: attentionTitle, text: question))
+        let agent = attentionID
+        let text = AgentAttention.question(agent: attentionTitle, text: question)
+        Notifier.postQuestion(agent: agent, text: text)
+        DecisionKeeper.shared.keep(AgentAttention.questionIdentifier(agent: agent)) { Notifier.postQuestion(agent: agent, text: text, quiet: true) }
     }
 
     /// Takes this agent's notifications back: its prompts were answered, or it moved on.
@@ -232,6 +241,7 @@ final class AgentModel: ObservableObject {
         var identifiers = notifiedApprovals.map { AgentAttention.approvalIdentifier(agent: attentionID, permission: $0) }
         if notifiedQuestion { identifiers.append(AgentAttention.questionIdentifier(agent: attentionID)) }
         Notifier.withdraw(identifiers: identifiers)
+        AgentAttentionCenter.shared.remove(agent: attentionID)
         notifiedApprovals = []
         notifiedQuestion = false
     }
@@ -641,6 +651,7 @@ final class AgentModel: ObservableObject {
         client?.send(.permission(id: id, allow: allow, session: session))
         if notifiedApprovals.remove(id) != nil {
             Notifier.withdraw(identifiers: [AgentAttention.approvalIdentifier(agent: attentionID, permission: id)])
+            AgentAttentionCenter.shared.remove(agent: attentionID, permission: id)
         }
     }
 

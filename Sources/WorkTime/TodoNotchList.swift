@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @MainActor
 final class TodoModel: ObservableObject {
@@ -120,6 +121,14 @@ final class TodoModel: ObservableObject {
 
     func restore(_ item: MeetingTodo) { decide { $0.restore(item.id) } }
 
+    /// A decision put aside without an answer: its reminder is done with, or one is made and done, so it stays in Resolved.
+    func resolveWithoutAnswer(_ notice: AgentNotice) {
+        if let reminder = notice.ask?.reminder, book.reminder(reminder) != nil { return complete(reminder) }
+        let source = Decisions.resolvedSource(link: notice.link, jiraSite: JiraModel.shared.site)
+        guard let id = remind(title: Decisions.readable(notice.title), source: source, preset: .noDate) else { return }
+        complete(id)
+    }
+
     func clearCompleted() {
         var new = book
         new.clearCompleted()
@@ -201,6 +210,7 @@ struct TodoNotchList: View {
     let onType: (String) -> Void
     @ObservedObject private var model = TodoModel.shared
     @ObservedObject private var notices = NoticeCenter.shared
+    @ObservedObject private var attention = AgentAttentionCenter.shared
     @State private var adding = false
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -223,11 +233,18 @@ struct TodoNotchList: View {
 
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if !attention.approvals.isEmpty {
+                heading("Waiting for you", top: 0)
+                ForEach(attention.approvals) { approval in
+                    ApprovalRow(approval: approval, onOpen: onOpen)
+                    separator
+                }
+            }
             if !notices.waiting.isEmpty {
-                heading("From agents", top: 0)
+                heading("From agents", top: attention.approvals.isEmpty ? 0 : 10)
                 ForEach(notices.waiting) { notice in
                     NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, answer: { notices.answer(notice.id, yes: $0) },
-                              remove: { notices.dismiss(notice.id) })
+                              remove: { notices.dismissUnanswered(notice.id) })
                     separator
                 }
             }
@@ -249,7 +266,7 @@ struct TodoNotchList: View {
         let now = Date()
         let sections = ReminderLogic.sections(model.reminders, now: now)
         let titled = sections.count > 1 || sections.first.map { $0.section != .anytime } ?? false
-        let alone = notices.waiting.isEmpty && notices.pending.isEmpty
+        let alone = notices.waiting.isEmpty && notices.pending.isEmpty && attention.approvals.isEmpty
         ForEach(sections, id: \.section) { group in
             if titled { heading(group.section.title, top: alone && group.section == sections.first?.section ? 0 : 10, overdue: group.section == .overdue) }
             ForEach(group.reminders.prefix(TodoLogic.todoLimit)) { reminder in
@@ -343,7 +360,7 @@ private struct NoticeRow: View {
                 .foregroundStyle(notice.urgency == .high ? Color.orange : Color.accentColor)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
-                Text(notice.title).lineLimit(2)
+                Text(Decisions.readable(notice.title)).lineLimit(2)
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(notice.ask == nil ? 1 : 3)
                 if let ask = notice.ask, let answer {
                     HStack(spacing: 6) {
@@ -357,7 +374,7 @@ private struct NoticeRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: remove) { Image(systemName: "xmark").font(.caption.bold()).foregroundStyle(.secondary) }
                 .buttonStyle(.plain)
-                .help(open == nil ? "Cancel" : "Dismiss")
+                .help(open == nil ? "Cancel" : Decisions.needsAnswer(notice) ? "Dismiss without answering; it stays in Resolved" : "Dismiss")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
@@ -370,7 +387,39 @@ private struct NoticeRow: View {
         var parts = [notice.source.title ?? notice.source.label(titles: [:])]
         let time = notice.date.formatted(date: Calendar.current.isDateInToday(notice.date) ? .omitted : .abbreviated, time: .shortened)
         parts.append(notice.state == .missed ? "missed \(time)" : time)
-        if let body = notice.body { parts.append(body) }
+        if let body = notice.body { parts.append(Decisions.readable(body)) }
         return parts.joined(separator: " \u{00B7} ")
+    }
+}
+
+/// An agent waiting for approval of a call: the buttons of its notification, answered from here without opening the app.
+private struct ApprovalRow: View {
+    let approval: AgentAttentionCenter.Approval
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "hand.raised.fill").font(.system(size: 14)).foregroundStyle(Color.orange).frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(approval.title).lineLimit(2)
+                Text(approval.body).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                HStack(spacing: 6) {
+                    Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.borderedProminent)
+                    if approval.sessionOffered { Button("Allow for this session") { answer(AgentAttention.allowSessionAction) }.buttonStyle(.bordered) }
+                    Button("Deny") { answer(AgentAttention.denyAction) }.buttonStyle(.bordered)
+                    Button("Open") { onOpen(); answer(UNNotificationDefaultActionIdentifier) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                }
+                .controlSize(.small)
+                .padding(.top, 3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .transition(.opacity)
+    }
+
+    private func answer(_ action: String) {
+        AgentAttentionCenter.shared.respond(agent: approval.agent, request: approval.permission, action: action, text: nil)
     }
 }

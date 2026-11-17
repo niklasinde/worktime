@@ -48,7 +48,7 @@ let automationAskTests: [(name: String, run: () throws -> Void)] = [
         let ask = AutomationAsk(yes: "Review it", no: "Skip", agent: "assistant:work:reviewer", prompt: "Review {pr_url} by {pr_author}. Advice: {recommendation}\n{answer}")
         let notice = AutomationAsks.notice(for: review(ask), event: event(), run: run("Looks safe.\nRecommendation: review - small"), ask: ask, reminder: "r1")
         check(notice == NoticeAsk(routine: "A1", yes: "Review it", no: "Skip", agent: "assistant:work:reviewer",
-                                  prompt: "Review \(pull) by Katia. Advice: small\nLooks safe.", reminder: "r1"), "\(String(describing: notice))")
+                                  prompt: "Review \(pull) by Katia. Advice: small\nLooks safe.", reminder: "r1", event: event().id), "\(String(describing: notice))")
         var own = ask
         own.agent = ""
         own.prompt = ""

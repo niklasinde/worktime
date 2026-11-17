@@ -61,6 +61,19 @@ enum Permissions {
         get async { await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
     }
 
+    /// How macOS shows WorkTime's notifications, and whether it may show them at all.
+    static var notificationAlert: (authorized: Bool, style: Decisions.AlertStyle) {
+        get async {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            let style: Decisions.AlertStyle = switch settings.alertStyle {
+            case .alert: .alert
+            case .banner: .banner
+            default: .none
+            }
+            return (settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional, style)
+        }
+    }
+
     static func requestNotifications() async -> Bool {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
     }

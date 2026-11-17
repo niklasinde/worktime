@@ -610,15 +610,32 @@ enum SlackLogic {
 
     /// Slack's markup as plain text: names for user mentions, `#name` for channels, labels for links; emoji codes stay.
     static func clean(_ text: String, names: [String: String]) -> String {
+        plain(text, names: names).replacingOccurrences(of: "\n", with: " ")
+    }
+
+    /// Like `clean`, keeping the lines, and leaving alone what only looks like markup: a `<` and `>` around anything but a link, a mention,
+    /// a channel or an `@here` stay as typed. A link cut off before its `>`, as in a clipped title, is closed.
+    static func plain(_ text: String, names: [String: String] = [:]) -> String {
         var output = ""
         var rest = Substring(text)
         while let open = rest.firstIndex(of: "<"), let close = rest[open...].firstIndex(of: ">") {
             output += rest[..<open]
-            output += replacement(String(rest[rest.index(after: open)..<close]), names: names)
+            let token = String(rest[rest.index(after: open)..<close])
+            output += isMarkup(token) ? replacement(token, names: names) : "<\(token)>"
             rest = rest[rest.index(after: close)...]
         }
-        output += rest
-        return decodeEntities(output).replacingOccurrences(of: "\n", with: " ")
+        if let open = rest.firstIndex(of: "<"), isMarkup(String(rest[rest.index(after: open)...])) {
+            output += rest[..<open]
+            output += replacement(String(rest[rest.index(after: open)...]), names: names)
+        } else {
+            output += rest
+        }
+        return decodeEntities(output)
+    }
+
+    private static func isMarkup(_ token: String) -> Bool {
+        guard let first = token.first, !first.isWhitespace else { return false }
+        return "@#!".contains(first) || ["http://", "https://", "mailto:"].contains { token.hasPrefix($0) }
     }
 
     private static func replacement(_ token: String, names: [String: String]) -> String {

@@ -207,7 +207,7 @@ enum NoticeLogic {
         case add
         /// The same notification came moments ago: nothing new is shown.
         case collapse(String)
-        /// A scheduled one with the same title and time from the same source is updated in place.
+        /// A scheduled one with the same title and time from the same source, or a question about an event already asked about, is updated in place.
         case replace(String)
         case reject(String)
     }
@@ -216,6 +216,7 @@ enum NoticeLogic {
     /// was taken in the last minute, including ones since dismissed.
     static func admit(_ notice: AgentNotice, existing: [AgentNotice], recent: [AgentNotice], now: Date) -> Decision {
         let identity = notice.source.identity
+        if let event = notice.ask?.event, let same = existing.first(where: { $0.ask?.event == event }) { return .replace(same.id) }
         if let at = notice.at, let same = existing.first(where: {
             $0.state == .scheduled && $0.source.identity == identity && $0.title == notice.title && $0.at == at
         }) {
