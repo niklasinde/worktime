@@ -17,6 +17,14 @@ let agentAttentionTests: [(name: String, run: () throws -> Void)] = [
         defaults.set(false, forKey: AgentAttention.settingKey)
         check(!AgentAttention.enabled(defaults: defaults), "off when switched off")
     }),
+    ("attention: what the agent said just before it asked is the reason, the last words of it when long", {
+        let ask = AgentItem(id: "p", kind: .permission(tool: "Bash", summary: "gh pr diff 12", detail: "gh pr diff 12", allowed: nil))
+        check(AgentAttention.context(in: [user("go"), text("t1", "First."), text("t2", "I need the diff to check the migration."), ask]) == "I need the diff to check the migration.", "the last text before the call")
+        check(AgentAttention.context(in: [user("go"), ask]).isEmpty, "nothing said")
+        check(AgentAttention.context(in: [text("t1", "Before."), ask, text("t2", "After the call.")]) == "Before.", "only what came before")
+        let long = AgentAttention.context(in: [text("t", String(repeating: "a", count: 900) + "END"), ask], limit: 50)
+        check(long.count == 50 && long.hasSuffix("END") && long.hasPrefix("\u{2026}"), "the end of a long reply: \(long.count)")
+    }),
     ("attention: the approval names the agent and the call, on one clipped line", {
         let short = AgentAttention.approval(agent: "ISD-13312", tool: "Bash", summary: "git push origin main")
         check(short.title == "ISD-13312 needs approval", "title: \(short.title)")

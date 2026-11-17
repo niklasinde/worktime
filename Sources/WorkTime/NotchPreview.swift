@@ -79,6 +79,31 @@ enum NotchPreview {
                                 task: "Action item \(index + 1) from the meeting, long enough to fill the row")
                 })
             await notch("todo-many-meeting-items", setup: standard, list: .todo)
+            TodoModel.shared.showSample(reminders: [Reminder(id: "r3", title: "Book the dentist", created: start)], meeting: [])
+            let review = ReviewDraft(pr: "https://github.com/acme/orbit.api/pull/2760", sha: "754124e0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6", verdict: .requestChanges,
+                                     summary: "[AI] Quarter periods and the schedule check out. Two things to fix before merge: there are two Alembic heads, and the first invoice can be due before it is issued. The rest looks right.",
+                                     comments: [.init(path: "db/migrations/7c3a9e_calendar_quarter.py", line: 17, body: "[AI] develop now has a second head, so the next revision will fail. Point this at the new head."),
+                                                .init(path: "orbit/business_loan/part_invoice.py", line: 85, body: "[AI] The first date comes from the quarter but the due date does not, which is before the invoice date."),
+                                                .init(path: "orbit/api/validators.py", line: 1290, body: "[AI] This might be the place to refuse the field.")])
+            let approve = ReviewDraft(pr: "https://github.com/acme/orbit.admin/pull/1071", sha: "a43bd93", verdict: .approve,
+                                      summary: "[AI] Matches the API contract. The override dialog now reads the right fields. Merge after the API pull request.", comments: [])
+            func reviewNotice(_ id: String, _ drafts: [ReviewDraft]) -> AgentNotice {
+                ReviewNotices.notice(drafts: drafts, agent: "assistant:work:reviewer", agentTitle: "Reviewer", id: id, now: start)
+            }
+            var question = AgentNotice(id: "q", title: "Review? orbit.api#2761 Client portal messages", body: "Large change, touches loan invoicing.\nRecommendation: review \u{2014} money.",
+                                       link: "https://github.com/acme/orbit.api/pull/2761", urgency: .high, source: NoticeSource(agent: "routine:7B2F6D9E-1C3A-4E5B-8F10-2A3B4C5D6E7F", title: "Review requests"), created: start)
+            question.ask = NoticeAsk(routine: "R", yes: "Review it", no: "Skip", agent: "assistant:work:reviewer", prompt: "Review {pr_url}", reminder: nil,
+                                     eventText: "katia asked for a review in #review-request: <https://github.com/acme/orbit.api/pull/2761|orbit.api#2761>")
+            NoticeCenter.shared.showSample([reviewNotice("n1", [review]), question])
+            AgentAttentionCenter.shared.add(.init(agent: "assistant:work:verifier", permission: "p1", title: "Verifier needs approval", body: "Bash: curl -s https://testapi.example.com/ping/version",
+                                                  sessionOffered: true, created: start, detail: "curl -s https://testapi.example.com/ping/version\n| jq .commit\n# line 3\n# line 4\n# line 5\n# line 6\n# line 7\n# line 8",
+                                                  context: "I need to confirm the fix is deployed before I test it."))
+            await notch("decisions-closed", setup: standard, list: .todo)
+            DecisionRowsModel.shared.toggle(DecisionIDs.review(review.id))
+            DecisionRowsModel.shared.toggle(DecisionIDs.approval("agent-approval:assistant:work:verifier:p1"))
+            await notch("decisions-open", setup: standard, list: .todo)
+            NoticeCenter.shared.showSample([reviewNotice("n2", [review, approve])])
+            await notch("decisions-set", setup: standard, list: .todo)
             panels.showSample(swapped)
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 let suffix = appearance == .aqua ? "light" : "dark"

@@ -635,6 +635,23 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   sheet. Before posting comments on lines the pull request's files are read, and a comment on a file the pull request does not change
   or a line outside its hunks goes under the summary instead of failing the review (a 422 from GitHub is retried once the same way);
   the result says how many were moved, and GitHub's own error text is shown.
+  **Deciding takes seconds.** A pull request has one row, never two: a newer draft of it replaces an older one (also after a restart).
+  The row names the pull request with its title, author, size and checks, shows the verdict as a coloured chip (Approve green, Request
+  changes red, Comment grey), the first two sentences of the reasoning, how many comments are on lines (and how many look blocking) and
+  the first of them. One main button is named for what the draft's own verdict posts ("Request changes · 3 comments", "Approve",
+  "Post as comment") and a line under it says exactly what goes ("Posts 1 review asking for changes + 3 line comments to repo#12");
+  **More** holds the other ways (Approve anyway, Comment instead, Post summary only, Dismiss), each saying when it goes against the
+  reviewer. **Read the review** opens the whole review in place: who drafted it and when, the description, ticket and checks, the
+  reasoning, and every comment with the code around its line and a box that leaves it out of what is posted. After a click the row
+  says posting, posted (then moves to Resolved after a short while) or the reason it failed with a single **Retry**. A set is a compact
+  table, one line per pull request, with **Approve all** only when every review recommends approving. The notification's title and
+  body say the same in two lines, with the main click and Open as its buttons.
+  Every decision row in the notch bar opens the same way: a click on the row (not its buttons) shows what is needed to decide: for an
+  approval the whole call, formatted, with a long command cut to six lines and **Show all**, and what the agent said just before it
+  asked; for a tool the assistant's list leaves out the assistant, the tool and the call; for a refused turn each refused call; for an
+  automation's question the event, the triage run's whole answer and what the first button sends. The buttons stay in the opened row,
+  next to **Open in the app**. Arrow keys move between rows, Space or Return opens or closes one, and ⌘Return does its main click;
+  the rows you opened stay open while the list is.
 - **Notifications.** Any agent, and Claude Code sessions with the plugin, can call `notify(title, body?, link?, urgency?, at?)`:
   the running app posts a macOS notification (now, or at `at`: ISO 8601 or `HH:mm`, up to 30 days ahead) and keeps it under
   From agents / Scheduled in the notch bar's Reminders list until opened or dismissed. A click opens the link (a pull request

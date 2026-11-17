@@ -240,6 +240,25 @@ enum ReviewBoard {
         return outcome
     }
 
+    /// The notices as they should be after a restart: where an older notice and a newer one hold a draft of the same pull request, only the
+    /// newer keeps it.
+    static func consolidated(_ notices: [AgentNotice]) -> Outcome {
+        var kept: [AgentNotice] = []
+        var removed: [String] = []
+        var changed: Set<String> = []
+        for notice in notices.sorted(by: { $0.created < $1.created }) {
+            if let reviews = notice.reviews {
+                let outcome = supersede(kept, by: reviews)
+                kept = outcome.notices
+                removed += outcome.removed
+                changed.formUnion(outcome.changed)
+            }
+            kept.append(notice)
+        }
+        let order = Dictionary(uniqueKeysWithValues: notices.enumerated().map { ($1.id, $0) })
+        return Outcome(notices: kept.sorted { (order[$0.id] ?? 0) < (order[$1.id] ?? 0) }, removed: removed, changed: changed.sorted())
+    }
+
     /// Whether "Approve all" is worth offering: more than one, and every review recommends approving.
     static func canApproveAll(_ drafts: [ReviewDraft]) -> Bool {
         drafts.count > 1 && drafts.allSatisfy { $0.verdict == .approve }

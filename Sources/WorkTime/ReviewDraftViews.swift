@@ -18,30 +18,82 @@ final class ReviewPostStore: ObservableObject {
     }
 }
 
-/// The buttons that post a drafted review: they decide, when clicked, whether it can go with this click or needs the confirmation.
-struct ReviewButtons: View {
+/// What one click on a drafted review does and what came of the last one: the main button named for the review's own verdict, the
+/// other ways in a menu, a line saying exactly what is posted, and then posting, posted, or failed with a way to try again.
+struct ReviewActionBar: View {
     let draft: ReviewDraft
-    @ObservedObject private var notices = NoticeCenter.shared
     let via: String
+    var dismiss: (() -> Void)?
+    @ObservedObject private var notices = NoticeCenter.shared
+    @ObservedObject private var store = ReviewPostStore.shared
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                button(.approve, prominent: draft.verdict == .approve)
-                if draft.problem(for: .requestChanges) == nil { button(.requestChanges, prominent: draft.verdict == .requestChanges) }
-                if !draft.comments.isEmpty { button(.postComments, prominent: false) }
-                if notices.reviewWorking.contains(draft.id) { ProgressView().controlSize(.small) }
-            }
-            ReviewWays(draft: draft, via: via)
-        }
-        .controlSize(.small)
+    private var excluded: Set<Int> { notices.reviewExcluded[draft.id] ?? [] }
+
+    private var state: ReviewRows.State {
+        ReviewRows.state(working: notices.reviewWorking.contains(draft.id), waiting: notices.reviewWaiting.contains(draft.id),
+                         posted: store.posted(draft.id), result: notices.reviewResults[draft.id])
     }
 
-    @ViewBuilder private func button(_ action: ReviewAction, prominent: Bool) -> some View {
-        let title = Button(action.title) { Task { await notices.post(draft, action, via: via) } }
-            .disabled(notices.reviewWorking.contains(draft.id) || notices.reviewWaiting.contains(draft.id))
-            .help(GitHubActions.isReviewFromNotifications() ? "Posts the review with this click" : "Opens the confirmation with the review in it")
-        if prominent { title.buttonStyle(.borderedProminent) } else { title.buttonStyle(.bordered) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            switch state {
+            case .posted(let text):
+                Label(text, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            case .posting:
+                HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Posting\u{2026}").font(.caption).foregroundStyle(.secondary) }
+            case .failed(let reason, let action):
+                Text(reason).font(.caption).foregroundStyle(.red).lineLimit(4)
+                Button("Retry") { Task { await notices.post(draft, action, via: via) } }.buttonStyle(.bordered).controlSize(.small)
+            case .waiting, .ready:
+                if state == .ready { ready }
+                ReviewWays(draft: draft, via: via)
+            }
+        }
+    }
+
+    @ViewBuilder private var ready: some View {
+        let primary = ReviewRows.primary(draft)
+        HStack(spacing: 8) {
+            Button(ReviewRows.primaryTitle(draft, excluded: excluded)) { post(primary) }
+                .buttonStyle(.borderedProminent)
+                .tint(tint)
+                .help(GitHubActions.isReviewFromNotifications() ? "Posts the review with this click" : "Opens the confirmation with the review in it")
+            more
+        }
+        .controlSize(.small)
+        Text(ReviewRows.preview(draft, action: primary, excluded: excluded)).font(.caption2).foregroundStyle(.tertiary)
+        if let note = notices.reviewResults[draft.id] { Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+    }
+
+    private var more: some View {
+        Menu("More") {
+            ForEach(ReviewRows.alternatives(draft)) { alternative in
+                Button(alternative.note.map { "\(alternative.title) \u{2014} \($0)" } ?? alternative.title) { run(alternative) }
+            }
+            if let dismiss {
+                Divider()
+                Button("Dismiss", action: dismiss)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var tint: Color {
+        switch ReviewRows.tone(draft.verdict) {
+        case .positive: return .green
+        case .negative: return .red
+        case .neutral: return .gray
+        }
+    }
+
+    private func post(_ action: ReviewAction, mode: ReviewPostMode = .normal) { Task { await notices.post(draft, action, via: via, mode: mode) } }
+
+    private func run(_ alternative: ReviewRows.Alternative) {
+        switch alternative.kind {
+        case .action(let action): post(action, mode: action == .approve && draft.verdict != .approve ? .anyway : .normal)
+        case .summaryOnly: Task { await notices.post(ReviewRows.summaryOnly(draft), .postComments, via: via) }
+        }
     }
 }
 
@@ -83,33 +135,19 @@ struct ReviewWays: View {
     }
 }
 
-/// A drafted review in a reply: what it says and the buttons that post it, or what became of it.
+/// A drafted review in a reply: what it recommends and why, the comments with the code they are about, and the one click that posts it.
 struct ReviewDraftCard: View {
     let draft: ReviewDraft
-    @ObservedObject private var store = ReviewPostStore.shared
-    @ObservedObject private var notices = NoticeCenter.shared
-    @State private var showsComments = false
-
-    private var posted: ReviewPosted? { store.posted(draft.id) }
+    @ObservedObject private var details = ReviewDetailStore.shared
+    @ObservedObject private var known = GitHubModel.shared
 
     var body: some View {
+        let info = draft.target.map { ReviewPRInfo(known.knownPullRequest($0)) } ?? ReviewPRInfo()
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.seal").foregroundStyle(.secondary)
-                Text("Review draft \u{00B7} \(draft.reference)").fontWeight(.medium)
-                Text(draft.verdict.title.lowercased()).foregroundStyle(.secondary)
-                if let sha = draft.sha { Text(ReviewApproval.short(sha)).font(.caption.monospaced()).foregroundStyle(.tertiary) }
-            }
-            if !draft.summary.isEmpty { Text(draft.summary).font(.callout).textSelection(.enabled) }
-            if !draft.comments.isEmpty { commentList }
-            if let posted, posted.ok {
-                Label(posted.text, systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.secondary)
-            } else {
-                ReviewButtons(draft: draft, via: "chat")
-                if let text = notices.reviewResults[draft.id] ?? posted?.text {
-                    Label(text, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
-                }
-            }
+            ReviewHeader(draft: draft, info: info)
+            if !draft.summary.isEmpty { Text(ReviewDraft.untagged(draft.summary)).font(.callout).textSelection(.enabled) }
+            ReviewCommentList(draft: draft, files: details.loaded[draft.pr]?.files)
+            ReviewActionBar(draft: draft, via: "chat")
             if let target = draft.target {
                 Button("Open pull request") { AgentModel.openPullRequestLink?(target) }.buttonStyle(.link).font(.caption)
             }
@@ -117,20 +155,88 @@ struct ReviewDraftCard: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+        .onAppear { details.load(draft) }
+    }
+}
+
+/// The verdict as a coloured chip.
+struct DecisionChip: View {
+    let text: String
+    let tone: ReviewRows.Tone
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.22)))
+            .foregroundStyle(color)
     }
 
-    @ViewBuilder private var commentList: some View {
-        Button(showsComments ? "Hide \(draft.comments.count) comments on lines" : "Show \(draft.comments.count) comments on lines") { showsComments.toggle() }
-            .buttonStyle(.link)
-            .font(.caption)
-        if showsComments {
-            ForEach(Array(draft.comments.enumerated()), id: \.offset) { _, comment in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: comment.label).font(.caption.monospaced()).foregroundStyle(.secondary)
-                    Text(comment.body).font(.callout).textSelection(.enabled)
+    private var color: Color {
+        switch tone {
+        case .positive: return .green
+        case .negative: return .red
+        case .neutral: return .gray
+        }
+    }
+}
+
+/// The pull request's name, who wrote it, how big it is and where its checks are, and what the reviewer recommends.
+struct ReviewHeader: View {
+    let draft: ReviewDraft
+    let info: ReviewPRInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                DecisionChip(text: draft.verdict.title, tone: ReviewRows.tone(draft.verdict))
+                Text(ReviewRows.heading(draft, info: info)).fontWeight(.medium).lineLimit(2)
+            }
+            let meta = ReviewRows.meta(info)
+            if !meta.isEmpty { Text(meta).font(.caption).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+/// The comments on lines: each with its place, its text and, once the pull request's patch is known, the code around the line, and a box
+/// that takes it out of what is posted.
+struct ReviewCommentList: View {
+    let draft: ReviewDraft
+    let files: [DiffFile]?
+    @ObservedObject private var notices = NoticeCenter.shared
+    @State private var shown: Bool
+
+    init(draft: ReviewDraft, files: [DiffFile]?, startsOpen: Bool = false) {
+        self.draft = draft
+        self.files = files
+        _shown = State(initialValue: startsOpen)
+    }
+
+    var body: some View {
+        if !draft.comments.isEmpty {
+            Button(shown ? "Hide \(draft.comments.count) comments on lines" : "Show \(draft.comments.count) comments on lines") { shown.toggle() }
+                .buttonStyle(.link)
+                .font(.caption)
+            if shown {
+                ForEach(Array(draft.comments.enumerated()), id: \.offset) { index, comment in
+                    let out = notices.reviewExcluded[draft.id]?.contains(index) == true
+                    HStack(alignment: .top, spacing: 6) {
+                        Toggle("", isOn: Binding(get: { !out }, set: { _ in notices.toggleExcluded(draft.id, index) })).labelsHidden().toggleStyle(.checkbox)
+                            .help(out ? "Left out of what is posted" : "Posted with the review")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: comment.label).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            Text(ReviewDraft.untagged(comment.body)).font(.callout).textSelection(.enabled)
+                            if let excerpt = excerpt(comment) { Text(verbatim: excerpt).font(.caption2.monospaced()).foregroundStyle(.secondary).padding(4).background(Color.primary.opacity(0.06)) }
+                        }
+                        .opacity(out ? 0.45 : 1)
+                    }
                 }
-                .padding(.leading, 8)
             }
         }
+    }
+
+    private func excerpt(_ comment: ReviewDraft.Comment) -> String? {
+        files?.first { $0.path == comment.path }?.patch.flatMap { ReviewHunks.excerpt(patch: $0, line: comment.line) }
     }
 }

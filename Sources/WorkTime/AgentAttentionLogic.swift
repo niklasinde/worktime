@@ -97,6 +97,14 @@ enum AgentAttention {
         return paragraphs.last
     }
 
+    /// What the agent last said before the call it asks about: why it wants it.
+    static func context(in items: [AgentItem], limit: Int = 600) -> String {
+        let permission = items.lastIndex { if case .permission = $0.kind { true } else { false } } ?? items.endIndex
+        guard let said = items[..<permission].last(where: { if case .text = $0.kind { true } else { false } }), case .text(let text) = said.kind else { return "" }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > limit ? "\u{2026}" + String(trimmed.suffix(limit - 1)) : trimmed
+    }
+
     private static func clipped(_ text: String, to limit: Int) -> String {
         let line = text.split(whereSeparator: \.isNewline).joined(separator: " ")
         return line.count > limit ? String(line.prefix(limit - 1)) + "\u{2026}" : line

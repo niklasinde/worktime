@@ -22,6 +22,15 @@ final class AgentAttentionCenter: ObservableObject {
         var blocked = false
         /// Main's prompt for a ticket that already has a session: Reuse this one, Start a new one.
         var ticketAsk = false
+        /// The call's whole input, and what the agent said just before it asked, for the row to show when it is opened.
+        var detail = ""
+        var context = ""
+
+        /// What the row shows when it is opened, with the agent named as its notifications name it.
+        func facts(agentTitle: String?) -> ApprovalFacts {
+            ApprovalFacts(kind: blocked ? .blocked : roleTool ? .roleTool : .call, agent: agentTitle ?? agent,
+                          title: title, body: body, detail: detail, context: context, created: created)
+        }
     }
 
     @Published private(set) var approvals: [Approval] = []
@@ -38,6 +47,9 @@ final class AgentAttentionCenter: ObservableObject {
     func register(_ model: AgentModel, id: String) {
         models[id] = Entry(model: model)
     }
+
+    /// The name the agent has in its notifications, while it is loaded.
+    func title(of agent: String) -> String? { models[agent]?.model?.attentionTitle }
 
     /// A button or reply of a notification; an agent no longer there (the app was restarted since) is opened instead.
     func respond(agent: String, request: String?, action: String, text: String?) {

@@ -100,6 +100,15 @@ let reviewRowTests: [(name: String, run: () throws -> Void)] = [
         check(ReviewBoard.canApproveAll([draft(.approve), draft(.approve, pr: two)]) && !ReviewBoard.canApproveAll([draft(.approve)]) && !ReviewBoard.canApproveAll([draft(.approve), draft(.comment, pr: two)]), "approve all")
     }),
 
+    ("review board: after a restart each pull request has one row, the newest, and the order is kept", {
+        let first = ReviewNotices.notice(drafts: [draft(.comment, sha: "1111111")], agent: "k", agentTitle: "R", id: "old", now: at)
+        let second = ReviewNotices.notice(drafts: [draft(.approve, pr: two), draft(.requestChanges, sha: "2222222")], agent: "k", agentTitle: "R", id: "set", now: at.addingTimeInterval(60))
+        let plain = AgentNotice(id: "plain", title: "Hello", source: NoticeSource(agent: "k"), created: at.addingTimeInterval(30))
+        let outcome = ReviewBoard.consolidated([second, plain, first])
+        check(outcome.removed == ["old"] && outcome.notices.map(\.id) == ["set", "plain"], "\(outcome.removed) \(outcome.notices.map(\.id))")
+        check(ReviewBoard.consolidated([first]).notices == [first] && ReviewBoard.consolidated([]).notices.isEmpty, "nothing to merge")
+    }),
+
     ("review hunks: the lines around a comment's line, marked, from the patch", {
         let patch = "@@ -1,4 +10,5 @@ def sync\n context a\n-old line\n+new line b\n+new line c\n context d\n@@ -40,2 +50,2 @@\n later one\n+later two"
         let found = ReviewHunks.excerpt(patch: patch, line: 12, context: 1)

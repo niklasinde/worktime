@@ -211,6 +211,7 @@ struct TodoNotchList: View {
     @ObservedObject private var model = TodoModel.shared
     @ObservedObject private var notices = NoticeCenter.shared
     @ObservedObject private var attention = AgentAttentionCenter.shared
+    @ObservedObject private var rowsModel = DecisionRowsModel.shared
     @State private var adding = false
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -225,10 +226,36 @@ struct TodoNotchList: View {
             .padding(.horizontal, 8)
             .padding(.bottom, 6)
             NotchScroll { rows }
+                .focusable()
+                .focusEffectDisabled()
+                .onKeyPress(.downArrow) { keyed { rowsModel.move(1, in: decisionIDs) } }
+                .onKeyPress(.upArrow) { keyed { rowsModel.move(-1, in: decisionIDs) } }
+                .onKeyPress(.space) { keyed { rowsModel.activate() } }
+                .onKeyPress(.return, phases: .down) { press in
+                    keyed { press.modifiers.contains(.command) ? rowsModel.runPrimary() : rowsModel.activate() }
+                }
+                .onAppear { rowsModel.prune(to: decisionIDs) }
+                .onChange(of: decisionIDs) { _, ids in rowsModel.prune(to: ids) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .onDisappear { end(keep: true) }
+    }
+
+    /// The decision rows from the top, for the arrow keys: approvals, then each drafted review and each question.
+    private var decisionIDs: [String] {
+        attention.approvals.map { DecisionIDs.approval($0.id) }
+            + notices.waiting.flatMap { notice -> [String] in
+                if let reviews = notice.reviews { return reviews.map { DecisionIDs.review($0.id) } }
+                return notice.ask == nil ? [] : [DecisionIDs.notice(notice.id)]
+            }
+    }
+
+    /// A key while the user is not typing a new reminder.
+    private func keyed(_ action: () -> Void) -> KeyPress.Result {
+        guard !adding, !decisionIDs.isEmpty else { return .ignored }
+        action()
+        return .handled
     }
 
     private var rows: some View {
@@ -243,8 +270,7 @@ struct TodoNotchList: View {
             if !notices.waiting.isEmpty {
                 heading("From agents", top: attention.approvals.isEmpty ? 0 : 10)
                 ForEach(notices.waiting) { notice in
-                    NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, answer: { notices.answer(notice.id, yes: $0) },
-                              review: { draft, action in Task { await notices.post(draft, action, via: "notch") } },
+                    NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, onOpen: onOpen, answer: { notices.answer(notice.id, yes: $0) },
                               remove: { notices.dismissUnanswered(notice.id) })
                     separator
                 }
@@ -252,7 +278,7 @@ struct TodoNotchList: View {
             if !notices.pending.isEmpty {
                 heading("Scheduled", top: notices.waiting.isEmpty ? 0 : 10)
                 ForEach(notices.pending) { notice in
-                    NoticeRow(notice: notice, open: nil, answer: nil, review: nil, remove: { notices.dismiss(notice.id) })
+                    NoticeRow(notice: notice, open: nil, onOpen: onOpen, answer: nil, remove: { notices.dismiss(notice.id) })
                     separator
                 }
             }
@@ -347,16 +373,38 @@ struct TodoNotchList: View {
     }
 }
 
-/// A notification from an agent: click to open its link, the cross to dismiss it, or to cancel it while it is scheduled.
+/// A notification from an agent: click to open its link, the cross to dismiss it, or to cancel it while it is scheduled. A question or a
+/// drafted review waits for an answer: its row opens in place to show everything needed to decide.
 private struct NoticeRow: View {
     let notice: AgentNotice
     let open: (() -> Void)?
+    let onOpen: () -> Void
     let answer: ((Bool) -> Void)?
-    let review: ((ReviewDraft, ReviewAction) -> Void)?
     let remove: () -> Void
-    @ObservedObject private var center = NoticeCenter.shared
+    @ObservedObject private var model = DecisionRowsModel.shared
+
+    private var id: String { DecisionIDs.notice(notice.id) }
 
     var body: some View {
+        if let reviews = notice.reviews, open != nil, !reviews.isEmpty {
+            if reviews.count == 1 {
+                ReviewDecisionRow(draft: reviews[0], notice: notice, onOpen: onOpen, dismiss: remove)
+            } else {
+                ReviewSetTable(notice: notice, drafts: reviews, onOpen: onOpen, dismiss: remove).padding(.vertical, 6).padding(.horizontal, 8)
+            }
+        } else if notice.ask != nil, open != nil {
+            DecisionRowFrame(id: id, primary: { answer?(true) }) { content }
+        } else {
+            content
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .onTapGesture { open?() }
+                .transition(.opacity)
+        }
+    }
+
+    private var content: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: open == nil ? "clock" : notice.urgency == .high ? "exclamationmark.circle.fill" : "bell.fill")
                 .font(.system(size: 14))
@@ -364,47 +412,24 @@ private struct NoticeRow: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(Decisions.readable(notice.title)).lineLimit(2)
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(notice.ask == nil && notice.reviews == nil ? 1 : 3)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(notice.ask == nil ? 1 : model.isExpanded(id) ? nil : 3)
                 if let ask = notice.ask, let answer {
                     HStack(spacing: 6) {
                         Button(ask.yes) { answer(true) }.buttonStyle(.borderedProminent)
                         Button(ask.no) { answer(false) }.buttonStyle(.bordered)
+                        if let open { Button("Open in the app") { onOpen(); open() }.buttonStyle(.link) }
                     }
                     .controlSize(.small)
                     .padding(.top, 3)
-                }
-                if let reviews = notice.reviews, let review {
-                    ForEach(reviews) { draft in reviewButtons(draft, many: reviews.count > 1, review: review) }
+                    if model.isExpanded(id) { DecisionSectionsView(sections: DecisionDetail.ask(notice)).padding(.top, 4) }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if notice.ask != nil { DecisionChevron(id: id) }
             Button(action: remove) { Image(systemName: "xmark").font(.caption.bold()).foregroundStyle(.secondary) }
                 .buttonStyle(.plain)
                 .help(open == nil ? "Cancel" : Decisions.needsAnswer(notice) ? "Dismiss without answering; it stays in Resolved" : "Dismiss")
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .onTapGesture { open?() }
-        .transition(.opacity)
-    }
-
-    /// The buttons that post a drafted review, one row per pull request when a set is waiting, and what the last click came to.
-    private func reviewButtons(_ draft: ReviewDraft, many: Bool, review: @escaping (ReviewDraft, ReviewAction) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            if many { Text("\(draft.reference) \u{00B7} \(draft.verdict.title.lowercased())").font(.caption.weight(.medium)) }
-            HStack(spacing: 6) {
-                Button("Approve") { review(draft, .approve) }.buttonStyle(.borderedProminent)
-                if draft.problem(for: .requestChanges) == nil { Button("Request changes") { review(draft, .requestChanges) }.buttonStyle(.bordered) }
-                if !draft.comments.isEmpty { Button("Post comments") { review(draft, .postComments) }.buttonStyle(.bordered) }
-                if center.reviewWorking.contains(draft.id) { ProgressView().controlSize(.small) }
-            }
-            .disabled(center.reviewWorking.contains(draft.id) || center.reviewWaiting.contains(draft.id))
-            .controlSize(.small)
-            ReviewWays(draft: draft, via: "notch")
-            if let text = center.reviewResults[draft.id] { Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
-        }
-        .padding(.top, 3)
     }
 
     private var detail: String {
@@ -416,44 +441,53 @@ private struct NoticeRow: View {
     }
 }
 
-/// An agent waiting for approval of a call: the buttons of its notification, answered from here without opening the app.
+/// An agent waiting for approval of a call: the buttons of its notification, answered from here without opening the app. The row opens
+/// to show the whole call and why the agent wants it.
 private struct ApprovalRow: View {
     let approval: AgentAttentionCenter.Approval
     let onOpen: () -> Void
+    @ObservedObject private var model = DecisionRowsModel.shared
+
+    private var id: String { DecisionIDs.approval(approval.id) }
+
+    private var primaryAction: String {
+        approval.ticketAsk ? AgentAttention.reuseAction : approval.blocked ? AgentAttention.fixAction : approval.roleTool ? AgentAttention.addToolAction : AgentAttention.allowAction
+    }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "hand.raised.fill").font(.system(size: 14)).foregroundStyle(Color.orange).frame(width: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(approval.title).lineLimit(2)
-                Text(approval.body).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                HStack(spacing: 6) {
-                    if approval.ticketAsk {
-                        Button("Reuse this one") { answer(AgentAttention.reuseAction) }.buttonStyle(.borderedProminent)
-                        Button("Start a new one") { answer(AgentAttention.newSessionAction) }.buttonStyle(.bordered)
-                        Button("Always reuse") { answer(AgentAttention.alwaysReuseAction) }.buttonStyle(.bordered)
-                    } else if approval.blocked {
-                        Button("Fix and continue") { answer(AgentAttention.fixAction) }.buttonStyle(.borderedProminent)
-                    } else {
-                        if approval.roleTool {
-                            Button("Add to its tools") { answer(AgentAttention.addToolAction) }.buttonStyle(.borderedProminent)
-                            Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.bordered)
+        DecisionRowFrame(id: id, primary: { answer(primaryAction) }) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "hand.raised.fill").font(.system(size: 14)).foregroundStyle(Color.orange).frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(approval.title).lineLimit(2)
+                    Text(approval.body).font(.caption).foregroundStyle(.secondary).lineLimit(model.isExpanded(id) ? nil : 3)
+                    HStack(spacing: 6) {
+                        if approval.ticketAsk {
+                            Button("Reuse this one") { answer(AgentAttention.reuseAction) }.buttonStyle(.borderedProminent)
+                            Button("Start a new one") { answer(AgentAttention.newSessionAction) }.buttonStyle(.bordered)
+                            Button("Always reuse") { answer(AgentAttention.alwaysReuseAction) }.buttonStyle(.bordered)
+                        } else if approval.blocked {
+                            Button("Fix and continue") { answer(AgentAttention.fixAction) }.buttonStyle(.borderedProminent)
                         } else {
-                            Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.borderedProminent)
+                            if approval.roleTool {
+                                Button("Add to its tools") { answer(AgentAttention.addToolAction) }.buttonStyle(.borderedProminent)
+                                Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.bordered)
+                            } else {
+                                Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.borderedProminent)
+                            }
+                            if approval.sessionOffered { Button("Allow for this session") { answer(AgentAttention.allowSessionAction) }.buttonStyle(.bordered) }
+                            Button("Deny") { answer(AgentAttention.denyAction) }.buttonStyle(.bordered)
                         }
-                        if approval.sessionOffered { Button("Allow for this session") { answer(AgentAttention.allowSessionAction) }.buttonStyle(.bordered) }
-                        Button("Deny") { answer(AgentAttention.denyAction) }.buttonStyle(.bordered)
+                        Button("Open in the app") { onOpen(); answer(UNNotificationDefaultActionIdentifier) }.buttonStyle(.link)
                     }
-                    Button("Open") { onOpen(); answer(UNNotificationDefaultActionIdentifier) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    .controlSize(.small)
+                    .padding(.top, 3)
+                    if model.isExpanded(id) { DecisionSectionsView(sections: DecisionDetail.approval(approval.facts(agentTitle: AgentAttentionCenter.shared.title(of: approval.agent)))).padding(.top, 4) }
                 }
-                .controlSize(.small)
-                .padding(.top, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                DecisionChevron(id: id)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .transition(.opacity)
     }
 
     private func answer(_ action: String) {

@@ -206,7 +206,7 @@ final class AgentModel: ObservableObject {
     }
 
     /// Who the notifications name this agent.
-    private var attentionTitle: String {
+    var attentionTitle: String {
         routine?.name ?? assistant?.role.name ?? topic?.name ?? prURL.map { AgentOverview.prTitle($0) }
             ?? (isMain ? "Main" : (folder as NSString).lastPathComponent)
     }
@@ -249,7 +249,7 @@ final class AgentModel: ObservableObject {
         (target ?? client)?.send(.rules(AgentRules.sent(rules, unattended: routine != nil)))
     }
 
-    private func announce(permission id: String, tool: String, summary: String) {
+    private func announce(permission id: String, tool: String, summary: String, detail: String) {
         guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
               notifiedApprovals.insert(id).inserted else { return }
         AgentAttentionCenter.shared.register(self, id: attentionID)
@@ -257,7 +257,8 @@ final class AgentModel: ObservableObject {
         let sessionOffered = AgentRules.sessionOffered(tool: tool)
         let agent = attentionID
         Notifier.postApproval(agent: agent, permission: id, text: text, sessionOffered: sessionOffered)
-        AgentAttentionCenter.shared.add(.init(agent: agent, permission: id, title: text.title, body: text.body, sessionOffered: sessionOffered, created: Date()))
+        AgentAttentionCenter.shared.add(.init(agent: agent, permission: id, title: text.title, body: text.body, sessionOffered: sessionOffered, created: Date(),
+                                              detail: detail, context: AgentAttention.context(in: items)))
         DecisionKeeper.shared.keep(AgentAttention.approvalIdentifier(agent: agent, permission: id)) {
             Notifier.postApproval(agent: agent, permission: id, text: text, sessionOffered: sessionOffered, quiet: true)
         }
@@ -265,14 +266,15 @@ final class AgentModel: ObservableObject {
 
     /// A tool the assistant's list leaves out: the user answers from a notification, which stays until the question is answered. A routine
     /// waits for it too.
-    private func announceRoleTool(permission id: String, tool: String, tier: RoleTools.Tier) {
+    private func announceRoleTool(permission id: String, tool: String, tier: RoleTools.Tier, detail: String) {
         guard AgentAttention.shouldNotifyRoleTool(enabled: AgentAttention.enabled(), isShown: isInFront),
               notifiedApprovals.insert(id).inserted else { return }
         AgentAttentionCenter.shared.register(self, id: attentionID)
         let text = RoleTools.approval(agent: attentionTitle, tool: tool, tier: tier)
         let agent = attentionID
         Notifier.postApproval(agent: agent, permission: id, text: text, roleTool: true)
-        AgentAttentionCenter.shared.add(.init(agent: agent, permission: id, title: text.title, body: text.body, sessionOffered: true, created: Date(), roleTool: true))
+        AgentAttentionCenter.shared.add(.init(agent: agent, permission: id, title: text.title, body: text.body, sessionOffered: true, created: Date(), roleTool: true,
+                                              detail: detail, context: AgentAttention.context(in: items)))
         DecisionKeeper.shared.keep(AgentAttention.approvalIdentifier(agent: agent, permission: id)) {
             Notifier.postApproval(agent: agent, permission: id, text: text, roleTool: true, quiet: true)
         }
@@ -286,7 +288,8 @@ final class AgentModel: ObservableObject {
         let agent = attentionID
         let text = Blocked.notice(agent: attentionTitle, calls: blocked)
         Notifier.postBlocked(agent: agent, text: text)
-        AgentAttentionCenter.shared.add(.init(agent: agent, permission: "blocked", title: text.title, body: text.body, sessionOffered: false, created: Date(), blocked: true))
+        AgentAttentionCenter.shared.add(.init(agent: agent, permission: "blocked", title: text.title, body: text.body, sessionOffered: false, created: Date(), blocked: true,
+                                              detail: blocked.map { "\($0.tool): \($0.reason)" }.joined(separator: "\n")))
         DecisionKeeper.shared.keep(Blocked.identifier(agent: agent)) { Notifier.postBlocked(agent: agent, text: text, quiet: true) }
     }
 
@@ -1067,12 +1070,12 @@ final class AgentModel: ObservableObject {
         if case .delivered(let id) = event { return AgentPending.deliver(id, queue: &pending, items: &items) }
         if case .cancelled(let id) = event { return restore(AgentPending.take([id], from: &pending)) }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
-        if case .permissionRequest(let id, let tool, let summary, _, let offer, _) = event {
+        if case .permissionRequest(let id, let tool, let summary, let detail, let offer, _) = event {
             if let role = RoleTools.role(in: offer) {
-                announceRoleTool(permission: id, tool: tool, tier: RoleTools.tier(of: role))
+                announceRoleTool(permission: id, tool: tool, tier: RoleTools.tier(of: role), detail: detail)
                 if let routine { roleWaits[id] = tool; RoutineStore.shared.setRoleWaiting(RoleToolWait.rowText(tool: tool), for: routine.id) }
             } else {
-                announce(permission: id, tool: tool, summary: summary)
+                announce(permission: id, tool: tool, summary: summary, detail: detail)
                 if routine != nil, let asked = items.last { answer(asked, allow: false) }
             }
         }

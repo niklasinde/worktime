@@ -14,6 +14,8 @@ final class NoticeCenter: ObservableObject {
     /// What a refused click leaves to click instead, and the approvals waiting for their checks, by draft.
     @Published private(set) var reviewRefusals: [String: ReviewRefusal] = [:]
     @Published private(set) var reviewWaiting: Set<String> = []
+    /// The comments of a drafted review the user took out of what is posted, by draft and comment number.
+    @Published private(set) var reviewExcluded: [String: Set<Int>] = [:]
     private var recent: [AgentNotice] = []
     private var file: URL?
     private var timer: Timer?
@@ -25,7 +27,9 @@ final class NoticeCenter: ObservableObject {
 
     func start(file: URL = AppPaths.notices) {
         self.file = file
-        notices = NoticeLogic.decode(try? Data(contentsOf: file))
+        let saved = ReviewBoard.consolidated(NoticeLogic.decode(try? Data(contentsOf: file)))
+        notices = saved.notices
+        saved.removed.forEach { Notifier.withdrawNotice($0) }
         Notifier.register(asks: notices.compactMap(\.ask))
         notices.forEach(keepOnScreen)
         fireDue()
@@ -139,6 +143,17 @@ final class NoticeCenter: ObservableObject {
             notice.id = id
             notices.removeAll { $0.id == id }
         }
+        let board = ReviewBoard.supersede(notices, by: open)
+        for old in notices.filter({ board.removed.contains($0.id) }) {
+            Notifier.withdrawNotice(old.id)
+            DecisionKeeper.shared.release(NoticeLogic.identifier(old.id))
+        }
+        for old in notices.flatMap({ $0.reviews ?? [] }) where open.contains(where: { $0.pr == old.pr && $0.id != old.id }) {
+            reviewResults[old.id] = nil
+            reviewRefusals[old.id] = nil
+            reviewExcluded[old.id] = nil
+        }
+        notices = board.notices
         notices.append(notice)
         Notifier.postNotice(notice)
         keepOnScreen(notice)
@@ -158,7 +173,8 @@ final class NoticeCenter: ObservableObject {
         reviewWorking.insert(draft.id)
         reviewResults[draft.id] = nil
         reviewRefusals[draft.id] = nil
-        let outcome = await GitHubModel.shared.postReview(draft, action, via: via, mode: mode)
+        let sent = ReviewRows.applying(draft, excluded: reviewExcluded[draft.id] ?? [])
+        let outcome = await GitHubModel.shared.postReview(sent, action, via: via, mode: mode)
         reviewWorking.remove(draft.id)
         if case .confirming = outcome { reviewRefusals[draft.id] = GitHubModel.shared.reviewRefusal(for: draft.id) }
         finish(draft, action, via: via, outcome)
@@ -173,6 +189,13 @@ final class NoticeCenter: ObservableObject {
         case .confirming, .opened: break
         }
         settle(draft, outcome: outcome, loud: via == "notification")
+    }
+
+    /// Takes a comment of a drafted review out of what is posted, or puts it back.
+    func toggleExcluded(_ draft: String, _ index: Int) {
+        var out = reviewExcluded[draft] ?? []
+        if out.contains(index) { out.remove(index) } else { out.insert(index) }
+        reviewExcluded[draft] = out.isEmpty ? nil : out
     }
 
     /// "Approve when green": waits for the checks and approves only if the pull request is still fine to approve with one click.
@@ -203,10 +226,21 @@ final class NoticeCenter: ObservableObject {
             let updated = ReviewNotices.afterPosting(notice, draft: draft, text: text)
             if !loud, updated.reviews == nil { return dismiss(notice.id) }
             replace(updated, at: index, show: loud)
+            if updated.reviews == nil { moveToResolved(notice.id) }
         case .failed(let text):
             replace(ReviewNotices.afterFailure(notice, text: text), at: index, show: loud)
         case .confirming(let text), .opened(let text):
             replace(ReviewNotices.afterFailure(notice, text: "Not posted: " + text), at: index, show: loud)
+        }
+    }
+
+    /// A review that was posted stays in the list for a moment, saying so, and then moves to Resolved.
+    private func moveToResolved(_ id: String, after seconds: UInt64 = 20) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            guard let self, let notice = self.notices.first(where: { $0.id == id }), notice.reviews == nil, !Decisions.needsAnswer(notice) else { return }
+            TodoModel.shared.resolveWithoutAnswer(notice)
+            self.dismiss(id)
         }
     }
 
