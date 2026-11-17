@@ -180,6 +180,7 @@ struct ChatDetail: View {
                     .padding(.horizontal, RecordingDetail.gutter)
                     .padding(.bottom, 12)
                 }
+                .transcriptTypography()
                 .onChange(of: model.messages.count) { proxy.scrollTo("end") }
                 .onChange(of: model.streaming) { proxy.scrollTo("end") }
             }
@@ -190,6 +191,7 @@ struct ChatDetail: View {
         HStack(alignment: .bottom, spacing: 10) {
             ChatComposer(text: $model.draft, height: $height, placeholder: model.scope.isGeneral
                          ? "Ask about your meetings and work" : "Ask about \(model.chipTitle)") { model.send(model.draft) }
+                .transcriptTypography()
                 .frame(height: height)
             Button {
                 if model.isResponding { model.stop() } else { model.send(model.draft) }
@@ -388,52 +390,75 @@ private struct PendingAnswer: View {
 struct AnswerText: View {
     let text: String
     var linkifyTimes = false
+    @Environment(\.transcriptTypography) private var typography
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(ChatLogic.blocks(linkifyTimes ? ChatLogic.linkifiedTimestamps(text) : text).enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .heading(let text):
-                    Text(AttributedString.inlineMarkdown(text)).font(.headline).textSelection(.enabled)
-                case .bullet(let level, let text):
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\u{2022}").foregroundStyle(.secondary)
-                        Text(AttributedString.inlineMarkdown(text)).textSelection(.enabled)
-                    }
-                    .padding(.leading, CGFloat(level) * 18)
-                case .numbered(let number, let text):
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(number + ".").foregroundStyle(.secondary).monospacedDigit()
-                        Text(AttributedString.inlineMarkdown(text)).textSelection(.enabled)
-                    }
-                case .paragraph(let text):
-                    Text(AttributedString.inlineMarkdown(text)).lineSpacing(3).textSelection(.enabled)
-                case .task(let level, let done, let text):
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: done ? "checkmark.square.fill" : "square").foregroundStyle(done ? Color.accentColor : .secondary)
-                        Text(AttributedString.inlineMarkdown(text)).textSelection(.enabled)
-                    }
-                    .padding(.leading, CGFloat(level) * 18)
-                case .code(let text):
-                    HorizontalOverflow {
-                        Text(text)
-                            .font(.system(.callout, design: .monospaced))
-                            .textSelection(.enabled)
-                            .padding(10)
-                    }
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
-                case .table(let rows):
-                    MarkdownTable(rows: rows)
-                case .image(let alt, let url):
-                    Button { URL(string: url).map { NSWorkspace.shared.open($0) } } label: {
-                        Label("Image: \(alt.isEmpty ? "untitled" : alt)", systemImage: "photo")
-                    }
-                    .buttonStyle(.link)
-                    .help("Opens in the browser; GitHub images need you to be signed in there")
-                }
+        let blocks = ChatLogic.blocks(linkifyTimes ? ChatLogic.linkifiedTimestamps(text) : text)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                view(block)
+                    .padding(.top, index == 0 ? 0 : gap(before: block, after: blocks[index - 1]))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func isListItem(_ block: ChatLogic.Block) -> Bool {
+        switch block {
+        case .bullet, .numbered, .task: true
+        default: false
+        }
+    }
+
+    private func gap(before block: ChatLogic.Block, after previous: ChatLogic.Block) -> CGFloat {
+        guard let typography else { return 6 }
+        return typography.gap(listItemAfterListItem: isListItem(block) && isListItem(previous))
+    }
+
+    private func prose(_ text: String) -> some View {
+        Text(AttributedString.inlineMarkdown(text)).lineSpacing(typography?.lineSpacing ?? 0).textSelection(.enabled)
+    }
+
+    @ViewBuilder private func view(_ block: ChatLogic.Block) -> some View {
+        switch block {
+        case .heading(let text):
+            Text(AttributedString.inlineMarkdown(text)).font(typography?.heading ?? .headline).textSelection(.enabled)
+        case .bullet(let level, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\u{2022}").foregroundStyle(.secondary)
+                prose(text)
+            }
+            .padding(.leading, CGFloat(level) * 18)
+        case .numbered(let number, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(number + ".").foregroundStyle(.secondary).monospacedDigit()
+                prose(text)
+            }
+        case .paragraph(let text):
+            Text(AttributedString.inlineMarkdown(text)).lineSpacing(typography?.lineSpacing ?? 3).textSelection(.enabled)
+        case .task(let level, let done, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: done ? "checkmark.square.fill" : "square").foregroundStyle(done ? Color.accentColor : .secondary)
+                prose(text)
+            }
+            .padding(.leading, CGFloat(level) * 18)
+        case .code(let text):
+            HorizontalOverflow {
+                Text(text)
+                    .font(typography?.code ?? .system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(10)
+            }
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+        case .table(let rows):
+            MarkdownTable(rows: rows)
+        case .image(let alt, let url):
+            Button { URL(string: url).map { NSWorkspace.shared.open($0) } } label: {
+                Label("Image: \(alt.isEmpty ? "untitled" : alt)", systemImage: "photo")
+            }
+            .buttonStyle(.link)
+            .help("Opens in the browser; GitHub images need you to be signed in there")
+        }
     }
 }
 

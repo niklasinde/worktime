@@ -713,6 +713,7 @@ struct AgentPanel: View {
                 .padding(.vertical, 14)
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .transcriptTypography()
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.containerSize.height >= $0.contentSize.height - 40 } action: { _, bottom in
                 atBottom = bottom
                 if bottom { newBelow = false }
@@ -773,11 +774,12 @@ struct AgentPanel: View {
                     }
                 }
             }
-            AgentPendingList(model: model)
+            AgentPendingList(model: model).transcriptTypography()
             AgentImageChips(model: model)
             HStack(alignment: .bottom, spacing: 10) {
                 ChatComposer(text: $model.draft, height: $height, placeholder: model.busy ? "Add a message \u{2014} it reaches the agent at its next step" : "Ask the agent \u{2014} @ to reference a file or paste an image",
                              attach: model.attach, problem: model.imageProblem) { model.submit() }
+                    .transcriptTypography()
                     .frame(height: height)
                 let hasContent = !model.draft.trimmingCharacters(in: .whitespaces).isEmpty || !model.images.isEmpty
                 if model.busy {
@@ -812,6 +814,7 @@ private struct AgentItemRow: View {
     let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
     /// Moves the agent to the folder, or asks for one when nil.
     let move: (String?) -> Void
+    @Environment(\.transcriptTypography) private var typography
 
     var body: some View {
         switch item.kind {
@@ -821,7 +824,7 @@ private struct AgentItemRow: View {
                 if let message = AgentInbox.fromMain(text) {
                     VStack(alignment: .leading, spacing: 4) {
                         Label("From Main", systemImage: "sparkles").font(.caption.weight(.medium)).foregroundStyle(.purple)
-                        Text(message).textSelection(.enabled)
+                        Text(message).lineSpacing(typography?.lineSpacing ?? 0).textSelection(.enabled)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -834,6 +837,7 @@ private struct AgentItemRow: View {
                         }
                         if !text.isEmpty {
                             Text(text)
+                                .lineSpacing(typography?.lineSpacing ?? 0)
                                 .textSelection(.enabled)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -1002,12 +1006,70 @@ struct AgentSettingsSection: View {
     @State private var confirming: String?
     @AppStorage(Determinism.autoAnalyzeKey) private var autoAnalyze = true
     @AppStorage(Determinism.fullRunEveryKey) private var fullRunEvery = Determinism.defaultFullRunEvery
+    @AppStorage(TranscriptTypography.faceKey) private var transcriptFace = TranscriptTypography.standard.face.rawValue
+    @AppStorage(TranscriptTypography.sizeKey) private var transcriptSize = TranscriptTypography.standard.size
+    @AppStorage(TranscriptTypography.lineSpacingKey) private var transcriptLineSpacing = TranscriptTypography.standard.lineSpacing
+    @AppStorage(TranscriptTypography.paragraphSpacingKey) private var transcriptParagraphSpacing = TranscriptTypography.standard.paragraphSpacing
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             WorkspacesSettings()
             sections
         }
+    }
+
+    private var transcriptTypography: TranscriptTypography {
+        .make(face: transcriptFace, size: transcriptSize, lineSpacing: transcriptLineSpacing, paragraphSpacing: transcriptParagraphSpacing)
+    }
+
+    @ViewBuilder private var transcriptSection: some View {
+        SettingsSection("Transcript text", footer: "The typeface and spacing of what agents and chats say. Code stays monospaced.") {
+            SettingsRow("Typeface") {
+                Picker("Typeface", selection: $transcriptFace) {
+                    ForEach(TranscriptFace.available) { Text($0.title).tag($0.rawValue) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            SettingsRow("Size", detail: "\(Int(transcriptTypography.size)) pt") {
+                Stepper("Size", value: $transcriptSize, in: TranscriptTypography.sizes, step: 1).labelsHidden()
+            }
+            SettingsRow("Line spacing", detail: "\(Int(transcriptTypography.lineSpacing)) pt between lines") {
+                Stepper("Line spacing", value: $transcriptLineSpacing, in: TranscriptTypography.lineSpacings, step: 1).labelsHidden()
+            }
+            SettingsRow("Paragraph spacing", detail: "\(Int(transcriptTypography.paragraphSpacing)) pt between paragraphs") {
+                Stepper("Paragraph spacing", value: $transcriptParagraphSpacing, in: TranscriptTypography.paragraphSpacings, step: 1).labelsHidden()
+            }
+            SettingsRow("Defaults", detail: "\(TranscriptTypography.standard.face.title), \(Int(TranscriptTypography.standard.size)) pt") {
+                Button("Reset") { resetTranscript() }.disabled(transcriptTypography == .standard)
+            }
+            AnswerText(text: Self.transcriptSample)
+                .environment(\.transcriptTypography, transcriptTypography)
+                .font(transcriptTypography.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
+        }
+    }
+
+    private static let transcriptSample = """
+        ## Two things are still open
+
+        The **Reviewer** found two blockers in the pull request. The cleanup deletes every announcement after 7 days, and the title goes into the e-mail unescaped.
+
+        - Fix the cleanup so pinned ones stay
+        - Escape the title before it is rendered
+        1. Push the fix
+        2. Ask for another review
+
+        `let retention = 7`
+        """
+
+    private func resetTranscript() {
+        let standard = TranscriptTypography.standard
+        transcriptFace = standard.face.rawValue
+        transcriptSize = standard.size
+        transcriptLineSpacing = standard.lineSpacing
+        transcriptParagraphSpacing = standard.paragraphSpacing
     }
 
     @ViewBuilder private var sections: some View {
@@ -1023,6 +1085,7 @@ struct AgentSettingsSection: View {
                 Toggle("Claude in Chrome", isOn: $chromeByDefault).labelsHidden()
             }
         }
+        transcriptSection
         SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "
                         + "Allow once, Deny and Reply work from the notification. Routines never ask.") {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
@@ -1226,6 +1289,7 @@ private struct AgentThumbnail: View {
 /// The messages sent while the agent works that have not reached it yet, each of which can still be taken back.
 private struct AgentPendingList: View {
     @ObservedObject var model: AgentModel
+    @Environment(\.transcriptTypography) private var typography
 
     var body: some View {
         ForEach(model.pending) { send in
@@ -1238,7 +1302,7 @@ private struct AgentPendingList: View {
                     .buttonStyle(.plain)
                     .help("Take this message back")
             }
-            .font(.callout)
+            .font(typography?.small ?? .callout)
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
         }

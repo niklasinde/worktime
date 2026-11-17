@@ -24,6 +24,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/ActivityLogic.swift \
     Sources/WorkTime/ActivityLinks.swift \
     Sources/WorkTime/ChromeProfileLogic.swift \
+    Sources/WorkTime/AgentTypographyLogic.swift \
     Sources/WorkTime/ProjectSetup.swift \
     Sources/WorkTime/ProjectSuggestionLogic.swift \
     Sources/WorkTime/ActivityStore.swift \
@@ -165,6 +166,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/SidebarTests.swift \
     Tests/WorkTimeTests/NavigationTests.swift \
     Tests/WorkTimeTests/ChromeProfileTests.swift \
+    Tests/WorkTimeTests/AgentTypographyTests.swift \
     Tests/WorkTimeTests/SettingsTests.swift \
     Tests/WorkTimeTests/UpgradeTests.swift \
     Tests/WorkTimeTests/TodoTests.swift \

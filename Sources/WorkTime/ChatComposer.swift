@@ -10,8 +10,11 @@ struct ChatComposer: NSViewRepresentable {
     var attach: (([AgentImageSource]) -> Void)?
     var problem: ((String) -> Void)?
     let send: () -> Void
+    @Environment(\.transcriptTypography) private var typography
 
     static let inset = NSSize(width: 0, height: 4)
+
+    private var font: NSFont { typography?.nsFont ?? .systemFont(ofSize: NSFont.systemFontSize + 1) }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -24,7 +27,7 @@ struct ChatComposer: NSViewRepresentable {
         textView.registerForDraggedTypes([.fileURL, .png, .tiff, .pdf] + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) })
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize + 1)
+        textView.font = font
         textView.drawsBackground = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -47,6 +50,7 @@ struct ChatComposer: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
+        if textView.font != font { textView.font = font }
         let replaced = textView.string != text
         if replaced { textView.string = text }
         context.coordinator.updateHeight(reveal: replaced ? .top : nil)
