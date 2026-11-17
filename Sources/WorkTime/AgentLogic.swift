@@ -646,9 +646,13 @@ enum AgentLogic {
         A routine is a prompt that runs on a schedule in an agent of its own (only while WorkTime is open). When the user asks for something \
         to happen regularly, call routines first, then create_routine (name, prompt, schedule, and an assistant when one fits), or \
         update_routine, set_routine_enabled and delete_routine for one that exists. The prompt must stand alone: a run cannot ask questions.
+        An automation is the same kind of run started by an event instead of a schedule: a Slack message waiting on the user, or a pull request asking for \
+        their review. When the user asks for something to happen when X happens, call automations first, then create_automation (name, event, filters, a \
+        prompt using the event's fields, notify and remind), or update_automation and delete_automation. Its answer is a draft: it never approves a \
+        pull request or posts anything.
         An assistant is a role agent under a workspace's Main with its own instructions, model, tools and permissions. Call assistants \
         to see them (with an assistant it returns its instructions); create_assistant, update_assistant and delete_assistant change them. \
-        Write its description as one line telling you when to hand work to it. Every routine and assistant change asks the user to approve.
+        Write its description as one line telling you when to hand work to it. Every routine, automation and assistant change asks the user to approve.
         """
 
     /// Main's prompt for a workspace: what it is and sees, then the shared guidance.

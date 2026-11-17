@@ -27,12 +27,13 @@ struct MCPServer {
     static let instructions = """
         Access to WorkTime on this Mac. Reading: the user's meetings (summaries, action items, notes, transcripts with speakers), tracked \
         activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull requests, the app's Claude agents, \
-        routines and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
+        routines, automations and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
         one of the app's agents; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
         the user's WorkTime reminders; create_routine, update_routine, set_routine_enabled and delete_routine manage routines (a prompt \
-        that runs on a schedule in an agent of its own); create_assistant, update_assistant and delete_assistant manage the role agents \
+        that runs on a schedule in an agent of its own); create_automation, update_automation and delete_automation manage automations (the same, \
+        started by a Slack message or a pull request review request instead); create_assistant, update_assistant and delete_assistant manage the role agents \
         under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
-        second. send_to_agent, complete_reminder and every routine and assistant change ask the user to approve.
+        second. send_to_agent, complete_reminder and every routine, automation and assistant change ask the user to approve.
         """
 
     let tools: [MCPTool]

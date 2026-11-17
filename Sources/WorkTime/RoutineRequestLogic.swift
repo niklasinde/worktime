@@ -10,6 +10,29 @@ struct RoutineDraft: Codable, Equatable, Sendable {
     var folder: String?
     var model: String?
     var runMissed = false
+    var trigger: AutomationTrigger?
+    var followUp: AutomationFollowUp?
+}
+
+/// What `update_automation` changes in the trigger and the follow-up: only the fields it names.
+struct AutomationPatch: Codable, Equatable, Sendable {
+    var kind: AutomationTrigger.Kind?
+    var place: String?
+    var text: String?
+    var needsPullRequest: Bool?
+    var notify: Bool?
+    var remind: Bool?
+
+    func applied(to trigger: AutomationTrigger?, followUp: AutomationFollowUp?) -> (AutomationTrigger, AutomationFollowUp) {
+        var trigger = trigger ?? AutomationTrigger(kind: kind ?? .reviewRequested), followUp = followUp ?? AutomationFollowUp()
+        if let kind, kind != trigger.kind { trigger = AutomationTrigger(kind: kind, place: trigger.place, text: trigger.text) }
+        if let place { trigger.place = place }
+        if let text { trigger.text = text }
+        if let needsPullRequest { trigger.needsPullRequest = needsPullRequest }
+        if let notify { followUp.notify = notify }
+        if let remind { followUp.remind = remind }
+        return (trigger, followUp)
+    }
 }
 
 /// What `update_routine` changes: only the fields it names. An empty assistant, folder or model clears it.
@@ -27,11 +50,12 @@ struct RoutinePatch: Codable, Equatable, Sendable {
     var model: String?
     var runMissed: Bool?
     var enabled: Bool?
+    var automation: AutomationPatch?
 }
 
 /// What the `--mcp` process hands the app through the agent inbox for the routine tools; the app answers with a `NoticeReply`.
 struct RoutineRequest: Codable, Equatable {
-    enum Action: String, Codable { case create, update, list, setEnabled, delete }
+    enum Action: String, Codable { case create, update, list, listAutomations, setEnabled, delete }
 
     var id: String
     var action: Action
@@ -84,6 +108,33 @@ enum RoutineRequests {
                             model: FilterLogic.text(args, "model"), runMissed: try FilterLogic.flag(args, "run_missed") ?? false)
     }
 
+    static let triggerKinds = AutomationTrigger.Kind.allCases.map(\.rawValue)
+
+    /// What `create_automation` asks for: the routine's fields without a schedule, and the trigger and follow-up.
+    static func automationDraft(_ args: [String: Any]) throws -> RoutineDraft {
+        guard let name = FilterLogic.text(args, "name") else { throw MCPToolError("name is required.") }
+        guard let kind = try FilterLogic.choice(args, "event", allowed: triggerKinds).flatMap(AutomationTrigger.Kind.init(rawValue:)) else {
+            throw MCPToolError("event is required: one of \(triggerKinds.joined(separator: ", ")).")
+        }
+        let trigger = AutomationTrigger(kind: kind, place: FilterLogic.text(args, "place") ?? "", text: FilterLogic.text(args, "contains") ?? "",
+                                        needsPullRequest: try FilterLogic.flag(args, "needs_pull_request") ?? false)
+        return RoutineDraft(name: name, prompt: FilterLogic.text(args, "prompt") ?? kind.defaultPrompt, schedule: RoutineSchedule(kind: .daily),
+                            workspace: FilterLogic.text(args, "workspace"), assistant: FilterLogic.text(args, "assistant"),
+                            folder: FilterLogic.text(args, "folder"), model: FilterLogic.text(args, "model"), trigger: trigger,
+                            followUp: AutomationFollowUp(notify: try FilterLogic.flag(args, "notify") ?? true, remind: try FilterLogic.flag(args, "remind") ?? false))
+    }
+
+    static func automationPatch(_ args: [String: Any]) throws -> RoutinePatch {
+        var patch = RoutinePatch(name: FilterLogic.text(args, "name"), prompt: FilterLogic.text(args, "prompt"), workspace: FilterLogic.text(args, "workspace"),
+                                 assistant: stringOrEmpty(args, "assistant"), folder: stringOrEmpty(args, "folder"), model: stringOrEmpty(args, "model"),
+                                 enabled: try FilterLogic.flag(args, "enabled"))
+        patch.automation = AutomationPatch(kind: try FilterLogic.choice(args, "event", allowed: triggerKinds).flatMap(AutomationTrigger.Kind.init(rawValue:)),
+                                           place: stringOrEmpty(args, "place"), text: stringOrEmpty(args, "contains"),
+                                           needsPullRequest: try FilterLogic.flag(args, "needs_pull_request"),
+                                           notify: try FilterLogic.flag(args, "notify"), remind: try FilterLogic.flag(args, "remind"))
+        return patch
+    }
+
     static func patch(_ args: [String: Any]) throws -> RoutinePatch {
         var patch = RoutinePatch(name: FilterLogic.text(args, "name"), prompt: FilterLogic.text(args, "prompt"),
                                  kind: try FilterLogic.choice(args, "schedule", allowed: kinds).flatMap(RoutineSchedule.Kind.init(rawValue:)),
@@ -131,9 +182,10 @@ enum RoutineRequests {
         }
         guard abs(now.timeIntervalSince(request.created)) <= AgentInbox.staleAfter else { return reply(false, "The request is too old.") }
         switch request.action {
-        case .list:
-            guard !routines.isEmpty else { return reply(true, "No routines.\n") }
-            return reply(true, routines.map { line($0, now: now) }.joined(separator: "\n") + "\n")
+        case .list, .listAutomations:
+            let wanted = request.action == .listAutomations, listed = routines.filter { $0.isAutomation == wanted }
+            guard !listed.isEmpty else { return reply(true, wanted ? "No automations.\n" : "No routines.\n") }
+            return reply(true, listed.map { line($0, now: now) }.joined(separator: "\n") + "\n")
         case .create:
             guard let draft = request.draft else { return reply(false, "name, prompt and schedule are required.") }
             switch routine(from: draft, source: request.source, workspaces: workspaces, assistants: assistants, id: newID(), now: now) {
@@ -142,7 +194,7 @@ enum RoutineRequests {
                 if let same = routines.first(where: { sameRoutine($0, made) }) {
                     return reply(true, "\"\(same.name)\" already exists, so it was not created again; id \(same.id).", id: same.id)
                 }
-                return reply(true, "Created \"\(made.name)\", \(made.schedule.label().lowercased()), workspace \(made.workspace); id \(made.id).",
+                return reply(true, "Created \"\(made.name)\", \(when(made).lowercased()), workspace \(made.workspace); id \(made.id).",
                              id: made.id, change: .save(made))
             }
         case .update:
@@ -151,7 +203,7 @@ enum RoutineRequests {
             switch updated(found, with: patch, workspaces: workspaces, assistants: assistants, now: now) {
             case .failure(let error): return reply(false, error.message)
             case .success(let changed):
-                return reply(true, "Updated \"\(changed.name)\", \(changed.schedule.label().lowercased()), \(changed.enabled ? "on" : "off"); id \(changed.id).",
+                return reply(true, "Updated \"\(changed.name)\", \(when(changed).lowercased()), \(changed.enabled ? "on" : "off"); id \(changed.id).",
                              id: changed.id, change: .save(changed))
             }
         case .setEnabled, .delete:
@@ -164,7 +216,7 @@ enum RoutineRequests {
 
     /// The routine a draft describes, in the workspace it names, else its assistant's, else the asking agent's, else the default one.
     static func routine(from draft: RoutineDraft, source: NoticeSource, workspaces: [String], assistants: Set<String>, id: String, now: Date) -> Result<Routine, NoticeError> {
-        if let problem = Routines.problem(name: draft.name, prompt: draft.prompt, schedule: draft.schedule) { return .failure(NoticeError(problem)) }
+        if let problem = Routines.problem(name: draft.name, prompt: draft.prompt, schedule: draft.schedule, trigger: draft.trigger) { return .failure(NoticeError(problem)) }
         let assistant = draft.assistant
         if let assistant, !assistants.contains(assistant) {
             return .failure(NoticeError("No assistant with key \(assistant)." + (assistants.isEmpty ? "" : " Known: \(assistants.sorted().joined(separator: ", "))")))
@@ -185,7 +237,8 @@ enum RoutineRequests {
             guard model != nil else { return .failure(NoticeError("model must be one of \(AgentLogic.models.compactMap(\.tier).joined(separator: ", ")), not \(raw).")) }
         }
         let routine = Routine(id: id, name: draft.name, prompt: draft.prompt, workspace: workspace, assistant: assistant, folder: folder, model: model,
-                              schedule: draft.schedule, runMissed: draft.runMissed, created: now)
+                              schedule: draft.schedule, runMissed: draft.runMissed, created: now, trigger: draft.trigger,
+                              followUp: draft.trigger == nil ? nil : draft.followUp ?? AutomationFollowUp())
         return .success(Routines.armed(routine, now: now))
     }
 
@@ -199,10 +252,15 @@ enum RoutineRequests {
         if let minute = patch.minute { schedule.minute = minute }
         if let weekday = patch.weekday { schedule.weekday = weekday }
         func keep(_ new: String?, _ old: String?) -> String? { new.map { $0.isEmpty ? nil : $0 } ?? old }
+        var trigger = routine.trigger, followUp = routine.followUp
+        if let automation = patch.automation, routine.isAutomation {
+            let applied = automation.applied(to: trigger, followUp: followUp)
+            (trigger, followUp) = (applied.0, applied.1)
+        }
         let draft = RoutineDraft(name: patch.name ?? routine.name, prompt: patch.prompt ?? routine.prompt, schedule: schedule,
                                  workspace: patch.workspace ?? routine.workspace, assistant: keep(patch.assistant, routine.assistant),
                                  folder: keep(patch.folder, routine.folder), model: keep(patch.model, routine.model),
-                                 runMissed: patch.runMissed ?? routine.runMissed)
+                                 runMissed: patch.runMissed ?? routine.runMissed, trigger: trigger, followUp: followUp)
         let source = NoticeSource(workspace: routine.workspace)
         switch self.routine(from: draft, source: source, workspaces: workspaces, assistants: assistants, id: routine.id, now: now) {
         case .failure(let error): return .failure(error)
@@ -210,7 +268,7 @@ enum RoutineRequests {
             changed.created = routine.created
             changed.lastRun = routine.lastRun
             changed.enabled = patch.enabled ?? routine.enabled
-            let rescheduled = changed.schedule != routine.schedule || changed.enabled != routine.enabled
+            let rescheduled = changed.schedule != routine.schedule || changed.enabled != routine.enabled || changed.trigger != routine.trigger
             changed = Routines.armed(changed, now: now)
             if !rescheduled { changed.nextRun = routine.nextRun }
             return .success(changed)
@@ -219,7 +277,7 @@ enum RoutineRequests {
 
     static func sameRoutine(_ one: Routine, _ other: Routine) -> Bool {
         one.workspace == other.workspace && one.prompt == other.prompt && one.name.caseInsensitiveCompare(other.name) == .orderedSame
-            && one.schedule == other.schedule
+            && one.schedule == other.schedule && one.trigger == other.trigger
     }
 
     /// By the id the tools gave; the routine's key works too.
@@ -229,11 +287,13 @@ enum RoutineRequests {
     }
 
     static func line(_ routine: Routine, now: Date) -> String {
-        var parts = ["id \(routine.id)", routine.name, routine.schedule.label(), routine.enabled ? "on" : "off", "workspace \(routine.workspace)"]
+        var parts = ["id \(routine.id)", routine.name, when(routine), routine.enabled ? "on" : "off", "workspace \(routine.workspace)"]
         if let assistant = routine.assistant { parts.append("assistant \(assistant)") }
         parts.append(lastRunText(routine, now: now))
         return "- " + parts.joined(separator: " \u{00B7} ")
     }
+
+    static func when(_ routine: Routine) -> String { routine.trigger.map(Automations.label) ?? routine.schedule.label() }
 
     private static func lastRunText(_ routine: Routine, now: Date) -> String { Routines.lastRunText(routine.lastRun, now: now) }
 }

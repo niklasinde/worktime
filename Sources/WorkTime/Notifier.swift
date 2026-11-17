@@ -9,6 +9,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private static let stopAction = "stop"
     private static let keepAction = "keep"
     private static let meetingKey = "meeting"
+    private static let reviewCategory = "automation-review"
+    private static let reviewAgentAction = "review-agent"
+    private static let reviewApproveAction = "review-approve"
+    private static let reviewChangesAction = "review-changes"
+    private static let reviewDismissAction = "review-dismiss"
 
     private let onRecord: @MainActor @Sendable () async -> Void
     private let onOpen: @MainActor @Sendable (URL) -> Void
@@ -32,7 +37,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let deny = UNNotificationAction(identifier: AgentAttention.denyAction, title: "Deny", options: [.destructive])
         let reply = UNTextInputNotificationAction(identifier: AgentAttention.replyAction, title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Answer the agent")
+        let reviewAgent = UNNotificationAction(identifier: Self.reviewAgentAction, title: "Open review", options: [.foreground])
+        let reviewApprove = UNNotificationAction(identifier: Self.reviewApproveAction, title: "Approve\u{2026}", options: [.foreground])
+        let reviewChanges = UNNotificationAction(identifier: Self.reviewChangesAction, title: "Request changes\u{2026}", options: [.foreground])
+        let reviewDismiss = UNNotificationAction(identifier: Self.reviewDismissAction, title: "Dismiss", options: [])
         center.setNotificationCategories([
+            UNNotificationCategory(identifier: Self.reviewCategory, actions: [reviewApprove, reviewChanges, reviewAgent, reviewDismiss], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [record], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.approvalCategory, actions: [allow, deny], intentIdentifiers: [], options: []),
@@ -105,6 +115,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.body = notice.body ?? ""
         content.sound = .default
         content.userInfo = [NoticeLogic.userInfoKey: notice.id]
+        if NoticeLogic.isReview(notice) { content.categoryIdentifier = reviewCategory }
         if notice.urgency == .high { content.interruptionLevel = .timeSensitive }
         let trigger = notice.at.map {
             UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: $0),
@@ -182,7 +193,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             return
         }
         if let id = content.userInfo[NoticeLogic.userInfoKey] as? String {
-            if action == UNNotificationDefaultActionIdentifier { await NoticeCenter.shared.open(id) }
+            switch action {
+            case UNNotificationDefaultActionIdentifier: await NoticeCenter.shared.open(id)
+            case Self.reviewApproveAction: await NoticeCenter.shared.review(id, requestChanges: false)
+            case Self.reviewChangesAction: await NoticeCenter.shared.review(id, requestChanges: true)
+            case Self.reviewAgentAction: await NoticeCenter.shared.openAgent(id)
+            case Self.reviewDismissAction: await NoticeCenter.shared.dismiss(id)
+            default: break
+            }
             return
         }
         if let id = content.userInfo[ReminderLogic.userInfoKey] as? String {

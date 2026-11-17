@@ -328,3 +328,16 @@ final class GitHubActionsModel: ObservableObject {
     }
     #endif
 }
+
+extension GitHubModel {
+    /// A review notification's Approve or Request changes: asks the page's own confirmation for the pull request once its page is
+    /// up. Nothing is sent until the user confirms there, and not at all while actions on GitHub are off.
+    func beginReview(of target: GitHubLink.Target, requestChanges: Bool) {
+        let pr = (prs.values.flatMap { $0 } + watchedPRs).first { $0.url == target.url }
+            ?? GitHubPR(url: target.url, number: target.number, title: "", repo: target.repo, updated: .distantPast)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            GitHubActionsModel.shared.begin(requestChanges ? .requestChanges : .approve, pr)
+        }
+    }
+}

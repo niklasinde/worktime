@@ -84,14 +84,19 @@ struct Routine: Codable, Equatable, Identifiable, Sendable {
     var created: Date
     var nextRun: Date?
     var lastRun: RoutineRun?
+    /// An automation: started by an event instead of the schedule, which is then unused.
+    var trigger: AutomationTrigger?
+    var followUp: AutomationFollowUp?
 
     var key: String { Routines.prefix + id }
+    var isAutomation: Bool { trigger != nil }
 }
 
 enum Routines {
     static let prefix = "routine:"
     static let nameLimit = 60
     static let collapsedKey = "agentRoutinesCollapsed"
+    static let automationsCollapsedKey = "agentAutomationsCollapsed"
     /// A run this much later than it was due counts as missed: the app was closed or the Mac asleep.
     static let missedGrace: TimeInterval = 120
     static let notificationLines = 3
@@ -102,9 +107,10 @@ enum Routines {
     }
 
     /// Why the routine cannot be saved, nil when it can.
-    static func problem(name: String, prompt: String, schedule: RoutineSchedule) -> String? {
+    static func problem(name: String, prompt: String, schedule: RoutineSchedule, trigger: AutomationTrigger? = nil) -> String? {
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Give the routine a name." }
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Write what the routine should do." }
+        if let trigger { return Automations.problem(trigger) }
         if schedule.kind == .interval, schedule.minutes < RoutineSchedule.shortestInterval {
             return "A routine runs at most every \(RoutineSchedule.shortestInterval) minutes."
         }
@@ -116,7 +122,7 @@ enum Routines {
         var routine = routine
         routine.name = String(routine.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(nameLimit))
         routine.prompt = routine.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        routine.nextRun = routine.enabled ? routine.schedule.next(after: now, calendar: calendar) : nil
+        routine.nextRun = routine.enabled && routine.trigger == nil ? routine.schedule.next(after: now, calendar: calendar) : nil
         return routine
     }
 
@@ -126,7 +132,7 @@ enum Routines {
         var fire: [String] = []
         let updated = routines.map { routine -> Routine in
             var routine = routine
-            guard routine.enabled else { return routine }
+            guard routine.enabled, routine.trigger == nil else { return routine }
             guard let due = routine.nextRun else {
                 routine.nextRun = routine.schedule.next(after: now, calendar: calendar)
                 return routine
@@ -196,8 +202,9 @@ enum Routines {
 
     /// The row's second line: the schedule, and what is next or how the last run went.
     static func detail(_ routine: Routine, now: Date) -> String {
-        guard routine.enabled else { return "\(routine.schedule.label()) \u{00B7} off" }
-        return "\(routine.schedule.label()) \u{00B7} \(lastRunText(routine.lastRun, now: now))"
+        let when = routine.trigger.map(Automations.label) ?? routine.schedule.label()
+        guard routine.enabled else { return "\(when) \u{00B7} off" }
+        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))"
     }
 
     static func lastRunText(_ run: RoutineRun?, now: Date) -> String {
@@ -213,10 +220,10 @@ enum Routines {
 
     /// Added to the routine's agent: nobody is watching a scheduled run.
     static func systemPrompt(_ routine: Routine, base: String?) -> String {
-        let note = "This is the scheduled routine \u{201C}\(routine.name)\u{201D}, running on its own with nobody at the keyboard. "
+        let note = "This is the \(routine.isAutomation ? "automation" : "scheduled routine") \u{201C}\(routine.name)\u{201D}, running on its own with nobody at the keyboard. "
             + "Do not ask questions or wait for an answer. A call that needs approval is refused, so work with what you are allowed to do and say what you "
             + "could not. Finish with a short summary of the result: its first lines are shown in a notification."
-        return [base, note].compactMap { $0 }.joined(separator: "\n\n")
+        return [base, note, routine.isAutomation ? Automations.systemNote(routine) : nil].compactMap { $0 }.joined(separator: "\n\n")
     }
 
     static func encode(_ routines: [Routine]) -> Data { AgentInbox.encode(routines) }

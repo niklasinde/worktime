@@ -180,6 +180,14 @@ enum NoticeLogic {
         return nil
     }
 
+    /// A notification from an automation's run about a pull request: it offers to approve or request changes, which only open the
+    /// page's own confirmation.
+    static func isReview(_ notice: AgentNotice) -> Bool {
+        guard let agent = notice.source.agent, Routines.isKey(agent), let link = notice.link else { return false }
+        if case .pullRequest? = self.link(link) { return true }
+        return false
+    }
+
     static func link(_ text: String) -> NoticeLink? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let target = GitHubLink.pullRequest(at: text) { return .pullRequest(target) }

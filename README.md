@@ -567,6 +567,14 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   adds a routine (a prompt that runs on a schedule in an agent of its own, only while the app is open) to the asking agent's
   workspace, or the one named; an existing one with the same name, prompt and schedule is returned instead. `routines` lists them
   and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)` and `delete_routine(id)` always ask.
+- **Automations.** A routine started by an event instead of a schedule (the sidebar's Automations section, next to Routines).
+  `create_automation(name, event, place?, contains?, needs_pull_request?, prompt?, notify?, remind?, workspace?, assistant?, folder?, model?)`
+  with `event` `slack_message` (a mention or direct message waiting on the user) or `review_requested` (a pull request asks for their review);
+  the prompt can use the event's fields (`{pr_url}`, `{slack_text}`, …). Each event runs once (the ones there when it is made, or turned on,
+  are not run), at most six an hour, one run at a time; the run is unattended like a routine's and its answer is a draft, never an approval.
+  A finished run notifies (a pull request's notification offers Approve and Request changes, which open the page's own confirmation) and can
+  make a reminder linked to the source. `automations` lists them and runs without asking; `create_automation`, `update_automation(id, …)`
+  and `delete_automation(id)` always ask.
 - **Assistants.** `assistants(assistant?)` lists every workspace's assistants (key, name, when to use it, model, permissions, tools,
   folder), with one's instructions when it is named, and runs without asking. `create_assistant(name, description, instructions,
   icon?, model?, permission_mode?, tools?, folder?, workspace?)` writes a role file in the asking agent's workspace, or the one

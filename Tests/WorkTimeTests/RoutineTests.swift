@@ -256,8 +256,10 @@ let routineTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("routine tools: the creating tools are offered, and always ask", {
-        for name in ["create_routine", "update_routine", "routines", "set_routine_enabled", "delete_routine"] { check(MCPServer.toolNames.contains(name), name) }
+        for name in ["create_routine", "update_routine", "routines", "set_routine_enabled", "delete_routine", "create_automation", "update_automation", "automations", "delete_automation"] {
+            check(MCPServer.toolNames.contains(name), name)
+        }
         let tools = MCPServer.routineTools()
-        check(tools.first { $0.name == "routines" }?.readOnly == true && tools.filter { !$0.readOnly }.count == 4, "only the list is read-only")
+        check(["routines", "automations"].allSatisfy { name in tools.first { $0.name == name }?.readOnly == true } && tools.filter { !$0.readOnly }.count == 7, "only the lists are read-only")
     }),
 ]

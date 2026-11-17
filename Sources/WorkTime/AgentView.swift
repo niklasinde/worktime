@@ -103,6 +103,7 @@ struct AgentList: View {
                             if let main = group.main { rowButton(main, now: now) }
                             assistantSection(group, now: now)
                             RoutineSection(workspace: group.workspace, hub: hub)
+                            RoutineSection(workspace: group.workspace, hub: hub, automations: true)
                             ForEach(group.agents, id: \.key) { rowButton($0, now: now) }
                         }
                     }

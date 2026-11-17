@@ -1,19 +1,23 @@
 import AppKit
 import SwiftUI
 
-/// The workspace's routines in the agent list, under its assistants, with a button to make one.
+/// The workspace's routines, or with `automations` the ones an event starts, in the agent list under its assistants, with a button to make one.
 struct RoutineSection: View {
     let workspace: Workspace
     @ObservedObject var hub: AgentHub
+    var automations = false
     @ObservedObject private var store = RoutineStore.shared
-    @AppStorage(Routines.collapsedKey) private var collapsedWorkspaces = ""
+    @AppStorage(Routines.collapsedKey) private var collapsedRoutines = ""
+    @AppStorage(Routines.automationsCollapsedKey) private var collapsedAutomations = ""
     @State private var editing: RoutineEdit?
     @State private var deleting: Routine?
 
-    private var collapsedIDs: Set<String> { Set(collapsedWorkspaces.split(separator: ",").map(String.init)) }
+    private var collapsedWorkspaces: Binding<String> { automations ? $collapsedAutomations : $collapsedRoutines }
+    private var collapsedIDs: Set<String> { Set(collapsedWorkspaces.wrappedValue.split(separator: ",").map(String.init)) }
+    private var noun: String { automations ? "Automation" : "Routine" }
 
     var body: some View {
-        let routines = store.routines(in: workspace.id), isCollapsed = collapsedIDs.contains(workspace.id)
+        let routines = store.routines(in: workspace.id).filter { $0.isAutomation == automations }, isCollapsed = collapsedIDs.contains(workspace.id)
         header(count: routines.count, isCollapsed: isCollapsed)
         if !isCollapsed {
             ForEach(routines) { routine in
@@ -28,9 +32,10 @@ struct RoutineSection: View {
                 if let saved { hub.selected = saved.key }
             } }
             .confirmationDialog("Delete \u{201C}\(deleting?.name ?? "")\u{201D}?", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }) {
-                Button("Delete Routine", role: .destructive) { if let deleting { store.delete(deleting.key) } }
+                Button("Delete \(noun)", role: .destructive) { if let deleting { store.delete(deleting.key) } }
             } message: {
-                Text("Removes the routine and stops its schedule. Claude Code keeps the transcripts of its earlier runs.")
+                Text(automations ? "Removes the automation and stops it. Claude Code keeps the transcripts of its earlier runs."
+                                 : "Removes the routine and stops its schedule. Claude Code keeps the transcripts of its earlier runs.")
             }
     }
 
@@ -39,22 +44,23 @@ struct RoutineSection: View {
             Button {
                 var ids = collapsedIDs
                 if isCollapsed { ids.remove(workspace.id) } else { ids.insert(workspace.id) }
-                collapsedWorkspaces = ids.sorted().joined(separator: ",")
+                collapsedWorkspaces.wrappedValue = ids.sorted().joined(separator: ",")
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                    Text("Routines").font(.caption2.weight(.semibold))
+                    Text("\(noun)s").font(.caption2.weight(.semibold))
                     Text("\(count)").font(.caption2).foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(isCollapsed ? "Show the routines of \(workspace.name)" : "Hide the routines of \(workspace.name)")
+            .help(isCollapsed ? "Show the \(noun.lowercased())s of \(workspace.name)" : "Hide the \(noun.lowercased())s of \(workspace.name)")
             Spacer()
-            Button { editing = RoutineEdit(routine: RoutineEdit.blank(workspace: workspace.id), isNew: true) } label: { Image(systemName: "plus").font(.caption) }
+            Button { editing = RoutineEdit(routine: automations ? RoutineEdit.blankAutomation(workspace: workspace.id) : RoutineEdit.blank(workspace: workspace.id), isNew: true) } label: { Image(systemName: "plus").font(.caption) }
                 .buttonStyle(.plain)
-                .help("New Routine: a prompt that runs on a schedule while WorkTime is open")
+                .help(automations ? "New Automation: a prompt that runs when something happens, while WorkTime is open"
+                                  : "New Routine: a prompt that runs on a schedule while WorkTime is open")
         }
         .padding(.leading, 26)
         .padding(.trailing, 8)
@@ -65,7 +71,7 @@ struct RoutineSection: View {
         let now = Date(), running = store.isRunning(routine)
         return HStack(alignment: .top, spacing: 7) {
             Circle().fill(Self.color(routine)).frame(width: 7, height: 7).padding(.top, 6)
-            Image(systemName: "clock.arrow.2.circlepath").font(.callout).foregroundStyle(.secondary).frame(width: 16)
+            Image(systemName: routine.isAutomation ? "bolt.fill" : "clock.arrow.2.circlepath").font(.callout).foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(routine.name).font(.callout).lineLimit(1)
                 Text(Routines.detail(routine, now: now)).font(.caption2).foregroundStyle(running ? Color.orange : .secondary).lineLimit(1)
@@ -94,7 +100,11 @@ struct RoutineSection: View {
 
     @ViewBuilder
     private func menu(_ routine: Routine) -> some View {
-        Button("Run Now") { store.runNow(routine.key) }.disabled(store.isRunning(routine))
+        if routine.isAutomation {
+            Button("Run with Last Event") { store.runWithLastEvent(routine.key) }.disabled(store.lastEvent(routine) == nil)
+        } else {
+            Button("Run Now") { store.runNow(routine.key) }.disabled(store.isRunning(routine))
+        }
         Button(routine.enabled ? "Turn Off" : "Turn On") { store.setEnabled(!routine.enabled, for: routine.key) }
         Button("Edit\u{2026}") { editing = RoutineEdit(routine: routine, isNew: false) }
         Divider()
@@ -111,6 +121,12 @@ struct RoutineEdit: Identifiable {
     static func blank(workspace: String) -> Routine {
         Routine(id: UUID().uuidString, name: "", prompt: "", workspace: workspace, schedule: RoutineSchedule(kind: .weekdays), created: Date())
     }
+
+    static func blankAutomation(workspace: String) -> Routine {
+        let trigger = AutomationTrigger(kind: .reviewRequested)
+        return Routine(id: UUID().uuidString, name: "", prompt: trigger.kind.defaultPrompt, workspace: workspace, schedule: RoutineSchedule(kind: .daily),
+                       created: Date(), trigger: trigger, followUp: AutomationFollowUp(notify: true, remind: true))
+    }
 }
 
 /// The New Routine and Edit Routine sheet.
@@ -126,9 +142,12 @@ struct RoutineEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(isNew ? "New Routine" : "Edit Routine").font(.headline)
-            Text("Runs the prompt in a fresh session on the schedule, while WorkTime is open, and notifies you with the answer. "
-                 + "Calls that need your approval are refused, since nobody is there to give it.")
+            Text(noun(isNew ? "New " : "Edit ")).font(.headline)
+            Text(routine.isAutomation
+                 ? "Runs the prompt in a fresh session each time the event happens, while WorkTime is open. Calls that need your approval are refused, "
+                    + "and nothing is posted or approved for you: the answer is a draft for you to act on."
+                 : "Runs the prompt in a fresh session on the schedule, while WorkTime is open, and notifies you with the answer. "
+                    + "Calls that need your approval are refused, since nobody is there to give it.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             field("Name") { TextField("Name", text: $routine.name, prompt: Text("Morning pull request sweep")).textFieldStyle(.roundedBorder).labelsHidden() }
             field("Prompt") {
@@ -161,9 +180,14 @@ struct RoutineEditorSheet: View {
                     Button("Choose\u{2026}", action: chooseFolder)
                 }
             }
-            field("Schedule") { schedule }
-            Toggle("Run a missed run when WorkTime starts", isOn: $routine.runMissed)
-                .help("When the app was closed or the Mac asleep at the scheduled time, run once on the next start; otherwise that run is skipped")
+            if routine.isAutomation {
+                field("When") { triggerFields }
+                field("Then") { followUpFields }
+            } else {
+                field("Schedule") { schedule }
+                Toggle("Run a missed run when WorkTime starts", isOn: $routine.runMissed)
+                    .help("When the app was closed or the Mac asleep at the scheduled time, run once on the next start; otherwise that run is skipped")
+            }
             Toggle("On", isOn: $routine.enabled)
             if let problem { Label(problem, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.red) }
             HStack {
@@ -174,6 +198,61 @@ struct RoutineEditorSheet: View {
         }
         .padding(20)
         .frame(width: 500)
+    }
+
+    private func noun(_ prefix: String) -> String { prefix + (routine.isAutomation ? "Automation" : "Routine") }
+
+    private var trigger: Binding<AutomationTrigger> {
+        Binding { routine.trigger ?? AutomationTrigger(kind: .reviewRequested) } set: { routine.trigger = $0 }
+    }
+
+    private var followUp: Binding<AutomationFollowUp> {
+        Binding { routine.followUp ?? AutomationFollowUp() } set: { routine.followUp = $0 }
+    }
+
+    private var kindBinding: Binding<AutomationTrigger.Kind> {
+        Binding { trigger.wrappedValue.kind } set: { kind in
+            let old = trigger.wrappedValue.kind
+            if routine.prompt == old.defaultPrompt || routine.prompt.isEmpty { routine.prompt = kind.defaultPrompt }
+            trigger.wrappedValue = AutomationTrigger(kind: kind)
+        }
+    }
+
+    @ViewBuilder
+    private var triggerFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Event", selection: kindBinding) {
+                ForEach(AutomationTrigger.Kind.allCases) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            TextField(trigger.wrappedValue.kind.placeTitle, text: trigger.place, prompt: Text(trigger.wrappedValue.kind.placeTitle + " (any; commas for several)"))
+                .textFieldStyle(.roundedBorder)
+            TextField(trigger.wrappedValue.kind.textTitle, text: trigger.text, prompt: Text(trigger.wrappedValue.kind.textTitle + " (any; commas for several)"))
+                .textFieldStyle(.roundedBorder)
+            if trigger.wrappedValue.kind == .slackMessage {
+                Toggle("Mentions a pull request", isOn: trigger.needsPullRequest)
+            }
+            Text("Placeholders in the prompt: " + trigger.wrappedValue.kind.fields.map { "{\($0)}" }.joined(separator: " "))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if trigger.wrappedValue.kind == .slackMessage {
+                Text("Sees the mentions and direct messages waiting on you, while the notch bar shows Slack.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var followUpFields: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Notify me with the answer", isOn: followUp.notify)
+            Toggle("Remind me to decide", isOn: followUp.remind)
+                .help("A reminder linked to the pull request or the message, made when the run finishes")
+            if routine.trigger?.kind == .reviewRequested || routine.trigger?.needsPullRequest == true {
+                Text("The notification can open the pull request with Approve or Request changes, which you still confirm on the page.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var assistantBinding: Binding<String> {
@@ -259,7 +338,7 @@ struct RoutineEditorSheet: View {
     }
 
     private func save() {
-        if let found = Routines.problem(name: routine.name, prompt: routine.prompt, schedule: routine.schedule) { return problem = found }
+        if let found = Routines.problem(name: routine.name, prompt: routine.prompt, schedule: routine.schedule, trigger: routine.trigger) { return problem = found }
         done(RoutineStore.shared.save(routine))
     }
 }
@@ -290,15 +369,17 @@ struct AgentRoutineHeader: View {
 
     var body: some View {
         let current = store.routine(routine.key) ?? routine, now = Date()
-        Label { Text(current.name).lineLimit(1) } icon: { Image(systemName: "clock.arrow.2.circlepath").foregroundStyle(.secondary) }
+        Label { Text(current.name).lineLimit(1) } icon: { Image(systemName: current.isAutomation ? "bolt.fill" : "clock.arrow.2.circlepath").foregroundStyle(.secondary) }
             .font(.system(size: 15, weight: .medium))
         Text(Routines.detail(current, now: now)).font(.callout).foregroundStyle(.secondary).lineLimit(1)
             .help(current.nextRun.map { "Next run: " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "Switched off")
-        Button { store.runNow(current.key) } label: { Label("Run now", systemImage: "play.fill") }
-            .disabled(store.isRunning(current))
-            .help("Start a fresh session with the routine\u{2019}s prompt now")
+        Button { current.isAutomation ? store.runWithLastEvent(current.key) : store.runNow(current.key) } label: {
+            Label(current.isAutomation ? "Test with last event" : "Run now", systemImage: "play.fill")
+        }
+        .disabled(store.isRunning(current) || (current.isAutomation && store.lastEvent(current) == nil))
+        .help(current.isAutomation ? "Run the prompt now with the latest event it matched" : "Start a fresh session with the routine\u{2019}s prompt now")
         Button { editing = RoutineEdit(routine: current, isNew: false) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-            .help("Edit the prompt, schedule and what it runs as")
+            .help("Edit the prompt, when it runs and what it runs as")
             .sheet(item: $editing) { edit in RoutineEditorSheet(routine: edit.routine, isNew: false) { _ in editing = nil } }
     }
 }

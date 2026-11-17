@@ -76,6 +76,22 @@ final class NoticeCenter: ObservableObject {
         }
     }
 
+    /// Shows the agent whose run sent the notification.
+    func openAgent(_ id: String) {
+        guard let notice = notices.first(where: { $0.id == id }), let agent = notice.source.agent else { return }
+        dismiss(id)
+        AgentHub.shared.show(agent)
+    }
+
+    /// Opens the pull request a review notification is about and asks the page's own confirmation to approve it or request changes:
+    /// nothing is sent until the user confirms there.
+    func review(_ id: String, requestChanges: Bool) {
+        guard let notice = notices.first(where: { $0.id == id }), NoticeLogic.isReview(notice),
+              case .pullRequest(let target)? = notice.link.flatMap(NoticeLogic.link) else { return }
+        open(id)
+        GitHubModel.shared.beginReview(of: target, requestChanges: requestChanges)
+    }
+
     /// Takes a notification off the list, and a scheduled one off the system's schedule too.
     func dismiss(_ id: String) {
         notices.removeAll { $0.id == id }

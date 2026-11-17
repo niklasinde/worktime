@@ -11,12 +11,19 @@ final class RoutineStore: ObservableObject {
     @Published private(set) var routines: [Routine]
     @Published private(set) var models: [String: AgentModel] = [:]
     private var file: URL
+    private var stateFile: URL
     private var timer: Timer?
     private var watching: [String: AnyCancellable] = [:]
+    private var automationState: AutomationState
+    /// The event each running automation was started for, and the ones waiting for it to finish.
+    private var starting: [String: AutomationEvent] = [:]
+    private var waiting: [String: [AutomationEvent]] = [:]
 
-    init(file: URL = AppPaths.routines) {
+    init(file: URL = AppPaths.routines, stateFile: URL = AppPaths.automationState) {
         self.file = file
+        self.stateFile = stateFile
         routines = Routines.settled(Routines.decode(try? Data(contentsOf: file)), now: Date())
+        automationState = (try? Data(contentsOf: stateFile)).flatMap { AgentInbox.decode(AutomationState.self, from: $0) } ?? AutomationState()
     }
 
     func start() {
@@ -49,6 +56,7 @@ final class RoutineStore: ObservableObject {
             let old = routines[index]
             saved.lastRun = old.lastRun
             if old.schedule == saved.schedule, old.enabled == saved.enabled { saved.nextRun = old.nextRun ?? saved.nextRun }
+            if old.trigger != saved.trigger || old.enabled != saved.enabled { automationState.rebaseline(saved.id) }
             routines[index] = saved
         } else {
             routines.append(saved)
@@ -79,6 +87,8 @@ final class RoutineStore: ObservableObject {
         AgentModel.savedSessions[key] = nil
         _ = AgentSessionStore.update(key) { _ in [] }
         routines.removeAll { $0.id == routine.id }
+        waiting[routine.id] = nil
+        automationState = automationState.pruned(keeping: routines)
         if AgentHub.shared.selected == key { AgentHub.shared.selected = AgentHub.shared.currentMainKey }
         save()
     }
@@ -125,6 +135,32 @@ final class RoutineStore: ObservableObject {
         run(routine)
     }
 
+    // MARK: Events
+
+    /// The events of one kind the app can see now, once their source has loaded: starts the automations they trigger.
+    func ingest(kind: AutomationTrigger.Kind, events: [AutomationEvent]) {
+        let plan = Automations.plan(kind: kind, events: events, routines: routines, state: automationState, now: Date())
+        guard plan.state != automationState else { return }
+        automationState = plan.state
+        saveState()
+        for firing in plan.fire { routines.first { $0.id == firing.routine }.map { fire($0, event: firing.event) } }
+    }
+
+    /// Runs the automation for the event now, or after the run it is in the middle of; a long queue drops the newest.
+    func fire(_ routine: Routine, event: AutomationEvent) {
+        guard isRunning(routine) || models[routine.key]?.busy == true else { return run(routine, event: event) }
+        guard waiting[routine.id, default: []].count < Automations.queueLimit else { return }
+        waiting[routine.id, default: []].append(event)
+    }
+
+    /// The latest event the automation matched, for trying it out.
+    func lastEvent(_ routine: Routine) -> AutomationEvent? { automationState.last[routine.id] }
+
+    func runWithLastEvent(_ key: String) {
+        guard let routine = routine(key), let event = lastEvent(routine) else { return }
+        fire(routine, event: event)
+    }
+
     private func tick() {
         let running = Set(routines.filter(isRunning).map(\.id))
         let result = Routines.tick(routines, now: Date(), running: running)
@@ -132,17 +168,18 @@ final class RoutineStore: ObservableObject {
             routines = result.routines
             save()
         }
-        for id in result.fire { routines.first { $0.id == id }.map(run) }
+        for id in result.fire { routines.first { $0.id == id }.map { run($0) } }
     }
 
-    /// A fresh session with the routine's prompt. A run already going is left alone.
-    private func run(_ routine: Routine) {
+    /// A fresh session with the routine's prompt, or for an automation the prompt with the event's fields. A run already going is left alone.
+    private func run(_ routine: Routine, event: AutomationEvent? = nil) {
         let model = load(routine)
         guard !model.busy, !isRunning(routine) else { return }
         let started = Date()
         model.update(routine: routine)
         model.newSession()
-        model.draft = routine.prompt
+        model.draft = event.map { Automations.prompt(routine.prompt, event: $0) } ?? routine.prompt
+        starting[routine.id] = event
         model.send()
         guard model.busy else {
             let items = model.items.isEmpty ? [AgentItem(id: "problem", kind: .error(model.problem ?? "The routine could not start."))] : model.items
@@ -161,14 +198,24 @@ final class RoutineStore: ObservableObject {
         watching[key] = nil
         update(key) { $0.lastRun = run }
         guard let routine = routine(key) else { return }
-        notify(routine, run: run)
+        let event = starting.removeValue(forKey: routine.id)
+        notify(routine, run: run, event: event)
+        if let event, run.status == .done, routine.followUp?.remind == true,
+           let reminder = Automations.reminder(for: event) {
+            TodoModel.shared.remind(title: reminder.title, source: reminder.source, preset: .noDate)
+        }
+        if let next = waiting[routine.id]?.first {
+            waiting[routine.id]?.removeFirst()
+            self.run(routine, event: next)
+        }
     }
 
-    private func notify(_ routine: Routine, run: RoutineRun) {
-        let text = Routines.notification(for: routine, run: run)
+    private func notify(_ routine: Routine, run: RoutineRun, event: AutomationEvent?) {
+        if event != nil, routine.followUp?.notify == false { return }
+        let text = event.map { Automations.notification(for: routine, event: $0, run: run) } ?? Routines.notification(for: routine, run: run)
         let now = Date()
         let source = NoticeSource(agent: routine.key, workspace: routine.workspace)
-        let notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: routine.key, source: source, created: now)
+        let notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: event?.pullRequest ?? routine.key, source: source, created: now)
         _ = NoticeCenter.shared.handle(NoticeRequest(id: notice.id, action: .notify, notice: notice, cancel: nil, source: source, created: now))
     }
 
@@ -179,7 +226,14 @@ final class RoutineStore: ObservableObject {
         save()
     }
 
+    private func saveState() {
+        let data = AgentInbox.encode(automationState), file = stateFile
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: file, options: .atomic)
+    }
+
     private func save() {
+        saveState()
         let data = Routines.encode(routines), file = file
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: file, options: .atomic)
@@ -192,6 +246,7 @@ final class RoutineStore: ObservableObject {
         models.values.forEach { $0.stopClient() }
         timer?.invalidate()
         self.file = file
+        stateFile = file.deletingLastPathComponent().appendingPathComponent("automation-state.json")
         self.routines = routines
         models = [:]
     }

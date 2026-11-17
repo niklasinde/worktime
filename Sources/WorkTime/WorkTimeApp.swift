@@ -239,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TranscriptPullRequestMenu.shared.start()
         AssistantStore.shared.start()
         RoutineStore.shared.start()
+        AutomationSources.shared.start()
         AgentStateWriter.shared.start()
         NoticeCenter.shared.start()
         AgentInboxWatcher.shared.start()

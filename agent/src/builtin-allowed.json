@@ -1,7 +1,7 @@
 {
   "tools": ["Read", "Grep", "Glob", "Agent", "Task"],
   "mcpPrefix": "mcp__worktime__",
-  "alwaysAsk": ["mcp__worktime__send_to_agent", "mcp__worktime__complete_reminder", "mcp__worktime__create_routine", "mcp__worktime__update_routine", "mcp__worktime__set_routine_enabled", "mcp__worktime__delete_routine", "mcp__worktime__create_assistant", "mcp__worktime__update_assistant", "mcp__worktime__delete_assistant"],
+  "alwaysAsk": ["mcp__worktime__send_to_agent", "mcp__worktime__complete_reminder", "mcp__worktime__create_routine", "mcp__worktime__update_routine", "mcp__worktime__set_routine_enabled", "mcp__worktime__delete_routine", "mcp__worktime__create_automation", "mcp__worktime__update_automation", "mcp__worktime__delete_automation", "mcp__worktime__create_assistant", "mcp__worktime__update_assistant", "mcp__worktime__delete_assistant"],
   "everyAgent": ["mcp__worktime__notify", "mcp__worktime__scheduled_notifications", "mcp__worktime__cancel_notification", "mcp__worktime__add_reminder"],
   "commands": [
     { "name": "ls", "anyArgs": true },
