@@ -16,6 +16,8 @@ struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
     var importedSession: String?
     /// The pull requests this agent works on together; nil for the ordinary topics.
     var pullRequests: [LinkedPR]?
+    /// The assistant this agent is a session of, for the ticket it is linked to; nil for an agent of its own.
+    var assistant: String?
 
     var key: String { TopicAgents.prefix + id }
 
@@ -24,6 +26,9 @@ struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
     var kind: Kind { jiraKey != nil ? .ticket : slackURL != nil ? .slack : linked.isEmpty ? .topic : .pullRequests }
 
     var slackLink: SlackThreadLink? { slackURL.flatMap(SlackLogic.threadLink) }
+
+    /// A session of an assistant for one ticket, as opposed to the ticket's own agent.
+    var isTicketSession: Bool { assistant != nil }
 }
 
 enum TopicAgentError: Error, Equatable {
@@ -116,7 +121,7 @@ enum TopicAgents {
             return .success(AgentTarget(key: text, title: AgentOverview.prTitle(text)))
         }
         if let key = JiraLogic.issueKey(text) {
-            let matching = topics.filter { $0.jiraKey == key }
+            let matching = topics.filter { $0.jiraKey == key && $0.assistant == nil }
             if let topic = matching.first(where: { !$0.archived }) ?? matching.first {
                 return topic.archived ? .failure(.archived(topic.name)) : .success(AgentTarget(key: topic.key, title: topic.name))
             }
@@ -135,7 +140,7 @@ enum TopicAgents {
     /// The topic already made for this ticket or this Slack thread, archived ones too.
     static func existing(jiraKey: String? = nil, slack: SlackThreadLink? = nil, in topics: [TopicAgent]) -> TopicAgent? {
         topics.first { topic in
-            if let jiraKey, topic.jiraKey == jiraKey { return true }
+            if let jiraKey, topic.jiraKey == jiraKey, topic.assistant == nil { return true }
             guard let slack, let link = topic.slackLink else { return false }
             return link.host == slack.host && link.channel == slack.channel && link.root == slack.root
         }

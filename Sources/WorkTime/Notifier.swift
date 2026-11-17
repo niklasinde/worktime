@@ -46,6 +46,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let reply = UNTextInputNotificationAction(identifier: AgentAttention.replyAction, title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Answer the agent")
         let stopAgent = UNNotificationAction(identifier: AgentAttention.stopAction, title: "Stop", options: [.destructive])
+        let reuse = UNNotificationAction(identifier: AgentAttention.reuseAction, title: "Reuse this one", options: [])
+        let startNew = UNNotificationAction(identifier: AgentAttention.newSessionAction, title: "Start a new one", options: [])
+        let openSession = UNNotificationAction(identifier: AgentAttention.openSessionAction, title: "Open it", options: [.foreground])
         let reviewAgent = UNNotificationAction(identifier: reviewAgentAction, title: "Open review", options: [.foreground])
         let reviewApprove = UNNotificationAction(identifier: reviewApproveAction, title: "Approve\u{2026}", options: [.foreground])
         let reviewChanges = UNNotificationAction(identifier: reviewChangesAction, title: "Request changes\u{2026}", options: [.foreground])
@@ -66,6 +69,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: AgentAttention.roleSuggestionCategory, actions: [addTool, dismissSuggestion], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.questionCategory, actions: [reply], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.handoffCategory, actions: [stopAgent], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.ticketAskCategory, actions: [reuse, startNew, openSession], intentIdentifiers: [], options: []),
         ]
     }
 
@@ -166,6 +170,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.body = String(body.prefix(AgentAttention.handoffLimit))
         content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: ""]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// Main sent a prompt for a ticket an assistant already has a session for; Reuse this one and Start a new one answer it without opening the app.
+    static func postTicketAsk(id: String, text: (title: String, body: String), identifier: String, quiet: Bool = false) {
+        post(text, category: AgentAttention.ticketAskCategory, agent: TicketAskStore.agentKey, request: id, identifier: identifier, quiet: quiet)
     }
 
     /// An agent stopped on a permission prompt; Allow once, Allow for this session (where offered) and Deny answer it without opening the app, a click opens the agent.

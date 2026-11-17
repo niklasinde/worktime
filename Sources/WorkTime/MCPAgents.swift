@@ -108,7 +108,9 @@ extension MCPServer {
             MCPTool(name: "agents_overview",
                     description: "Every Claude agent WorkTime knows (Main, its assistants, one per pull request and the topic agents), most urgent first: waiting for the "
                         + "user's permission (with the tool it asks for), finished with a result the user has not seen, errored, working, "
-                        + "idle. Each with its pull request url, worktime://agent link, folder, session id, last prompt and last result.",
+                        + "idle. Each with its pull request url, worktime://agent link, folder, session id, last prompt and last result. An assistant's session "
+                        + "for a Jira ticket shows as a ticket session with its role and ticket; ticket lists every agent about one ticket, so look there before "
+                        + "sending work for it.",
                     properties: ["active_only": ["type": "boolean", "description": "Leave out idle agents. False when left out."],
                                  "workspace": workspaceProperty].merging(AgentFilter.properties) { $1 }) { args in
                 let filter = try AgentFilter(args)
@@ -189,12 +191,20 @@ extension MCPServer {
                         + "(a support case or other topic, by its key or name) or one of the workspace's assistants (by role name, like Developer). It starts when the agent is idle "
                         + "and queues while it works; it is refused while the agent waits for a permission. The agent asks the user in its "
                         + "own pane for anything it wants to run. Several pull requests that belong together go to one agent with pr_urls. "
-                        + "Returns the session id to read the outcome with agent_session later.",
+                        + "For work on a Jira ticket give an assistant as agent and the ticket: the assistant gets a session of its own for that ticket "
+                        + "(made when there is none), so everything about the ticket stays in one place; one call per ticket, never several tickets in one "
+                        + "prompt. When that assistant already has a session for the ticket, the user is asked whether to reuse it or start a new one and "
+                        + "the call waits for the answer (up to the user's setting, 30 minutes by default; nothing is sent if it runs out); new_session "
+                        + "starts a new one without asking. Returns the session id to read the outcome with agent_session later.",
                     properties: ["agent": agentProperty,
                                  "pr_url": ["type": "string", "description": "A pull request's GitHub url; the same as agent."],
                                  "pr_urls": ["type": "array", "items": ["type": "string"], "maxItems": PullRequestSets.limit,
                                              "description": "Two or more pull requests' GitHub urls for ONE agent that works on them together as a set "
                                                  + "(made when there is none, and the pull requests stay in it): a reviewer's cross-pull-request check, or a change that spans repositories."],
+                                 "ticket": ["type": "string", "description": "A Jira ticket key like PROJ-123, with an assistant as agent: its session for this ticket "
+                                     + "gets the prompt. Must be in the workspace's Jira projects."],
+                                 "new_session": ["type": "boolean", "description": "With ticket: start a new session even when the assistant has one for the "
+                                     + "ticket, without asking the user. False when left out."],
                                  "workspace": workspaceProperty,
                                  "text": ["type": "string", "maxLength": AgentInbox.textLimit, "description": "The prompt for that agent."]],
                     required: ["text"], readOnly: false) { args in
@@ -220,12 +230,23 @@ extension MCPServer {
                 }
                 guard let target = try sources.target(args) else { throw MCPToolError("agent is required.") }
                 try sources.checkDelegation(target, args: args, agents: sources.agents())
+                var ticket: String?
+                if let text = (args["ticket"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                    guard Assistants.isKey(target.key) else { throw MCPToolError("ticket only applies when agent is an assistant (its role name), not \(target.title).") }
+                    let projects = sources.workspaces.file().workspaces.first { $0.id == Assistants.parse(key: target.key)?.workspace }?.jiraProjects ?? []
+                    switch TicketSessions.ticket(text, projects: projects) {
+                    case .success(let key): ticket = key
+                    case .failure(let error): throw MCPToolError(error.message)
+                    }
+                }
                 let request: AgentInbox.Request
-                switch AgentInbox.request(agent: target.key, text: args["text"] as? String ?? "", now: now()) {
+                switch AgentInbox.request(agent: target.key, text: args["text"] as? String ?? "", now: now(), ticket: ticket,
+                                          newSession: ticket == nil ? nil : args["new_session"] as? Bool) {
                 case .success(let made): request = made
                 case .failure(let error): throw MCPToolError(error.message)
                 }
-                let reply = try deliver(request, inbox: sources.inbox, timeout: sources.replyTimeout)
+                let timeout = ticket == nil ? sources.replyTimeout : max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60)
+                let reply = try deliver(request, inbox: sources.inbox, timeout: timeout)
                 if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: target.title)) }
                 return AgentInbox.replyText(reply, title: target.title)
             },

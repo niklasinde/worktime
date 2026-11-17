@@ -210,12 +210,14 @@ struct AgentFilter: Equatable {
     var status: String?
     var needsMe: Bool?
     var query: String?
+    var ticket: String?
 
-    static let kinds = ["main", "pr", "ticket", "topic", "assistant"]
+    static let kinds = ["main", "pr", "ticket", "ticket_session", "topic", "assistant"]
     static let statuses = ["working", "waiting", "idle", "error", "signed_out"]
 
     static let properties: [String: [String: Any]] = [
-        "kind": ["type": "string", "enum": kinds, "description": "Only this kind of agent: Main, a pull request's, a Jira ticket's, another topic agent or an assistant."],
+        "kind": ["type": "string", "enum": kinds, "description": "Only this kind of agent: Main, a pull request's, a Jira ticket's, an assistant's session for a ticket (ticket_session), another topic agent or an assistant."],
+        "ticket": ["type": "string", "description": "Only the agents about this Jira ticket: its sessions (of any assistant), its own agent and the pull request agents whose title names it."],
         "status": ["type": "string", "enum": statuses, "description": "Only agents in this state."],
         "needs_me": ["type": "boolean", "description": "true: only agents waiting for a permission, finished with an unseen result or errored; false: the others."],
         "query": ["type": "string", "description": "Only agents whose title, folder, last prompt or last result contain this."],
@@ -225,26 +227,37 @@ struct AgentFilter: Equatable {
 
     init() {}
 
-    init(_ args: [String: Any], names: [String] = ["kind", "status", "needs_me", "query"]) throws {
+    init(_ args: [String: Any], names: [String] = ["kind", "status", "needs_me", "query", "ticket"]) throws {
         let args = args.filter { names.contains($0.key) }
         kind = try FilterLogic.choice(args, "kind", allowed: Self.kinds)
         status = try FilterLogic.choice(args, "status", allowed: Self.statuses)
         needsMe = try FilterLogic.flag(args, "needs_me")
         query = FilterLogic.text(args, "query")
+        if let text = FilterLogic.text(args, "ticket") {
+            guard let key = JiraLogic.issueKey(text) else { throw MCPToolError("\u{201C}\(text)\u{201D} is not a Jira ticket key like PROJ-123.") }
+            ticket = key
+        }
     }
 
-    var applied: [String] { FilterLogic.applied(["kind": kind, "status": status, "needs_me": needsMe, "query": query]) }
+    var applied: [String] { FilterLogic.applied(["kind": kind, "status": status, "needs_me": needsMe, "query": query, "ticket": ticket]) }
 
     static func kind(of state: AgentState) -> String {
         if Workspaces.isMainKey(state.key) { return "main" }
         if state.isAssistant { return "assistant" }
         guard state.isTopic else { return "pr" }
+        if state.roleKey != nil { return "ticket_session" }
         return state.jiraKey == nil ? "topic" : "ticket"
+    }
+
+    /// Whether the agent is about the ticket: a topic linked to it, or a pull request agent whose title names it.
+    static func about(_ state: AgentState, ticket key: String) -> Bool {
+        state.jiraKey?.caseInsensitiveCompare(key) == .orderedSame || state.title.range(of: key, options: .caseInsensitive) != nil
     }
 
     func matches(_ state: AgentState) -> Bool {
         (kind.map { Self.kind(of: state) == $0 } ?? true) && (status.map { state.status.rawValue == $0 } ?? true)
             && (needsMe.map { $0 == (AgentOverview.need(state) <= .error) } ?? true)
+            && (ticket.map { Self.about(state, ticket: $0) } ?? true)
             && (query.map { text in [state.title, state.folder, state.lastPrompt, state.lastResult].contains { FilterLogic.matches($0, text) } } ?? true)
     }
 }

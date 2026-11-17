@@ -55,7 +55,9 @@ final class PRAgents: ObservableObject {
         case .start, .queue:
             let queued = !model.queued.isEmpty
             Notifier.postAgentMessage(title: "Main \u{2192} \(title)", body: request.text, agent: model.attentionID)
-            return AgentInbox.Reply(id: request.id, status: queued ? .queued : .started, sessionID: model.sessionID, message: queued ? "queued" : "started")
+            let slot = model.waitingForSlot ? TicketSessions.slotNote(limit: SessionSlots.limit(), roleLimit: model.slotRole?.limit) : nil
+            return AgentInbox.Reply(id: request.id, status: queued ? .queued : .started, sessionID: model.sessionID, message: queued ? "queued" : "started",
+                                    note: slot)
         }
     }
 
@@ -207,7 +209,8 @@ final class AgentStateWriter: ObservableObject {
         let topics = TopicAgentStore.shared
         for topic in topics.visible {
             let loaded = topics.models[topic.key].map { state($0, key: topic.key, title: topic.name) }
-            states.append(AgentState.topic(topic, loaded: loaded, sessionID: sessions[topic.key]))
+            states.append(AgentState.topic(topic, loaded: loaded, sessionID: sessions[topic.key],
+                                           roleName: topic.assistant.flatMap { AssistantStore.shared.entry($0)?.role.name }))
         }
         let assistants = AssistantStore.shared
         for entry in assistants.all {
@@ -223,8 +226,10 @@ final class AgentStateWriter: ObservableObject {
     }
 
     private func state(_ model: AgentModel, key: String, title: String) -> AgentState {
-        AgentOverview.snapshot(key: key, title: title, prURL: model.prURL, folder: model.folder, sessionID: model.sessionID, items: model.items,
-                               busy: model.busy, seen: model.resultSeen, updatedAt: model.updated, queued: model.queued.count)
+        var state = AgentOverview.snapshot(key: key, title: title, prURL: model.prURL, folder: model.folder, sessionID: model.sessionID, items: model.items,
+                                           busy: model.busy, seen: model.resultSeen, updatedAt: model.updated, queued: model.queued.count)
+        if model.waitingForSlot { state.slotWait = true }
+        return state
     }
 }
 
@@ -302,6 +307,7 @@ final class AgentInboxWatcher {
             return TopicAgentStore.shared.deliver(forSet)
         }
         if TopicAgents.isKey(request.agent) { return TopicAgentStore.shared.deliver(request) }
+        if request.ticket != nil, Assistants.isKey(request.agent) { return await TopicAgentStore.shared.deliver(ticketSession: request) }
         if Assistants.isKey(request.agent) { return AssistantStore.shared.deliver(request) }
         return await PRAgents.shared.deliver(request)
     }

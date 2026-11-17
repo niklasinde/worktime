@@ -428,7 +428,11 @@ private struct ApprovalRow: View {
                 Text(approval.title).lineLimit(2)
                 Text(approval.body).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 HStack(spacing: 6) {
-                    if approval.blocked {
+                    if approval.ticketAsk {
+                        Button("Reuse this one") { answer(AgentAttention.reuseAction) }.buttonStyle(.borderedProminent)
+                        Button("Start a new one") { answer(AgentAttention.newSessionAction) }.buttonStyle(.bordered)
+                        Button("Always reuse") { answer(AgentAttention.alwaysReuseAction) }.buttonStyle(.bordered)
+                    } else if approval.blocked {
                         Button("Fix and continue") { answer(AgentAttention.fixAction) }.buttonStyle(.borderedProminent)
                     } else {
                         if approval.roleTool {

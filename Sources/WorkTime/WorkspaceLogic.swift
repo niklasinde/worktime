@@ -148,6 +148,9 @@ enum Workspaces {
             return file.workspaces.contains { $0.id == id } ? id : (workspace(nil, in: file.workspaces)?.id ?? id)
         }
         if let id = id(ofMainKey: state.key) { return file.workspaces.contains { $0.id == id } ? id : (workspace(nil, in: file.workspaces)?.id ?? id) }
+        if let id = state.roleKey.flatMap({ Assistants.parse(key: $0)?.workspace }) {
+            return file.workspaces.contains { $0.id == id } ? id : (workspace(nil, in: file.workspaces)?.id ?? id)
+        }
         let subject = Subject(folders: state.folder.map { [$0] } ?? [], owner: state.prURL.flatMap { prSubject($0, override: nil).owner },
                               jiraKey: state.jiraKey, override: file.overrides[state.key])
         return assign(subject, in: file.workspaces, home: home)

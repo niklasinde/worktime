@@ -20,6 +20,8 @@ final class AgentAttentionCenter: ObservableObject {
         var roleTool = false
         /// The turn ended after refusals: Fix and continue.
         var blocked = false
+        /// Main's prompt for a ticket that already has a session: Reuse this one, Start a new one.
+        var ticketAsk = false
     }
 
     @Published private(set) var approvals: [Approval] = []
@@ -48,6 +50,16 @@ final class AgentAttentionCenter: ObservableObject {
             }
             return
         }
+        if agent == TicketAskStore.agentKey {
+            guard let request else { return }
+            switch AgentAttention.response(action: action, text: text) {
+            case .reuse: TicketAskStore.shared.respond(request, .reuse)
+            case .alwaysReuse: TicketAskStore.shared.respond(request, .alwaysReuse)
+            case .startNew: TicketAskStore.shared.respond(request, .startNew)
+            default: TicketAskStore.shared.open(request)
+            }
+            return
+        }
         guard let model = models[agent]?.model else { return AgentHub.shared.show(agent) }
         switch AgentAttention.response(action: action, text: text) {
         case .allow: if let request { model.answer(permission: request, allow: true) }
@@ -58,6 +70,7 @@ final class AgentAttentionCenter: ObservableObject {
         case .deny: if let request { model.answer(permission: request, allow: false) }
         case .answer(let reply): model.reply(reply)
         case .stop: model.cancelFromMain()
+        case .reuse, .startNew, .alwaysReuse: break
         case .open: AgentHub.shared.show(agent)
         }
     }

@@ -252,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentStateWriter.shared.start()
         NoticeCenter.shared.start()
         AgentInboxWatcher.shared.start()
+        TicketAskStore.shared.restore()
         InCallHelp.shared.openMeeting = { [weak self] in self?.mainWindow.show(meeting: $0, at: nil) }
         TodoModel.shared.showPage = { [weak self] in self?.mainWindow.show(section: .reminders) }
         TodoModel.shared.openMeeting = { [weak self] in self?.mainWindow.show(meeting: $0, at: nil) }

@@ -11,6 +11,11 @@ enum AgentAttention {
     static let blockedCategory = "agent-blocked"
     static let questionCategory = "agent-question"
     static let handoffCategory = "agent-handoff"
+    static let ticketAskCategory = "agent-ticket-ask"
+    static let reuseAction = "agent-ticket-reuse"
+    static let newSessionAction = "agent-ticket-new"
+    static let alwaysReuseAction = "agent-ticket-always"
+    static let openSessionAction = "agent-ticket-open"
     static let allowAction = "agent-allow"
     static let allowSessionAction = "agent-allow-session"
     static let addToolAction = "agent-add-tool"
@@ -26,6 +31,7 @@ enum AgentAttention {
 
     enum Response: Equatable {
         case allow, allowSession, deny, answer(String), stop, open, addTool, fixAndContinue, dismiss
+        case reuse, startNew, alwaysReuse
     }
 
     static func enabled(defaults: UserDefaults = .standard) -> Bool {
@@ -66,6 +72,9 @@ enum AgentAttention {
         case fixAction: return .fixAndContinue
         case dismissAction: return .dismiss
         case stopAction: return .stop
+        case reuseAction: return .reuse
+        case newSessionAction: return .startNew
+        case alwaysReuseAction: return .alwaysReuse
         case replyAction:
             let answer = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return answer.isEmpty ? .open : .answer(answer)

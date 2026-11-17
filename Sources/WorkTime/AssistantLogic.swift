@@ -17,6 +17,8 @@ struct AssistantRole: Equatable, Identifiable, Sendable {
     var permissionMode = "ask"
     var tools: [String] = []
     var folder: String?
+    /// How many of its sessions may work at once; nil leaves it to the setting for all assistants.
+    var concurrency: Int?
     var body = ""
     var problems: [AssistantProblem] = []
 
@@ -65,7 +67,8 @@ enum Assistants {
     static let mcpPrefix = "mcp__worktime__"
     static let storedModelsKey = "agentAssistantModels"
     static let collapsedKey = "agentAssistantsCollapsed"
-    static let fields = ["name", "icon", "description", "model", "permissionMode", "tools", "folder"]
+    static let fields = ["name", "icon", "description", "model", "permissionMode", "tools", "folder", "concurrency"]
+    static let concurrencyLimit = 10
     /// The worktime tools an assistant may call whatever its `tools` say: reading what was tracked and said.
     static let defaultTools = ["activity_context", "recent_meetings", "search_meetings", "get_meeting", "resume_context"]
 
@@ -158,6 +161,10 @@ enum Assistants {
             case "model": role.model = value == "auto" ? "sonnet" : value
             case "permissionMode": role.permissionMode = value
             case "folder": role.folder = value.isEmpty ? nil : value
+            case "concurrency":
+                if let count = Int(value), (1...concurrencyLimit).contains(count) { role.concurrency = count } else {
+                    problem(number, "concurrency must be a whole number from 1 to \(concurrencyLimit).")
+                }
             default: role.tools = items ?? []
             }
         }
@@ -231,6 +238,7 @@ enum Assistants {
                      "model: " + role.model, "permissionMode: " + role.permissionMode,
                      "tools: [" + role.tools.map(quoted).joined(separator: ", ") + "]"]
         if let folder = role.folder { lines.append("folder: " + quoted(folder)) }
+        if let concurrency = role.concurrency { lines.append("concurrency: \(concurrency)") }
         return (lines + ["---", "", role.body]).joined(separator: "\n") + "\n"
     }
 

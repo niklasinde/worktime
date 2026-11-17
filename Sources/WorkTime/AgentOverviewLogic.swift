@@ -32,16 +32,25 @@ struct AgentState: Codable, Equatable {
     /// `assistant` for a role agent under a Main, with the role's name.
     var kind: String?
     var role: String?
+    /// The assistant a ticket session is for, by key; its `role` is the assistant's name.
+    var roleKey: String?
+    /// A prompt waits for a free slot: too many assistant sessions are working.
+    var slotWait: Bool?
 
     var isTopic: Bool { TopicAgents.isKey(key) }
     var isAssistant: Bool { Assistants.isKey(key) }
 
     /// A topic agent as it stands: its loaded model's state, or its saved session.
-    static func topic(_ topic: TopicAgent, loaded: AgentState?, sessionID: String?) -> AgentState {
+    static func topic(_ topic: TopicAgent, loaded: AgentState?, sessionID: String?, roleName: String? = nil) -> AgentState {
         var state = loaded ?? AgentState(key: topic.key, title: topic.name, folder: topic.folder, sessionID: sessionID, status: .idle, loaded: false)
         state.jiraKey = topic.jiraKey
         state.slackURL = topic.slackURL
         state.pullRequests = topic.linked.isEmpty ? nil : topic.linked.map(\.url)
+        if let assistant = topic.assistant {
+            state.roleKey = assistant
+            state.role = roleName ?? Assistants.parse(key: assistant)?.slug
+            state.kind = "ticket_session"
+        }
         return state
     }
 }
@@ -173,6 +182,7 @@ enum AgentOverview {
         let need = need(state)
         var facts = [state.status == .signedOut ? "Signed out of Claude" : need.label]
         if let tool = state.pendingTool { facts.append("asks to run \(AgentLogic.displayName(tool))" + (state.pendingInput.map { ": \($0)" } ?? "")) }
+        if state.slotWait == true { facts.append("waiting for a free slot") }
         if state.queued > 0 { facts.append("\(state.queued) queued") }
         if let updated = state.updatedAt { facts.append("updated \(GitHubLogic.updatedText(updated, now: now))") }
         if !state.loaded { facts.append("saved session, not open") }
@@ -180,7 +190,8 @@ enum AgentOverview {
         if let url = state.prURL { lines.append("  \(url) \u{00B7} agent: \(GitHubLink.agentLink(for: url))") }
         if state.isAssistant { lines.append("  assistant \(state.role ?? state.title) \u{00B7} key \(state.key)") }
         if state.isTopic {
-            let kind = state.pullRequests != nil ? "pull request set" : state.jiraKey == nil ? "topic" : "ticket"
+            let kind = state.roleKey != nil ? "\(state.role ?? "assistant") session for the ticket" : state.pullRequests != nil ? "pull request set"
+                : state.jiraKey == nil ? "topic" : "ticket"
             let links = [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }, state.pullRequests.map { "PRs " + $0.joined(separator: ", ") }]
             lines.append("  \(kind) agent \(state.key)" + links.compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
         }
@@ -330,6 +341,10 @@ enum AgentInbox {
         var created: Date
         /// Several pull requests to work on together as one set agent; `agent` is the first of them.
         var prs: [String]?
+        /// For an assistant: the Jira ticket whose session of it gets the prompt, made when there is none.
+        var ticket: String?
+        /// Start a new session for the ticket even when one exists, without asking.
+        var newSession: Bool?
     }
 
     struct Reply: Codable, Equatable {
@@ -338,6 +353,16 @@ enum AgentInbox {
         var status: Status
         var sessionID: String?
         var message: String
+        /// What was done beyond sending: a session made or reused, the user's choice, a wait for a free slot.
+        var note: String?
+
+        init(id: String, status: Status, sessionID: String? = nil, message: String, note: String? = nil) {
+            self.id = id
+            self.status = status
+            self.sessionID = sessionID
+            self.message = message
+            self.note = note
+        }
     }
 
     enum Decision: Equatable {
@@ -350,9 +375,10 @@ enum AgentInbox {
     static func isRequest(_ name: String) -> Bool { name.hasSuffix(".request.json") }
 
     /// A request for an agent (a pull request url or a topic key) and some text, or why there can be none.
-    static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString, prs: [String]? = nil) -> Result<Request, AgentInboxError> {
+    static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString, prs: [String]? = nil, ticket: String? = nil,
+                        newSession: Bool? = nil) -> Result<Request, AgentInboxError> {
         let request = Request(id: id, agent: agent.trimmingCharacters(in: .whitespaces), text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                              created: now, prs: prs)
+                              created: now, prs: prs, ticket: ticket, newSession: newSession)
         return problem(request, now: now).map { .failure($0) } ?? .success(request)
     }
 
@@ -360,6 +386,11 @@ enum AgentInbox {
         guard ClaudeTranscripts.isSessionID(request.id) else { return AgentInboxError("The request id is not a UUID.") }
         guard GitHubLink.pullRequest(at: request.agent) != nil || TopicAgents.isKey(request.agent) || Assistants.isKey(request.agent) else {
             return AgentInboxError("agent must be a GitHub pull request url, a topic agent key or an assistant key, not \(request.agent).")
+        }
+        if let ticket = request.ticket {
+            guard Assistants.isKey(request.agent) else { return AgentInboxError("ticket only applies when agent is an assistant, not \(request.agent).") }
+            guard JiraLogic.issueKey(ticket) == ticket else { return AgentInboxError("\u{201C}\(ticket)\u{201D} is not a Jira ticket key like PROJ-123.") }
+            if request.prs != nil { return AgentInboxError("ticket and pr_urls cannot be used together.") }
         }
         if let prs = request.prs {
             switch PullRequestSets.linked(prs) {
@@ -408,6 +439,7 @@ enum AgentInbox {
         case .queued: lines = ["Queued for the agent on \(target); it starts when the agent finishes its current prompt."]
         case .rejected: lines = ["Not sent to \(target): \(reply.message)"]
         }
+        if reply.status != .rejected, let note = reply.note { lines.append(note) }
         if reply.status != .rejected {
             lines.append(reply.sessionID.map { "Session: \($0) \u{2014} read the outcome later with agent_session." }
                          ?? "It starts a new session; its id shows in agents_overview once it has begun.")

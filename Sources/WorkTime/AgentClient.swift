@@ -103,7 +103,7 @@ final class AgentModel: ObservableObject {
         didSet {
             guard !loadingDefaults else { return }
             if let routine { RoutineStore.shared.setModel(model, for: routine.key) }
-            else if assistant != nil { saveAssistantModel() } else { Self.defaults.set(model, forKey: AgentLogic.modelKey) }
+            else if assistant != nil || topic?.assistant != nil { saveAssistantModel() } else { Self.defaults.set(model, forKey: AgentLogic.modelKey) }
         }
     }
     /// How this agent's calls are approved, saved per agent; a change reaches a turn already running too.
@@ -111,7 +111,7 @@ final class AgentModel: ObservableObject {
         didSet {
             guard oldValue != permissionMode, !loadingDefaults else { return }
             var modes = Self.defaults.dictionary(forKey: AgentPermissionMode.storageKey) ?? [:]
-            modes[historyKey] = permissionMode == AgentPermissionMode.preferred(defaults: Self.defaults) && assistant == nil && routine == nil ? nil : permissionMode.rawValue
+            modes[historyKey] = permissionMode == AgentPermissionMode.preferred(defaults: Self.defaults) && actingAs == nil && routine == nil ? nil : permissionMode.rawValue
             Self.defaults.set(modes, forKey: AgentPermissionMode.storageKey)
             if busy { client?.send(.mode(permissionMode)) }
         }
@@ -128,7 +128,7 @@ final class AgentModel: ObservableObject {
     }
     /// Whether a new agent starts with Chrome on: the setting, except for assistants and routines.
     private var startsWithChrome: Bool {
-        assistant == nil && routine == nil && Self.defaults.bool(forKey: AgentLogic.chromeDefaultKey)
+        actingAs == nil && routine == nil && Self.defaults.bool(forKey: AgentLogic.chromeDefaultKey)
     }
     /// Why the Chrome tools failed last, usually the extension not being connected; cleared when one works.
     @Published private(set) var chromeProblem: String?
@@ -177,7 +177,15 @@ final class AgentModel: ObservableObject {
     var agentKey: String? { prURL ?? topic?.key ?? assistant?.key ?? routine?.key }
 
     /// The assistant whose instructions, tools and permissions this agent follows: its own, or the one its routine runs as.
-    private var actingAs: AssistantEntry? { assistant ?? routine?.assistant.flatMap(AssistantStore.shared.entry) }
+    private var actingAs: AssistantEntry? {
+        assistant ?? topic?.assistant.flatMap(AssistantStore.shared.entry) ?? routine?.assistant.flatMap(AssistantStore.shared.entry)
+    }
+
+    /// Whether this agent is a session of an assistant for a ticket.
+    var isTicketSession: Bool { topic?.assistant != nil }
+
+    /// A prompt from Main waits for a free slot: too many assistant sessions are working.
+    @Published private(set) var waitingForSlot = false
 
     var historyKey: String { AgentSessions.key(agent: agentKey, isMain: isMain, folder: folder, workspace: workspace) }
 
@@ -393,6 +401,8 @@ final class AgentModel: ObservableObject {
         restoring = nil
         replaceItems([])
         queued = []
+        waitingForSlot = false
+        AssistantSlots.shared.forget(self)
         pending = []
         problem = nil
     }
@@ -522,7 +532,7 @@ final class AgentModel: ObservableObject {
     func open(topic: TopicAgent) {
         guard self.topic?.id != topic.id || (items.isEmpty && !busy) else { return self.topic = topic }
         point(prURL: nil, topic: topic, assistant: nil, routine: nil, folder: topic.folder)
-        draft = sessionID == nil ? TopicAgents.prompt(topic, workspace: promptWorkspace) : ""
+        draft = sessionID == nil && !topic.isTicketSession ? TopicAgents.prompt(topic, workspace: promptWorkspace) : ""
     }
 
     /// Points the agent at an assistant: its folder and the session it had before. A renamed role only updates the entry.
@@ -573,9 +583,9 @@ final class AgentModel: ObservableObject {
         permissionMode = AgentPermissionMode.stored(Self.defaults.dictionary(forKey: AgentPermissionMode.storageKey), key: historyKey,
                                                     fallback: actingAs.map { Assistants.permissionMode($0.role.permissionMode) }
                                                         ?? (routine == nil ? AgentPermissionMode.preferred(defaults: Self.defaults) : .ask))
-        if let assistant {
+        if let acting = assistant ?? topic?.assistant.flatMap(AssistantStore.shared.entry) {
             let saved = (Self.defaults.dictionary(forKey: Assistants.storedModelsKey) as? [String: String])?[historyKey]
-            model = saved.map { AgentLogic.storedModel($0) } ?? Assistants.modelID(assistant.role.model)
+            model = saved.map { AgentLogic.storedModel($0) } ?? Assistants.modelID(acting.role.model)
         } else if let routine {
             model = routine.model.map { AgentLogic.storedModel($0) } ?? actingAs.map { Assistants.modelID($0.role.model) } ?? AgentLogic.defaultModel
         }
@@ -591,6 +601,17 @@ final class AgentModel: ObservableObject {
 
     /// Reads the role's file again before a prompt, so edits apply at once; false, with the problem shown, when it cannot be used.
     private func refreshAssistant() -> Bool {
+        if assistant == nil, let key = topic?.assistant {
+            guard let entry = AssistantStore.shared.entry(key), let role = AssistantStore.shared.role(of: entry) else {
+                problem = "The file of the assistant this session is for is gone."
+                return false
+            }
+            guard role.isUsable else {
+                problem = "Fix the instructions of \(role.name) first: " + (role.problems.first?.text ?? "")
+                return false
+            }
+            return true
+        }
         guard let current = assistant else { return true }
         guard let role = AssistantStore.shared.role(of: current) else {
             problem = "The file of the assistant \(current.role.name) is gone."
@@ -610,6 +631,10 @@ final class AgentModel: ObservableObject {
 
     private var systemPrompt: String? {
         if let assistant { return AssistantStore.shared.systemPrompt(assistant.role, workspace: assistant.workspace, folder: folder) }
+        if let topic, let ticket = topic.jiraKey, let entry = topic.assistant.flatMap(AssistantStore.shared.entry) {
+            return TicketSessions.systemPrompt(base: AssistantStore.shared.systemPrompt(entry.role, workspace: entry.workspace, folder: folder), ticket: ticket,
+                                               name: topic.name)
+        }
         if let routine {
             return Routines.systemPrompt(routine, base: actingAs.map { AssistantStore.shared.systemPrompt($0.role, workspace: $0.workspace, folder: folder) })
         }
@@ -617,7 +642,7 @@ final class AgentModel: ObservableObject {
     }
 
     /// The workspace whose prompt templates this agent follows: its Main's, its assistant's or its routine's.
-    private var promptWorkspace: String? { workspace ?? assistant?.workspace ?? routine?.workspace }
+    private var promptWorkspace: String? { workspace ?? actingAs?.workspace ?? routine?.workspace }
 
     /// The current session of each pull request's and topic's agent, by its key.
     static var savedSessions: [String: String] {
@@ -751,11 +776,30 @@ final class AgentModel: ObservableObject {
         let decision = AgentInbox.decide(busy: busy, waitingForPermission: waitingForPermission, queued: queued.count)
         switch decision {
         case .start:
+            if !AssistantSlots.shared.hasRoom(for: self) {
+                queued.append(AgentInbox.prompt(text))
+                waitingForSlot = true
+                AssistantSlots.shared.wait(self)
+                return .queue
+            }
             if !start(AgentInbox.prompt(text)) { return .reject(problem ?? AgentFolders.missingMessage(folder)) }
         case .queue: queued.append(AgentInbox.prompt(text))
         case .reject: break
         }
         return decision
+    }
+
+    /// The assistant a slot is counted for and how many of its sessions may work at once: sessions of an assistant, not Main, a pull request or a routine.
+    var slotRole: (key: String, limit: Int?)? {
+        guard routine == nil, !isMain, let entry = actingAs else { return nil }
+        return (entry.key, entry.role.concurrency)
+    }
+
+    /// A slot opened for the prompt that waited for it.
+    func startFromSlot() {
+        waitingForSlot = false
+        guard !busy, !queued.isEmpty else { return }
+        _ = start(queued.removeFirst())
     }
 
     /// A report from another agent: started now when this Main is idle, queued while it works or waits for a permission.
@@ -927,6 +971,8 @@ final class AgentModel: ObservableObject {
         client?.terminate()
         client = nil
         busy = false
+        waitingForSlot = false
+        AssistantSlots.shared.forget(self)
         withdrawAttention()
     }
 
@@ -1044,6 +1090,7 @@ final class AgentModel: ObservableObject {
 
     private func finishTurn() {
         busy = false
+        defer { if slotRole != nil { AssistantSlots.shared.changed() } }
         restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
         if let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
         resultSeen = visiblePanes > 0
@@ -1062,6 +1109,7 @@ final class AgentModel: ObservableObject {
         restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
         guard busy else { return }
         busy = false
+        if slotRole != nil { AssistantSlots.shared.changed() }
         withdrawAttention()
         AgentLogic.settleStreaming(in: &items)
         workMap.finish(at: Date())
