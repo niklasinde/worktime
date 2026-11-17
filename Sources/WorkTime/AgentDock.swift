@@ -225,6 +225,7 @@ final class AgentStateWriter: ObservableObject {
             var state = state
             if !state.loaded, let title = titles[state.key] { state.title = AgentOverview.prTitle(state.key, title: title) }
             state.workspace = workspaces.assigned(state)
+            state.spaces = workspaces.spaces(of: state)
             return state
         }
     }
@@ -301,6 +302,14 @@ final class AgentInboxWatcher {
 
     /// Hands the prompt to the agent it names: an assistant, a topic agent or a pull request's.
     static func route(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
+        let reply = await deliver(request)
+        if reply.status != .rejected, let space = request.space, request.ticket == nil, request.pr == nil, !Assistants.isKey(request.agent) {
+            WorkspaceStore.shared.add(space: space, to: PullRequestSets.set(containing: request.agent, in: TopicAgentStore.shared.topics)?.key ?? request.agent)
+        }
+        return reply
+    }
+
+    private static func deliver(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
         if let problem = AgentInbox.problem(request, now: Date()) {
             return AgentInbox.Reply(id: request.id, status: .rejected, message: problem.message)
         }
@@ -317,9 +326,10 @@ final class AgentInboxWatcher {
     }
 
     /// A prompt the user chose to send, from a notification's button: the same path as Main's send_to_agent, which asks first.
-    static func send(_ text: String, to agent: String, pullRequests: [String]? = nil, ticket: String? = nil, pr: String? = nil, origin: String? = nil) async -> AgentInbox.Reply {
+    static func send(_ text: String, to agent: String, pullRequests: [String]? = nil, ticket: String? = nil, pr: String? = nil, origin: String? = nil,
+                     space: String? = nil) async -> AgentInbox.Reply {
         await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date(), prs: pullRequests,
-                                       ticket: ticket, pr: pr, origin: origin))
+                                       ticket: ticket, pr: pr, origin: origin, space: space))
     }
 
     /// Takes the inbox's requests of one kind off the folder, dropping any that cannot be read.

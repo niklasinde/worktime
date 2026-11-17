@@ -2,8 +2,12 @@ import AppKit
 import SwiftUI
 
 extension Workspace {
-    var tint: Color {
-        switch color {
+    var tint: Color { Spaces.tint(color) }
+}
+
+extension Spaces {
+    static func tint(_ name: String) -> Color {
+        switch name {
         case "green": return .green
         case "orange": return .orange
         case "purple": return .purple
@@ -14,6 +18,10 @@ extension Workspace {
         default: return .blue
         }
     }
+}
+
+extension Space {
+    var tint: Color { Spaces.tint(color) }
 }
 
 /// A Main's header: its workspace, and a note when it has instructions of its own, which open MAIN.md.
@@ -80,6 +88,8 @@ private struct WorkspaceEditor: View {
             SettingsRow("Slack", detail: workspace.slack.map { "Reads the \($0) workspace" } ?? "Main leaves Slack out") {
                 Toggle("", isOn: Binding { workspace.slack != nil } set: { on in change { $0.slack = on ? $0.name : nil } }).labelsHidden()
             }
+            Divider().padding(.leading, 14)
+            SpacesEditor(workspace: workspace, store: store)
             Divider().padding(.leading, 14)
             instructionsRow
             Divider().padding(.leading, 14)

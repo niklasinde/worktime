@@ -40,6 +40,8 @@ struct AgentState: Codable, Equatable {
     var sessionPR: String?
     /// A closed session: kept, shown under "Earlier" in its row, and left out of the overview Main reads.
     var archived: Bool?
+    /// The ids of the workspace's spaces the agent is in; nil when none, or when the workspace has no spaces.
+    var spaces: [String]?
 
     var isTopic: Bool { TopicAgents.isKey(key) }
     var isAssistant: Bool { Assistants.isKey(key) }
@@ -177,14 +179,14 @@ enum AgentOverview {
     }
 
     /// The agents as Markdown; `active` leaves out the idle ones and Main itself, for the attention summary.
-    static func markdown(_ file: File, now: Date, active: Bool = false, limit: Int = 30) -> String {
+    static func markdown(_ file: File, now: Date, active: Bool = false, limit: Int = 30, spaces: [Space] = []) -> String {
         let agents = sorted(file.agents).filter { $0.archived != true && (!active || (need($0) != .idle && !Workspaces.isMainKey($0.key))) }
         guard !agents.isEmpty else { return active ? "No agent needs you.\n" : "No agents yet.\n" }
         let header = "\(agents.count) agent\(agents.count == 1 ? "" : "s"), state written \(GitHubLogic.updatedText(file.written, now: now))\n"
-        return header + agents.prefix(limit).map { line($0, now: now) }.joined()
+        return header + agents.prefix(limit).map { line($0, now: now, spaces: spaces) }.joined()
     }
 
-    static func line(_ state: AgentState, now: Date) -> String {
+    static func line(_ state: AgentState, now: Date, spaces: [Space] = []) -> String {
         let need = need(state)
         var facts = [state.status == .signedOut ? "Signed out of Claude" : need.label]
         if let tool = state.pendingTool { facts.append("asks to run \(AgentLogic.displayName(tool))" + (state.pendingInput.map { ": \($0)" } ?? "")) }
@@ -203,6 +205,7 @@ enum AgentOverview {
                          state.pullRequests.map { "PRs " + $0.joined(separator: ", ") }]
             lines.append("  \(kind) \(state.roleKey != nil ? "key" : "agent") \(state.key)" + links.compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
         }
+        if let ids = state.spaces, let names = Spaces.line(ids, in: spaces) { lines.append("  spaces: \(names)") }
         if let folder = state.folder { lines.append("  folder: \(folder)") }
         if let session = state.sessionID { lines.append("  session: \(session)") }
         if let error = state.error { lines.append("  error: \(oneLine(error))") }
@@ -369,6 +372,8 @@ enum AgentInbox {
         var pr: String?
         /// What started this, like `Slack channel message in #review-request`, shown in the session's timeline.
         var origin: String?
+        /// A space id to add to the session the prompt goes to, or to the agent.
+        var space: String?
     }
 
     struct Reply: Codable, Equatable {
@@ -400,9 +405,9 @@ enum AgentInbox {
 
     /// A request for an agent (a pull request url or a topic key) and some text, or why there can be none.
     static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString, prs: [String]? = nil, ticket: String? = nil,
-                        newSession: Bool? = nil, pr: String? = nil, origin: String? = nil) -> Result<Request, AgentInboxError> {
+                        newSession: Bool? = nil, pr: String? = nil, origin: String? = nil, space: String? = nil) -> Result<Request, AgentInboxError> {
         let request = Request(id: id, agent: agent.trimmingCharacters(in: .whitespaces), text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                              created: now, prs: prs, ticket: ticket, newSession: newSession, pr: pr, origin: origin)
+                              created: now, prs: prs, ticket: ticket, newSession: newSession, pr: pr, origin: origin, space: space)
         return problem(request, now: now).map { .failure($0) } ?? .success(request)
     }
 

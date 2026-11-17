@@ -104,6 +104,15 @@ final class RoutineStore: ObservableObject {
         save(routine)
     }
 
+    func setSpaces(_ ids: [String], for key: String) { update(key) { $0.spaces = ids.isEmpty ? nil : ids } }
+
+    /// Takes the space off every routine and automation that has it.
+    func untag(space id: String) {
+        for routine in routines where routine.spaces?.contains(id) == true {
+            setSpaces((routine.spaces ?? []).filter { $0 != id }, for: routine.key)
+        }
+    }
+
     /// Forgets the routine; its agent's sessions stay in Claude Code's own files.
     func delete(_ key: String) {
         guard let routine = routine(key) else { return }

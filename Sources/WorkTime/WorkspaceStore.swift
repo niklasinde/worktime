@@ -39,6 +39,43 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
+    // MARK: Spaces
+
+    func spaces(of workspace: String?) -> [Space] { self.workspace(workspace)?.spaces ?? [] }
+
+    /// The spaces an agent is in, as the app writes them to `agents.json`.
+    func spaces(of state: AgentState) -> [String]? {
+        Spaces.spaces(of: state, in: spaces(of: state.workspace), tags: file.spaceTags) { AssistantStore.shared.entry($0)?.role.spaces ?? [] }
+    }
+
+    func setSpaces(_ ids: [String], for key: String) {
+        guard file.spaceTags[key] != ids else { return }
+        file.spaceTags[key] = ids
+        save()
+    }
+
+    /// Puts each agent in the space as well as in the ones it is in already.
+    func add(space id: String, to keys: [String]) {
+        let states = AgentStateWriter.shared.states()
+        for key in keys {
+            let current = states.first { $0.key == key }?.spaces ?? file.spaceTags[key] ?? []
+            file.spaceTags[key] = Spaces.adding(id, to: current)
+        }
+        save()
+    }
+
+    func add(space id: String, to key: String) { add(space: id, to: [key]) }
+
+    /// Takes the space out of the workspace and off everything tagged with it.
+    func removeSpace(_ id: String, from workspace: String) {
+        guard var updated = self.workspace(workspace) else { return }
+        updated.spaces.removeAll { $0.id == id }
+        update(updated)
+        file.spaceTags = file.spaceTags.mapValues { $0.filter { $0 != id } }
+        RoutineStore.shared.untag(space: id)
+        save()
+    }
+
     func mainPrompt(for id: String) -> String {
         guard let workspace = workspace(id) else { return AgentLogic.mainBasePrompt }
         let prompt = instructions.prompt(for: workspace, others: workspaces.filter { $0.id != workspace.id })

@@ -249,7 +249,7 @@ final class TopicAgentStore: ObservableObject {
             let state = AgentStateWriter.shared.states().first { $0.key == topic.key }
             let ask = TicketAsk(id: request.id, workspace: entry.workspace, assistant: entry.key, assistantName: entry.role.name, ticket: subject.ticket,
                                 pullRequest: subject.pullRequest, existing: TicketSessions.preview(of: topic, state: state), text: request.text, created: now,
-                                deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin)
+                                deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin, space: request.space)
             guard let answer = await TicketAskStore.shared.ask(ask) else {
                 return reject(TicketSessions.timeoutMessage(role: entry.role.name, subject: subject.label, minutes: max(1, seconds / 60)))
             }
@@ -261,7 +261,7 @@ final class TopicAgentStore: ObservableObject {
     /// is gone meanwhile, a new one is made.
     func finish(ask: TicketAsk, answer: TicketSessions.Answer, request: AgentInbox.Request? = nil) async -> AgentInbox.Reply {
         let request = request ?? AgentInbox.Request(id: ask.id, agent: ask.assistant, text: ask.text, created: Date(), ticket: ask.ticket, pr: ask.pullRequest,
-                                                    origin: ask.origin)
+                                                    origin: ask.origin, space: ask.space)
         guard let entry = AssistantStore.shared.entry(ask.assistant), entry.role.isUsable else {
             return AgentInbox.Reply(id: request.id, status: .rejected, message: "The assistant \(ask.assistantName) is gone; nothing was sent.")
         }
@@ -274,7 +274,9 @@ final class TopicAgentStore: ObservableObject {
     }
 
     private func send(_ request: AgentInbox.Request, to topic: TopicAgent, note: String) -> AgentInbox.Reply {
+        if let space = request.space { WorkspaceStore.shared.add(space: space, to: topic.key) }
         var forTopic = request
+        forTopic.space = nil
         forTopic.agent = topic.key
         forTopic.ticket = nil
         forTopic.pr = nil

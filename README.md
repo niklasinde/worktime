@@ -585,6 +585,19 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   notification or card (from the log of GitHub actions). Each one opens its session at that point in the transcript. It is read from the
   sessions' own items and their saved transcripts, which keep their times, and it needs no store; a session is read a changed item at a
   time. **Sessions** lists them, the closed ones under Earlier.
+- **Spaces.** A workspace can have lanes (for example Review, Develop, Verify) that divide the sidebar and the work without splitting its
+  repositories. They are the `spaces` array of a workspace in `workspaces.json` (`id`, `name`, `icon` as an SF Symbol, `color`) and are edited in
+  Settings > Workspace (add, rename, recolour, reorder, remove; removing one only untags). A workspace without spaces behaves as before. An
+  assistant's role file names the spaces it is meant for with `spaces: [review, verify]` in its front matter (unknown ids are kept and warned
+  about in the editor). A session starts in its assistant's spaces; a pull request agent or topic agent starts in none and shows under All.
+  Change any session's spaces from its context menu (**Spaces**, several can be ticked), saved in `workspaces.json` as `spaceTags`. Routines and
+  automations get theirs in their editor. A chip row at the top of the workspace in the sidebar (All and one chip per space, with a count and a dot
+  when something there waits for you) filters the assistants, routines, automations and agents; a ticket row shows in every space any of its
+  sessions is in. The choice is kept per workspace. **Send to** on a session, a ticket row or a notch decision row adds a space and, when another
+  assistant is meant for it, offers "and start <Assistant> on it" with an editable prompt that carries what the last assistant reported; it goes
+  through the same path as `send_to_agent`. `send_to_agent` takes `space` (id or name) to put the session it reaches in a space, and
+  `agents_overview` takes a `space` filter and lists each row's spaces. Main is told: for a handoff pass `agent` and `ticket` (and `space` when the
+  user names a lane); assistants still report with `send_to_main`.
 - **Delegation.** Main hands work to an assistant, a pull request's agent or a topic with `send_to_agent`, which asks in every
   permission mode. The card offers **Always allow Main → Reviewer**, saved as a rule for that workspace's Main and that one agent
   (listed in Settings > Agent as "Main (Work) may message Reviewer"); other agents, other workspaces and unclear names still ask,

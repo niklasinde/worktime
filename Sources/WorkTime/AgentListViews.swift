@@ -7,6 +7,8 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     let agents: [AgentState]
     /// Pull requests' titles by address, for the sessions that name a ticket only there.
     var titles: [String: String] = [:]
+    /// Only the agents in this space, with every agent about the same ticket or pull request as one of them.
+    var space: String?
     let onNew: () -> Void
     @ViewBuilder let row: (AgentState) -> Row
     /// A ticket's sessions gathered under one row.
@@ -17,13 +19,14 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     var body: some View {
         let isCollapsed = AgentListFilter.contains(workspace.id, in: collapsed)
         let projects = Set(workspace.jiraProjects.map { $0.uppercased() })
-        let counts = AgentListFilter.counts(agents)
+        let scoped = Spaces.related(agents, space: space, projects: projects, titles: titles)
+        let counts = AgentListFilter.counts(scoped)
         let filter = AgentListFilter.effective(AgentListFilter(rawValue: chosen) ?? .all, counts: counts)
-        header(isCollapsed: isCollapsed)
+        header(isCollapsed: isCollapsed, count: scoped.filter { $0.archived != true }.count)
         if !isCollapsed {
             let chips = AgentListFilter.chips(counts: counts)
             if !chips.isEmpty { chipRow(chips, counts: counts, selected: filter) }
-            ForEach(TicketGrouping.rows(AgentListFilter.shown(agents, filter: filter), projects: projects, titles: titles)) { entry in
+            ForEach(TicketGrouping.rows(AgentListFilter.shown(scoped, filter: filter), projects: projects, titles: titles)) { entry in
                 switch entry {
                 case .agent(let state): row(state)
                 case .group(let ticket): group(ticket)
@@ -32,13 +35,13 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         }
     }
 
-    private func header(isCollapsed: Bool) -> some View {
+    private func header(isCollapsed: Bool, count: Int) -> some View {
         HStack(spacing: 4) {
             Button { collapsed = AgentListFilter.toggling(workspace.id, in: collapsed) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
                     Text("Agents").font(.caption2.weight(.semibold))
-                    Text("\(agents.filter { $0.archived != true }.count)").font(.caption2).foregroundStyle(.tertiary)
+                    Text("\(count)").font(.caption2).foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())
@@ -59,18 +62,7 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
                 ForEach(chips) { chip in
-                    Button { chosen = chip.rawValue } label: {
-                        HStack(spacing: 3) {
-                            Text(chip.title)
-                            Text("\(counts[chip] ?? 0)").foregroundStyle(.tertiary).monospacedDigit()
-                        }
-                        .font(.caption2)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(chip == selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06)))
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
+                    FilterChip(title: chip.title, count: counts[chip] ?? 0, selected: chip == selected) { chosen = chip.rawValue }
                 }
             }
             .padding(.leading, 26)

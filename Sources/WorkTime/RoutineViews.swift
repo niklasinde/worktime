@@ -6,6 +6,7 @@ struct RoutineSection: View {
     let workspace: Workspace
     @ObservedObject var hub: AgentHub
     var automations = false
+    var space: String?
     @ObservedObject private var store = RoutineStore.shared
     @ObservedObject private var notices = NoticeCenter.shared
     @AppStorage(Routines.collapsedKey) private var collapsedRoutines = ""
@@ -19,7 +20,7 @@ struct RoutineSection: View {
     private var noun: String { automations ? "Automation" : "Routine" }
 
     var body: some View {
-        let routines = store.routines(in: workspace.id).filter { $0.isAutomation == automations }, isCollapsed = collapsedIDs.contains(workspace.id)
+        let routines = Spaces.filter(store.routines(in: workspace.id).filter { $0.isAutomation == automations }, space: space), isCollapsed = collapsedIDs.contains(workspace.id)
         header(count: routines.count, isCollapsed: isCollapsed)
         if !isCollapsed {
             ForEach(routines) { routine in
@@ -201,6 +202,7 @@ struct RoutineEditorSheet: View {
                 Toggle("Run a missed run when WorkTime starts", isOn: $routine.runMissed)
                     .help("When the app was closed or the Mac asleep at the scheduled time, run once on the next start; otherwise that run is skipped")
             }
+            if !workspaceSpaces.isEmpty { field("Spaces") { SpaceToggles(spaces: workspaceSpaces, ids: $routine.spaces) } }
             Toggle("On", isOn: $routine.enabled)
             if let problem { Label(problem, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.red) }
             HStack {
@@ -212,6 +214,8 @@ struct RoutineEditorSheet: View {
         .padding(20)
         .frame(width: 500)
     }
+
+    private var workspaceSpaces: [Space] { WorkspaceStore.shared.spaces(of: routine.workspace) }
 
     private func noun(_ prefix: String) -> String { prefix + (routine.isAutomation ? "Automation" : "Routine") }
 

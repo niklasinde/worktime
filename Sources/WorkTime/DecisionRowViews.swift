@@ -53,17 +53,23 @@ struct DecisionSectionsView: View {
 /// Wraps a decision row: a click anywhere but its buttons opens or closes it, and the row shows when the keyboard is on it.
 struct DecisionRowFrame<Content: View>: View {
     let id: String
+    /// The agent that raised the decision; its spaces show on the row and it can be sent to another.
+    var agent: String?
     var primary: (() -> Void)?
     @ViewBuilder let content: () -> Content
     @ObservedObject private var model = DecisionRowsModel.shared
 
     var body: some View {
-        content()
+        VStack(alignment: .leading, spacing: 3) {
+            content()
+            SpaceDecisionAccessory(agent: agent).padding(.leading, 26)
+        }
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
             .background(RoundedRectangle(cornerRadius: 6).fill(model.focus == id ? Color.white.opacity(0.07) : .clear))
             .contentShape(Rectangle())
             .onTapGesture { model.toggle(id) }
+            .spaceContextMenu(agent: agent)
             .onAppear { model.register(id, primary: primary) }
             .transition(.opacity)
     }
@@ -97,7 +103,7 @@ struct ReviewDecisionRow: View {
 
     var body: some View {
         let info = draft.target.map { ReviewPRInfo(known.knownPullRequest($0)) } ?? ReviewPRInfo()
-        DecisionRowFrame(id: id, primary: primary) {
+        DecisionRowFrame(id: id, agent: notice.source.agent, primary: primary) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.circle.fill").font(.system(size: 14)).foregroundStyle(Color.orange).frame(width: 18)
                 VStack(alignment: .leading, spacing: 4) {

@@ -57,6 +57,7 @@ struct AgentsPage: View {
     @ObservedObject private var topics = TopicAgentStore.shared
     @ObservedObject private var assistants = AssistantStore.shared
     @ObservedObject private var workspaces = WorkspaceStore.shared
+    @ObservedObject private var handoffs = SpaceHandoffCenter.shared
     @AppStorage("agentListHidden") private var listHidden = false
 
     var body: some View {
@@ -85,6 +86,7 @@ struct AgentsPage: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { hub.selectedMain?.loadFiles() }
+        .sheet(item: $handoffs.pending) { handoff in SpaceHandoffSheet(handoff: handoff) { handoffs.pending = nil } }
     }
 }
 
@@ -98,6 +100,8 @@ struct AgentList: View {
     @AppStorage(Workspaces.selectedKey) private var filter = Workspaces.allChoice
     @AppStorage(Workspaces.collapsedKey) private var collapsed = ""
     @AppStorage(Assistants.collapsedKey) private var collapsedAssistants = ""
+    @AppStorage(Spaces.selectedKey) private var chosenSpaces = ""
+    @ObservedObject private var routines = RoutineStore.shared
     @State var creating = false
     @State private var importing = false
     @State private var deleting: TopicAgent?
@@ -113,11 +117,13 @@ struct AgentList: View {
                     ForEach(visibleGroups, id: \.workspace.id) { group in
                         groupHeader(group)
                         if !collapsedIDs.contains(group.workspace.id) {
+                            let space = Spaces.chosen(chosenSpaces, workspace: group.workspace.id, in: group.workspace.spaces)
+                            if !group.workspace.spaces.isEmpty { spaceChips(group, selected: space) }
                             if let main = group.main { rowButton(main, now: now) }
-                            assistantSection(group, now: now)
-                            RoutineSection(workspace: group.workspace, hub: hub)
-                            RoutineSection(workspace: group.workspace, hub: hub, automations: true)
-                            AgentsSection(workspace: group.workspace, agents: group.agents, titles: prTitles, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0) }
+                            assistantSection(group, space: space, now: now)
+                            RoutineSection(workspace: group.workspace, hub: hub, space: space)
+                            RoutineSection(workspace: group.workspace, hub: hub, automations: true, space: space)
+                            AgentsSection(workspace: group.workspace, agents: group.agents, titles: prTitles, space: space, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0, workspace: group.workspace) }
                         }
                     }
                 }
@@ -156,8 +162,9 @@ struct AgentList: View {
     }
 
     /// A ticket's or pull request's sessions under one row.
-    private func ticketGroup(_ ticket: TicketGroup) -> some View {
-        TicketGroupView(group: ticket, titles: prTitles, select: { hub.selected = $0 }, openTimeline: { hub.selected = ticket.id }) { state in
+    private func ticketGroup(_ ticket: TicketGroup, workspace: Workspace) -> some View {
+        TicketGroupView(group: ticket, titles: prTitles, select: { hub.selected = $0 }, openTimeline: { hub.selected = ticket.id },
+                        spaceMenu: { AnyView(SpaceMenus(states: $0.live, spaces: workspace.spaces, subject: $0.subject, workspace: workspace.id)) }) { state in
             Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: hub.selected == state.key) }
                 .buttonStyle(.plain)
                 .contextMenu { menu(state) }
@@ -174,7 +181,7 @@ struct AgentList: View {
 
     /// The workspace's assistants, indented under its Main, with a menu to make one.
     @ViewBuilder
-    private func assistantSection(_ group: Workspaces.Group, now: Date) -> some View {
+    private func assistantSection(_ group: Workspaces.Group, space: String?, now: Date) -> some View {
         let id = group.workspace.id, isCollapsed = collapsedAssistantIDs.contains(id)
         HStack(spacing: 4) {
             Button {
@@ -205,7 +212,7 @@ struct AgentList: View {
         .padding(.trailing, 8)
         .padding(.top, 2)
         if !isCollapsed {
-            ForEach(group.assistants, id: \.key) { state in
+            ForEach(Spaces.filter(group.assistants, space: space), id: \.key) { state in
                 Button { hub.selected = state.key } label: { assistantRow(state, now: now) }
                     .buttonStyle(.plain)
                     .contextMenu { menu(state) }
@@ -219,6 +226,7 @@ struct AgentList: View {
             Circle().fill(Self.color(need)).frame(width: 7, height: 7).help(need.label)
             AssistantIcon(name: assistants.entry(state.key)?.role.icon ?? Assistants.defaultIcon)
             Text(state.title).font(.callout).lineLimit(1)
+            SpaceTags(ids: state.spaces, spaces: workspaces.spaces(of: state.workspace))
             Spacer(minLength: 4)
             if state.error != nil, state.status == .idle {
                 Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(.red).help(state.error ?? "")
@@ -232,6 +240,14 @@ struct AgentList: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 6).fill(hub.selected == state.key ? Color.primary.opacity(0.08) : .clear))
         .contentShape(Rectangle())
+    }
+
+    private func spaceChips(_ group: Workspaces.Group, selected: String?) -> some View {
+        let spaces = group.workspace.spaces, states = group.assistants + group.agents
+        var waiting = Set(spaces.filter { Spaces.needsUser(states, space: $0.id) }.map(\.id))
+        if Spaces.needsUser(states, space: nil) { waiting.insert(Spaces.all) }
+        return SpaceChipRow(spaces: spaces, counts: Spaces.counts(states: states, routines: routines.routines(in: group.workspace.id), spaces: spaces),
+                            waiting: waiting, selected: selected) { chosenSpaces = Spaces.choosing($0, workspace: group.workspace.id, in: chosenSpaces) }
     }
 
     private var visibleGroups: [Workspaces.Group] {
@@ -318,6 +334,8 @@ struct AgentList: View {
             Divider()
             AssistantMenuItems(entry: entry, action: $assistantAction, deleting: $deletingAssistant) { hub.selected = $0 }
         } else if !Workspaces.isMainKey(state.key) {
+            SpaceMenus(states: [state], spaces: workspaces.spaces(of: state.workspace), subject: TicketGrouping.subject(of: state, projects: jiraProjects(of: state), titles: prTitles),
+                       workspace: state.workspace ?? Workspaces.defaultID)
             Menu("Move to Workspace") {
                 ForEach(workspaces.workspaces) { workspace in
                     Toggle(workspace.name, isOn: Binding { workspaces.assigned(state) == workspace.id } set: { _ in workspaces.move(state.key, to: workspace.id) })
@@ -333,6 +351,10 @@ struct AgentList: View {
         }
     }
 
+    private func jiraProjects(of state: AgentState) -> Set<String> {
+        Set((workspaces.workspace(state.workspace)?.jiraProjects ?? []).map { $0.uppercased() })
+    }
+
     private func row(_ state: AgentState, now: Date) -> some View {
         let need = AgentOverview.need(state)
         let isMain = Workspaces.isMainKey(state.key)
@@ -343,6 +365,7 @@ struct AgentList: View {
                     if let topic = topics.topic(state.key) { AgentTopicIcon(kind: topic.kind) }
                     Text(isMain ? "Main" : Self.reference(state)).font(.callout.weight(.medium)).lineLimit(1)
                     Spacer(minLength: 4)
+                    SpaceTags(ids: state.spaces, spaces: workspaces.spaces(of: state.workspace))
                     if let updated = state.updatedAt {
                         Text(GitHubLogic.updatedText(updated, now: now)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }

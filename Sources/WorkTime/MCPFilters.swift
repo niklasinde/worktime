@@ -211,6 +211,8 @@ struct AgentFilter: Equatable {
     var needsMe: Bool?
     var query: String?
     var ticket: String?
+    /// The id of a space.
+    var space: String?
 
     static let kinds = ["main", "pr", "ticket", "ticket_session", "topic", "assistant"]
     static let statuses = ["working", "waiting", "idle", "error", "signed_out"]
@@ -218,6 +220,7 @@ struct AgentFilter: Equatable {
     static let properties: [String: [String: Any]] = [
         "kind": ["type": "string", "enum": kinds, "description": "Only this kind of agent: Main, a pull request's, a Jira ticket's, an assistant's session for a ticket (ticket_session), another topic agent or an assistant."],
         "ticket": ["type": "string", "description": "Only the agents about this Jira ticket: its sessions (of any assistant), its own agent and the pull request agents whose title names it."],
+        "space": ["type": "string", "description": "Only the agents in this space (a lane of the workspace such as Review or Verify), by id or name."],
         "status": ["type": "string", "enum": statuses, "description": "Only agents in this state."],
         "needs_me": ["type": "boolean", "description": "true: only agents waiting for a permission, finished with an unseen result or errored; false: the others."],
         "query": ["type": "string", "description": "Only agents whose title, folder, last prompt or last result contain this."],
@@ -227,7 +230,7 @@ struct AgentFilter: Equatable {
 
     init() {}
 
-    init(_ args: [String: Any], names: [String] = ["kind", "status", "needs_me", "query", "ticket"]) throws {
+    init(_ args: [String: Any], names: [String] = ["kind", "status", "needs_me", "query", "ticket", "space"], spaces: [Space] = []) throws {
         let args = args.filter { names.contains($0.key) }
         kind = try FilterLogic.choice(args, "kind", allowed: Self.kinds)
         status = try FilterLogic.choice(args, "status", allowed: Self.statuses)
@@ -237,9 +240,15 @@ struct AgentFilter: Equatable {
             guard let key = JiraLogic.issueKey(text) else { throw MCPToolError("\u{201C}\(text)\u{201D} is not a Jira ticket key like PROJ-123.") }
             ticket = key
         }
+        if let text = FilterLogic.text(args, "space") {
+            switch Spaces.resolve(text, in: spaces) {
+            case .success(let found): space = found.id
+            case .failure(let error): throw MCPToolError(error.message)
+            }
+        }
     }
 
-    var applied: [String] { FilterLogic.applied(["kind": kind, "status": status, "needs_me": needsMe, "query": query, "ticket": ticket]) }
+    var applied: [String] { FilterLogic.applied(["kind": kind, "status": status, "needs_me": needsMe, "query": query, "ticket": ticket, "space": space]) }
 
     static func kind(of state: AgentState) -> String {
         if Workspaces.isMainKey(state.key) { return "main" }
@@ -258,6 +267,7 @@ struct AgentFilter: Equatable {
         state.archived != true && (kind.map { Self.kind(of: state) == $0 } ?? true) && (status.map { state.status.rawValue == $0 } ?? true)
             && (needsMe.map { $0 == (AgentOverview.need(state) <= .error) } ?? true)
             && (ticket.map { Self.about(state, ticket: $0) } ?? true)
+            && (space.map { Spaces.contains(state, space: $0) } ?? true)
             && (query.map { text in [state.title, state.folder, state.lastPrompt, state.lastResult].contains { FilterLogic.matches($0, text) } } ?? true)
     }
 }

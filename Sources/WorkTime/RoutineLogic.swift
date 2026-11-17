@@ -96,6 +96,8 @@ struct Routine: Codable, Equatable, Identifiable, Sendable {
     /// The script that does part of the run without the model, and when the runs were last looked at for one.
     var determinism: DeterministicPlan?
     var analyzed: Date?
+    /// The ids of the workspace's spaces it belongs to; it shows under All only when there are none.
+    var spaces: [String]?
 
     var key: String { Routines.prefix + id }
     var isAutomation: Bool { trigger != nil }

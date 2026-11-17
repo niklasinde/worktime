@@ -13,6 +13,8 @@ struct Workspace: Codable, Equatable, Identifiable, Sendable {
     var slack: String?
     /// Files whose contents follow MAIN.md in the Main's system prompt.
     var extraFiles: [String]
+    /// The lanes that divide the workspace's sidebar and work; none leaves it as it is.
+    var spaces: [Space] = []
 
     var mainKey: String { Workspaces.mainKey(id) }
 
@@ -21,11 +23,54 @@ struct Workspace: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+extension Workspace {
+    enum CodingKeys: String, CodingKey { case id, name, symbol, color, roots, githubOwners, jiraProjects, slack, extraFiles, spaces }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try values.decode(String.self, forKey: .id), name: try values.decode(String.self, forKey: .name),
+                  symbol: try values.decode(String.self, forKey: .symbol), color: try values.decode(String.self, forKey: .color),
+                  roots: try values.decode([String].self, forKey: .roots), githubOwners: try values.decode([String].self, forKey: .githubOwners),
+                  jiraProjects: try values.decode([String].self, forKey: .jiraProjects), slack: try values.decodeIfPresent(String.self, forKey: .slack),
+                  extraFiles: try values.decode([String].self, forKey: .extraFiles),
+                  spaces: try values.decodeIfPresent([Space].self, forKey: .spaces) ?? [])
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(name, forKey: .name)
+        try values.encode(symbol, forKey: .symbol)
+        try values.encode(color, forKey: .color)
+        try values.encode(roots, forKey: .roots)
+        try values.encode(githubOwners, forKey: .githubOwners)
+        try values.encode(jiraProjects, forKey: .jiraProjects)
+        try values.encodeIfPresent(slack, forKey: .slack)
+        try values.encode(extraFiles, forKey: .extraFiles)
+        if !spaces.isEmpty { try values.encode(spaces, forKey: .spaces) }
+    }
+}
+
 /// What the app saves in `workspaces.json` and the `--mcp` process reads.
 struct WorkspaceFile: Codable, Equatable, Sendable {
     var workspaces: [Workspace]
     /// An agent's key (a pull request url or topic key) to the workspace the user moved it to.
     var overrides: [String: String] = [:]
+    /// A session's key to the space ids the user gave it, which replace what its assistant's spaces would give it.
+    var spaceTags: [String: [String]] = [:]
+
+    init(workspaces: [Workspace], overrides: [String: String] = [:], spaceTags: [String: [String]] = [:]) {
+        self.workspaces = workspaces
+        self.overrides = overrides
+        self.spaceTags = spaceTags
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        workspaces = try values.decode([Workspace].self, forKey: .workspaces)
+        overrides = try values.decodeIfPresent([String: String].self, forKey: .overrides) ?? [:]
+        spaceTags = try values.decodeIfPresent([String: [String]].self, forKey: .spaceTags) ?? [:]
+    }
 }
 
 enum WorkspaceError: Error, Equatable {

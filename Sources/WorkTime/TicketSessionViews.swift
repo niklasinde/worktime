@@ -37,6 +37,7 @@ struct TicketGroupView<Member: View>: View {
     var titles: [String: String] = [:]
     let select: (String) -> Void
     let openTimeline: () -> Void
+    var spaceMenu: ((TicketGroup) -> AnyView)?
     @ViewBuilder let member: (AgentState) -> Member
     @AppStorage("agentTicketGroupsCollapsed") private var collapsed = ""
     @AppStorage("agentTicketGroupsEarlier") private var earlierOpen = ""
@@ -115,6 +116,7 @@ struct TicketGroupView<Member: View>: View {
                 Button("Open \(ticket) in Jira") { NSWorkspace.shared.open(url) }
             }
             if let url = group.subject.pullRequest.flatMap(URL.init(string:)) { Button("Open in Browser") { NSWorkspace.shared.open(url) } }
+            if let spaceMenu { spaceMenu(group) }
         }
         .help(isCollapsed ? "Show the sessions for \(group.subject.label)" : "Hide the sessions for \(group.subject.label)")
     }

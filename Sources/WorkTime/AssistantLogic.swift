@@ -16,6 +16,8 @@ struct AssistantRole: Equatable, Identifiable, Sendable {
     var model = "sonnet"
     var permissionMode = "ask"
     var tools: [String] = []
+    /// The ids of the workspace's spaces this assistant is meant for; its sessions start in them.
+    var spaces: [String] = []
     var folder: String?
     /// How many of its sessions may work at once; nil leaves it to the setting for all assistants.
     var concurrency: Int?
@@ -67,7 +69,7 @@ enum Assistants {
     static let mcpPrefix = "mcp__worktime__"
     static let storedModelsKey = "agentAssistantModels"
     static let collapsedKey = "agentAssistantsCollapsed"
-    static let fields = ["name", "icon", "description", "model", "permissionMode", "tools", "folder", "concurrency"]
+    static let fields = ["name", "icon", "description", "model", "permissionMode", "tools", "spaces", "folder", "concurrency"]
     static let concurrencyLimit = 10
     /// The worktime tools an assistant may call whatever its `tools` say: reading what was tracked and said.
     static let defaultTools = ["activity_context", "recent_meetings", "search_meetings", "get_meeting", "resume_context"]
@@ -140,7 +142,7 @@ enum Assistants {
             }
             given[key] = number
             var items: [String]?
-            if key == "tools" {
+            if key == "tools" || key == "spaces" {
                 if value.isEmpty {
                     var block: [String] = []
                     while index < close, let item = listItem(lines[index]) {
@@ -165,6 +167,7 @@ enum Assistants {
                 if let count = Int(value), (1...concurrencyLimit).contains(count) { role.concurrency = count } else {
                     problem(number, "concurrency must be a whole number from 1 to \(concurrencyLimit).")
                 }
+            case "spaces": role.spaces = (items ?? []).reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
             default: role.tools = items ?? []
             }
         }
@@ -237,6 +240,7 @@ enum Assistants {
         var lines = ["---", "name: " + quoted(role.name), "icon: " + quoted(role.icon), "description: " + quoted(role.summary),
                      "model: " + role.model, "permissionMode: " + role.permissionMode,
                      "tools: [" + role.tools.map(quoted).joined(separator: ", ") + "]"]
+        if !role.spaces.isEmpty { lines.append("spaces: [" + role.spaces.map(quoted).joined(separator: ", ") + "]") }
         if let folder = role.folder { lines.append("folder: " + quoted(folder)) }
         if let concurrency = role.concurrency { lines.append("concurrency: \(concurrency)") }
         return (lines + ["---", "", role.body]).joined(separator: "\n") + "\n"

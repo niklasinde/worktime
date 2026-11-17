@@ -253,7 +253,9 @@ enum TicketSessions {
         or linked Jira), pass pr_url with the assistant instead and it gets a session for that pull request the same way. Each session may report \
         back with send_to_main; collect the one-line outcomes into one table (ticket or pull request, outcome, link) for the user. For verify, \
         review or develop requests always use agent plus ticket, never pr_url alone (that talks to the pull request's own agent); if a send is \
-        refused, read the error and retry with the form it suggests instead of asking the user.
+        refused, read the error and retry with the form it suggests instead of asking the user. When the workspace has spaces (lanes such as \
+        Review, Develop or Verify) and the user names a lane for a handoff, also pass space: the session is put in that space too, and \
+        agents_overview with space shows what is in it.
         """
 }
 
@@ -296,6 +298,8 @@ struct TicketAsk: Codable, Equatable, Identifiable {
     var deadline: Date
     /// What started it, shown in the session's timeline.
     var origin: String?
+    /// A space id to add to the session the prompt ends up in.
+    var space: String?
 
     var subject: SessionSubject { ticket.map(SessionSubject.ticket) ?? pullRequest.map(SessionSubject.pullRequest) ?? .ticket("") }
 

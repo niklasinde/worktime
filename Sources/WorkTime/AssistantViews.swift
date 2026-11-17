@@ -203,6 +203,7 @@ struct AssistantEditorSheet: View {
             Divider()
             if previewing { preview(role) } else { editor }
             if !role.problems.isEmpty { problems(role) }
+            warnings(role)
             Divider()
             footer
         }
@@ -271,9 +272,25 @@ struct AssistantEditorSheet: View {
 
     private func facts(_ role: AssistantRole) -> String {
         let model = AgentLogic.models.first { $0.id == Assistants.modelID(role.model) }?.name ?? role.model
-        return ["Model \(model)", "Permissions \(Assistants.permissionMode(role.permissionMode).title)",
+        return (["Model \(model)", "Permissions \(Assistants.permissionMode(role.permissionMode).title)",
                 "Tools " + (role.tools.isEmpty ? "default" : role.tools.joined(separator: ", ")),
-                "Folder " + (role.folder ?? "workspace")].joined(separator: " \u{00B7} ")
+                "Folder " + (role.folder ?? "workspace")] + (Spaces.line(role.spaces, in: WorkspaceStore.shared.spaces(of: entry.workspace)).map { ["Spaces " + $0] } ?? [])).joined(separator: " \u{00B7} ")
+    }
+
+    @ViewBuilder
+    private func warnings(_ role: AssistantRole) -> some View {
+        let found = Spaces.warnings(for: role, in: WorkspaceStore.shared.spaces(of: entry.workspace))
+        if !found.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(found.enumerated()), id: \.offset) { _, warning in
+                    Label(warning.text, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.06))
+        }
     }
 
     private func problems(_ role: AssistantRole) -> some View {

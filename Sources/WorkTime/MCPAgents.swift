@@ -65,6 +65,18 @@ extension MCPServer {
                 ? Workspaces.assign(Workspaces.prSubject(target.key, override: saved.overrides[target.key]), in: saved.workspaces) : nil
         }
 
+        var allSpaces: [Space] { workspaces.file().workspaces.flatMap(\.spaces) }
+
+        /// The id of the space `space` names among the spaces of the target's workspace, nil when the call names none.
+        func space(_ args: [String: Any], target: AgentTarget, agents: [AgentState]) throws -> String? {
+            guard let text = FilterLogic.text(args, "space") else { return nil }
+            let spaces = Workspaces.workspace(workspace(of: target, in: agents), in: workspaces.file().workspaces)?.spaces ?? []
+            switch Spaces.resolve(text, in: spaces) {
+            case .success(let found): return found.id
+            case .failure(let error): throw MCPToolError(error.message)
+            }
+        }
+
         func checkDelegation(_ target: AgentTarget, args: [String: Any], agents: [AgentState]) throws {
             let scope = try workspaces.scope(args)
             let all = workspaces.file().workspaces
@@ -118,10 +130,11 @@ extension MCPServer {
                         + "sending work for it.",
                     properties: ["active_only": ["type": "boolean", "description": "Leave out idle agents. False when left out."],
                                  "workspace": workspaceProperty].merging(AgentFilter.properties) { $1 }) { args in
-                let filter = try AgentFilter(args)
+                let filter = try AgentFilter(args, spaces: sources.allSpaces)
                 var file = try scoped(args).file
                 file.agents = file.agents.filter(filter.matches)
-                return FilterLogic.header(filter.applied) + AgentOverview.markdown(file, now: now(), active: args["active_only"] as? Bool ?? false)
+                return FilterLogic.header(filter.applied)
+                    + AgentOverview.markdown(file, now: now(), active: args["active_only"] as? Bool ?? false, spaces: sources.allSpaces)
             },
             MCPTool(name: "agent_session",
                     description: "A compact transcript of one agent's Claude Code session: the user's prompts, the assistant's replies, "
@@ -178,7 +191,7 @@ extension MCPServer {
                     sections.append("## Agents\n" + ((try? scoped(args).file).map { file in
                         var file = file
                         file.agents = file.agents.filter(filter.matches)
-                        return AgentOverview.markdown(file, now: now(), active: true, limit: 10)
+                        return AgentOverview.markdown(file, now: now(), active: true, limit: 10, spaces: sources.allSpaces)
                     } ?? "WorkTime has not written its agents yet.\n"))
                 }
                 if wanted("notifications"), let notices = noticeAttention(sources.notices) { sections.append("## Notifications from agents\n" + notices) }
@@ -216,6 +229,8 @@ extension MCPServer {
                                  "new_session": ["type": "boolean", "description": "With ticket: start a new session even when the assistant has one for the "
                                      + "ticket, without asking the user. False when left out."],
                                  "workspace": workspaceProperty,
+                                 "space": ["type": "string", "description": "A space of the workspace (a lane such as Review or Verify), by id or name, when the user names one "
+                                     + "for a handoff: the session the prompt goes to is put in it as well. With an assistant it needs ticket or pr_url."],
                                  "text": ["type": "string", "maxLength": AgentInbox.textLimit, "description": "The prompt for that agent."]],
                     required: ["text"], readOnly: false) { args in
                 let urls = (args["pr_urls"] as? [Any])?.compactMap { $0 as? String } ?? []
@@ -230,7 +245,8 @@ extension MCPServer {
                         try sources.checkDelegation(AgentTarget(key: pr.url, title: pr.label), args: args, agents: sources.agents())
                     }
                     let title = "\(prs.count) pull requests (\(PullRequestSets.summary(prs)))"
-                    switch AgentInbox.request(agent: prs[0].url, text: args["text"] as? String ?? "", now: now(), prs: prs.map(\.url)) {
+                    let space = try sources.space(args, target: AgentTarget(key: prs[0].url, title: title), agents: sources.agents())
+                    switch AgentInbox.request(agent: prs[0].url, text: args["text"] as? String ?? "", now: now(), prs: prs.map(\.url), space: space) {
                     case .failure(let error): throw MCPToolError(error.message)
                     case .success(let made):
                         let reply = try deliver(made, inbox: sources.inbox, timeout: sources.replyTimeout)
@@ -256,9 +272,13 @@ extension MCPServer {
                     case .failure(let error): throw MCPToolError(error.message)
                     }
                 }
+                let space = try sources.space(args, target: target, agents: sources.agents())
+                if space != nil, Assistants.isKey(target.key), ticket == nil, pr == nil {
+                    throw MCPToolError("space tags a session: with an assistant as agent, give ticket or pr_url too.")
+                }
                 let request: AgentInbox.Request
                 switch AgentInbox.request(agent: target.key, text: args["text"] as? String ?? "", now: now(), ticket: ticket,
-                                          newSession: ticket == nil && pr == nil ? nil : args["new_session"] as? Bool, pr: pr) {
+                                          newSession: ticket == nil && pr == nil ? nil : args["new_session"] as? Bool, pr: pr, space: space) {
                 case .success(let made): request = made
                 case .failure(let error): throw MCPToolError(error.message)
                 }

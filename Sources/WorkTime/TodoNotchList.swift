@@ -393,7 +393,7 @@ private struct NoticeRow: View {
                 ReviewSetTable(notice: notice, drafts: reviews, onOpen: onOpen, dismiss: remove).padding(.vertical, 6).padding(.horizontal, 8)
             }
         } else if notice.ask != nil, open != nil {
-            DecisionRowFrame(id: id, primary: { answer?(true) }) { content }
+            DecisionRowFrame(id: id, agent: notice.source.agent, primary: { answer?(true) }) { content }
         } else {
             content
                 .padding(.vertical, 6)
@@ -455,7 +455,7 @@ private struct ApprovalRow: View {
     }
 
     var body: some View {
-        DecisionRowFrame(id: id, primary: { answer(primaryAction) }) {
+        DecisionRowFrame(id: id, agent: approval.agent, primary: { answer(primaryAction) }) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "hand.raised.fill").font(.system(size: 14)).foregroundStyle(Color.orange).frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {

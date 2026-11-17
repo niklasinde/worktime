@@ -110,6 +110,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AgentTopicLogic.swift \
     Sources/WorkTime/AgentSetLogic.swift \
     Sources/WorkTime/TicketSessionLogic.swift \
+    Sources/WorkTime/SpaceLogic.swift \
     Sources/WorkTime/TimelineLogic.swift \
     Sources/WorkTime/SessionLinksLogic.swift \
     Sources/WorkTime/AgentListLogic.swift \
@@ -242,6 +243,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/RoleToolTests.swift \
     Tests/WorkTimeTests/UsageTests.swift \
     Tests/WorkTimeTests/AgentListTests.swift \
+    Tests/WorkTimeTests/SpaceTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"
