@@ -235,7 +235,7 @@ enum Routines {
     static func systemPrompt(_ routine: Routine, base: String?) -> String {
         let note = "This is the \(routine.isAutomation ? "automation" : "scheduled routine") \u{201C}\(routine.name)\u{201D}, running on its own with nobody at the keyboard. "
             + "Do not ask questions or wait for an answer. A call that needs approval is refused, so work with what you are allowed to do and say what you "
-            + "could not. Do not write worktime-action or worktime-review blocks: nobody is there to click them. "
+            + "could not. A refused call stays refused: do not retry it or look for a way around it. Do not write worktime-action or worktime-review blocks: nobody is there to click them. "
             + "Finish with a short summary of the result: its first lines are shown in a notification."
         return [base, note, routine.isAutomation ? Automations.systemNote(routine) : nil].compactMap { $0 }.joined(separator: "\n\n")
     }

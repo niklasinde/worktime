@@ -93,6 +93,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/DecisionLogic.swift \
     Sources/WorkTime/AgentSessionLogic.swift \
     Sources/WorkTime/AgentToolGroupLogic.swift \
+    Sources/WorkTime/AgentCommandLogic.swift \
     Sources/WorkTime/AgentImageLogic.swift \
     Sources/WorkTime/AgentPasteboard.swift \
     Sources/WorkTime/AgentWorkMapLogic.swift \
@@ -211,6 +212,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/AgentSetTests.swift \
     Tests/WorkTimeTests/AgentActionTests.swift \
     Tests/WorkTimeTests/ReviewDraftTests.swift \
+    Tests/WorkTimeTests/AgentTranscriptTests.swift \
     Tests/WorkTimeTests/QuickChatTests.swift \
     Tests/WorkTimeTests/MainWindowTests.swift \
     Tests/WorkTimeTests/SessionLinksTests.swift \

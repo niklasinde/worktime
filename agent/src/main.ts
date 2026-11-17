@@ -80,12 +80,12 @@ async function decide(tool: string, input: Record<string, unknown>, options: Pro
   return preToolDecision(tool, input, options.cwd, rules, mode, options.allowedMcpTools, delegated, sessionAllowed);
 }
 
-function ask(tool: string, input: Record<string, unknown>, cwd: string): Promise<PermissionResult> {
+function ask(tool: string, input: Record<string, unknown>, cwd: string, toolUseId?: string): Promise<PermissionResult> {
   return new Promise((resolve) => {
     const id = String(++nextPermission);
     pending.set(id, resolve);
     sessionKeys.set(id, isSessionAllowable(tool) ? sessionKey(tool, input) : undefined);
-    send({ type: "permission_request", id, tool, input, offer: suggestRules(tool, input, cwd) });
+    send({ type: "permission_request", id, toolUseId, tool, input, offer: suggestRules(tool, input, cwd) });
   });
 }
 
@@ -107,7 +107,7 @@ function preToolUse(options: PromptOptions): HookCallback {
     if (decision.kind === "deny") {
       return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: decision.reason } };
     }
-    const result = decision.kind === "allow" ? allowed(decision, hook.tool_use_id) : await ask(hook.tool_name, input, cwd);
+    const result = decision.kind === "allow" ? allowed(decision, hook.tool_use_id) : await ask(hook.tool_name, input, cwd, hook.tool_use_id);
     if (result.behavior === "allow") hookAllowed.add(hook.tool_use_id);
     return {
       hookSpecificOutput: {
@@ -221,7 +221,7 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
         if (hookAllowed.delete(toolUseID)) return { behavior: "allow" };
         const decision = await decide(tool, toolInput, input);
         if (decision.kind === "deny") return { behavior: "deny", message: decision.reason };
-        return decision.kind === "allow" ? allowed(decision, toolUseID) : ask(tool, toolInput, input.cwd);
+        return decision.kind === "allow" ? allowed(decision, toolUseID) : ask(tool, toolInput, input.cwd, toolUseID);
       },
     },
   });

@@ -9,7 +9,7 @@ enum AgentEvent: Equatable {
     case textDelta(String)
     case toolUse(id: String, tool: String, summary: String, detail: String)
     case toolResult(id: String, content: String, isError: Bool, auto: Bool, rule: String? = nil)
-    case permissionRequest(id: String, tool: String, summary: String, detail: String, offer: [AgentRule] = [])
+    case permissionRequest(id: String, tool: String, summary: String, detail: String, offer: [AgentRule] = [], toolUse: String? = nil)
     case result(sessionID: String?, isError: Bool, text: String, turns: Int?, model: String?, mode: AgentPermissionMode? = nil)
     case error(String)
     case signIn
@@ -44,7 +44,8 @@ enum AgentEvent: Equatable {
         case "permission_request":
             return .permissionRequest(id: string("id"), tool: string("tool"), summary: AgentLogic.summary(tool: string("tool"), input: input, cwd: cwd),
                                       detail: AgentLogic.detail(tool: string("tool"), input: input),
-                                      offer: (object["offer"] as? [Any] ?? []).compactMap(AgentRule.init))
+                                      offer: (object["offer"] as? [Any] ?? []).compactMap(AgentRule.init),
+                                      toolUse: (object["toolUseId"] as? String).flatMap { $0.isEmpty ? nil : $0 })
         case "result":
             return .result(sessionID: object["sessionId"] as? String, isError: object["isError"] as? Bool ?? false, text: string("text"),
                            turns: object["turns"] as? Int, model: object["model"] as? String,
@@ -226,6 +227,12 @@ struct AgentItem: Identifiable, Equatable {
     var images: [String] = []
     /// A text still being generated: more of it can arrive, and the complete text replaces it.
     var streaming = false
+    /// The sidecar's id of the tool call a tool row or permission prompt is about, so the two show as one.
+    var call: String?
+    /// For a tool row: how the user answered its permission prompt, nil when it was never asked.
+    var decision: Bool?
+    /// For a tool row: how many identical calls it stands for.
+    var repeats = 1
 }
 
 enum AgentLogic {
@@ -270,14 +277,14 @@ enum AgentLogic {
                 items.append(AgentItem(id: "text-\(items.count)", kind: .text(text)))
             }
         case .toolUse(let id, let tool, let summary, let detail):
-            items.append(AgentItem(id: "tool-\(id)", kind: .tool(name: tool, summary: summary, detail: detail, result: nil, isError: false, auto: false)))
+            items.append(AgentItem(id: "tool-\(id)", kind: .tool(name: tool, summary: summary, detail: detail, result: nil, isError: false, auto: false), call: id))
         case .toolResult(let id, let content, let isError, let auto, let rule):
             guard let index = items.firstIndex(where: { $0.id == "tool-\(id)" }),
                   case .tool(let name, let summary, let detail, _, _, _, _) = items[index].kind else { return nil }
             items[index].kind = .tool(name: name, summary: summary, detail: detail, result: content, isError: isError, auto: auto, rule: rule)
-        case .permissionRequest(let id, let tool, let summary, let detail, let offer):
+        case .permissionRequest(let id, let tool, let summary, let detail, let offer, let toolUse):
             items.append(AgentItem(id: "permission-\(id)-\(items.count)",
-                                   kind: .permission(tool: tool, summary: summary, detail: detail, offer: offer, allowed: nil)))
+                                   kind: .permission(tool: tool, summary: summary, detail: detail, offer: offer, allowed: nil), call: toolUse))
         case .result(let sessionID, let isError, let text, let turns, let model, let mode):
             settleStreaming(in: &items)
             if isError, needsSignIn(text) {
@@ -362,7 +369,7 @@ enum AgentLogic {
         let value = { (key: String) in input[key] as? String }
         let text: String
         switch tool {
-        case "Bash": text = value("command").map(firstLine) ?? ""
+        case "Bash": text = value("command").map { AgentCommands.summary($0) } ?? ""
         case "Read", "Edit", "Write", "NotebookEdit": text = value("file_path").map { relative($0, to: cwd) } ?? ""
         case "Grep": text = [value("pattern"), value("path").map { "in " + relative($0, to: cwd) }].compactMap { $0 }.joined(separator: " ")
         case "Glob": text = value("pattern") ?? ""
@@ -427,7 +434,7 @@ enum AgentLogic {
         return path.hasPrefix(base) ? String(path.dropFirst(base.count)) : path
     }
 
-    private static func firstLine(_ text: String) -> String {
+    static func firstLine(_ text: String) -> String {
         let lines = text.split(whereSeparator: \.isNewline)
         guard let first = lines.first else { return "" }
         return lines.count > 1 ? first + " \u{2026}" : String(first)

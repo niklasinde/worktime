@@ -851,16 +851,16 @@ final class AgentModel: ObservableObject {
         }
         if let object { workMap.receive(object, cwd: folder, at: Date()) }
         guard var event = AgentEvent.decode(line, cwd: folder) else { return }
-        if case .permissionRequest(let id, let tool, let summary, let detail, _) = event, isMain, let workspace,
+        if case .permissionRequest(let id, let tool, let summary, let detail, _, let toolUse) = event, isMain, let workspace,
            let rule = AgentDelegation.rule(tool: tool, input: object?["input"] as? [String: Any] ?? [:], workspace: workspace) {
-            event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [rule])
+            event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [rule], toolUse: toolUse)
         }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
         if case .sessionAllowed(let keys) = event { return sessionAllowed = keys }
         if case .delivered(let id) = event { return AgentPending.deliver(id, queue: &pending, items: &items) }
         if case .cancelled(let id) = event { return restore(AgentPending.take([id], from: &pending)) }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
-        if case .permissionRequest(let id, let tool, let summary, _, _) = event { announce(permission: id, tool: tool, summary: summary) }
+        if case .permissionRequest(let id, let tool, let summary, _, _, _) = event { announce(permission: id, tool: tool, summary: summary) }
         if routine != nil, case .permissionRequest = event, let asked = items.last { answer(asked, allow: false) }
         if case .idle = event { finishTurn() }
     }

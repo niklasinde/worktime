@@ -127,6 +127,7 @@ private struct QuickChatContent: View {
                         switch block {
                         case .item(let item): row(item)
                         case .tools(_, let items, let label): AgentToolGroup(label: label, items: items, row: row)
+                        case .refused(_, let items, let label): AgentToolGroup(label: label, items: items, row: row, icon: "xmark.circle")
                         }
                     }
                     if model.busy {

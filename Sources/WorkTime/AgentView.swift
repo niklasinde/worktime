@@ -684,10 +684,11 @@ struct AgentPanel: View {
                                 .help(AgentLogic.catchUpPrompt)
                         }
                     }
-                    ForEach(AgentToolGroups.blocks(model.items)) { block in
+                    ForEach(AgentToolGroups.blocks(model.items, unattended: model.routine != nil)) { block in
                         switch block {
                         case .item(let item): row(item)
                         case .tools(_, let items, let label): AgentToolGroup(label: label, items: items, row: row)
+                        case .refused(_, let items, let label): AgentToolGroup(label: label, items: items, row: row, icon: "xmark.circle")
                         }
                     }
                     if model.busy {
@@ -852,7 +853,8 @@ struct AgentItemRow: View {
             AgentReply(text: text) { AgentLogic.linkifiedCodeReferences($0, cwd: folder) { FileManager.default.fileExists(atPath: $0) } }
                 .transcriptPullRequests(in: text)
         case .tool(let name, let summary, let detail, let result, let isError, let auto, let rule):
-            AgentToolRow(name: name, summary: summary, detail: detail, result: result, isError: isError, auto: auto, rule: rule)
+            AgentToolRow(name: name, summary: summary, detail: detail, result: result, isError: isError, auto: auto, rule: rule,
+                         decision: item.decision, repeats: item.repeats)
         case .permission(let tool, let summary, let detail, let offer, let allowed):
             AgentPermissionRow(tool: tool, summary: summary, detail: detail, offer: offer, allowed: allowed, answer: answer)
         case .status(let text):
@@ -885,6 +887,7 @@ struct AgentToolGroup: View {
     let label: String
     let items: [AgentItem]
     let row: (AgentItem) -> AgentItemRow
+    var icon = "checkmark.circle"
     @State private var expanded = false
 
     var body: some View {
@@ -892,7 +895,7 @@ struct AgentToolGroup: View {
             Button { expanded.toggle() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption2).frame(width: 10)
-                    Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+                    Image(systemName: icon).foregroundStyle(.secondary)
                     Text(label).foregroundStyle(.secondary)
                 }
                 .font(.callout)
@@ -914,6 +917,9 @@ private struct AgentToolRow: View {
     let isError: Bool
     let auto: Bool
     let rule: String?
+    /// How the user answered the permission prompt, nil when it was never asked.
+    var decision: Bool?
+    var repeats = 1
     @State private var expanded = false
 
     var body: some View {
@@ -925,6 +931,9 @@ private struct AgentToolRow: View {
                         .foregroundStyle(isError ? Color.red : .secondary)
                     Text(AgentLogic.displayName(name)).fontWeight(.medium)
                     Text(summary).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    if let decision {
+                        chip(decision ? "Allowed" : repeats > 1 ? "Denied \u{00D7}\(repeats)" : "Denied")
+                    }
                     if auto {
                         Text(rule == nil ? "auto" : "auto \u{00B7} rule")
                             .font(.caption2)
@@ -940,9 +949,18 @@ private struct AgentToolRow: View {
             }
             .buttonStyle(.plain)
             if expanded {
-                AgentCode(text: [detail, result].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n"))
+                AgentCode(text: [detail, result].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n"), collapsedLines: AgentCode.previewLines)
             }
         }
+    }
+
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.primary.opacity(0.08)))
     }
 }
 
@@ -958,7 +976,7 @@ private struct AgentPermissionRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Allow \(AgentLogic.displayName(tool))?", systemImage: "hand.raised").font(.callout.weight(.medium))
             if tool == "Bash" {
-                AgentCode(text: detail, font: .callout, maxHeight: AgentCode.lines(10, font: .callout))
+                AgentCode(text: detail, font: .callout, maxHeight: AgentCode.lines(10, font: .callout), collapsedLines: AgentCode.previewLines)
             } else {
                 if !summary.isEmpty {
                     Text(summary).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
@@ -1266,9 +1284,17 @@ private struct AgentAddRuleRow: View {
 }
 
 private struct AgentCode: View {
+    /// How many lines a long command or result shows before Show all.
+    static let previewLines = 6
+
     let text: String
     var font: Font.TextStyle = .caption
     var maxHeight: CGFloat = 220
+    var collapsedLines: Int?
+    @State private var showAll = false
+
+    private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
+    private var hidden: Int { collapsedLines.map { max(lines.count - $0, 0) } ?? 0 }
 
     /// The height of `count` lines of monospaced text in `font`, with the box's padding.
     static func lines(_ count: Int, font: NSFont.TextStyle) -> CGFloat {
@@ -1277,16 +1303,24 @@ private struct AgentCode: View {
     }
 
     var body: some View {
-        ScrollView {
-            Text(text)
-                .font(.system(font, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollView {
+                Text(hidden > 0 && !showAll ? lines.prefix(collapsedLines ?? lines.count).joined(separator: "\n") + " \u{2026}" : text)
+                    .font(.system(font, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
+            .frame(maxHeight: maxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+            if hidden > 0 {
+                Button(showAll ? "Show less" : "Show all \(lines.count) lines") { showAll.toggle() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .frame(maxHeight: maxHeight)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
     }
 }
 

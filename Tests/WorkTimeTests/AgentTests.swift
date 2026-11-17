@@ -181,7 +181,7 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
         let fetch = AgentRule(kind: .bash, value: "git fetch"), test = AgentRule(kind: .bash, value: "npm test")
         let line = #"{"type":"permission_request","id":"5","tool":"Bash","input":{"command":"git fetch && npm test"},"#
             + #""offer":[{"kind":"bash","value":"git fetch"},{"kind":"bash","value":"npm test"},{"kind":"nope","value":"x"}]}"#
-        guard case .permissionRequest(_, _, _, _, let offer)? = AgentEvent.decode(line, cwd: cwd) else { return check(false, "decodes") }
+        guard case .permissionRequest(_, _, _, _, let offer, _)? = AgentEvent.decode(line, cwd: cwd) else { return check(false, "decodes") }
         check(offer == [fetch, test], "offer \(offer)")
         check(AgentEvent.decode(#"{"type":"tool_result","id":"t","content":"x","auto":true,"rule":"git fetch"}"#, cwd: cwd)
               == .toolResult(id: "t", content: "x", isError: false, auto: true, rule: "git fetch"), "allowed by a rule")

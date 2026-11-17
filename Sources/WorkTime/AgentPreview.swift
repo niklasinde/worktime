@@ -23,6 +23,7 @@ enum AgentPreview {
 
         app.activate(ignoringOtherApps: true)
         Task { @MainActor in
+            await declutter(to: output)
             await workMap(to: output)
             await wide(to: output)
             for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
@@ -56,6 +57,7 @@ enum AgentPreview {
             await sessions(to: output)
             await topics(to: output)
             await rules(to: output)
+            await declutter(to: output)
             UserDefaults.standard.removePersistentDomain(forName: suite)
             exit(0)
         }
@@ -307,6 +309,36 @@ enum AgentPreview {
                        to: output.appendingPathComponent("settings-agent-\(name).png"))
         }
         store.removeAll()
+    }
+
+    /// A refused call tried twice with its prompt answered, a heredoc write, and a call waiting: one row each, the waiting one as a card.
+    @MainActor
+    private static func declutter(to output: URL) async {
+        let model = AgentModel(folder: repo)
+        let pad = "/private/tmp/claude-501/-Users-me-git-orbit/089fe12b-950d-436a-ab3b-2b735a4fb1f1/scratchpad"
+        let write = "mkdir -p \(pad) && cd \(pad) && cat > api_review.md <<'EOF'\n[AI]\nReviewed together with orbit.web #12.\nTwo things before merge:\n"
+            + (1...8).map { "\($0). A point about the change." }.joined(separator: "\n") + "\nEOF"
+        var items = [AgentItem(id: "user-0", kind: .user("Post both reviews"))]
+        let events: [AgentEvent] = [
+            .toolUse(id: "t1", tool: "Bash", summary: AgentCommands.summary(write), detail: write),
+            .permissionRequest(id: "1", tool: "Bash", summary: AgentCommands.summary(write), detail: write, toolUse: "t1"),
+            .toolUse(id: "t2", tool: "Bash", summary: AgentCommands.summary(write), detail: write),
+            .permissionRequest(id: "2", tool: "Bash", summary: AgentCommands.summary(write), detail: write, toolUse: "t2"),
+            .toolUse(id: "t3", tool: "Bash", summary: "gh pr review 12 --comment", detail: "gh pr review 12 --comment -F api_review.md"),
+            .permissionRequest(id: "3", tool: "Bash", summary: "gh pr review 12 --comment", detail: "gh pr review 12 --comment -F api_review.md", toolUse: "t3"),
+        ]
+        events.forEach { AgentLogic.apply($0, to: &items) }
+        for index in items.indices where AgentLogic.permissionID(of: items[index].id).map({ ["1", "2"].contains($0) }) == true {
+            AgentLogic.answer(items[index].id, allow: false, in: &items)
+        }
+        for id in ["t1", "t2"] {
+            AgentLogic.apply(.toolResult(id: id, content: "The user doesn't want to proceed with this tool use.", isError: true, auto: false), to: &items)
+        }
+        model.preview(items, busy: true)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            await save(AgentView(model: model), size: NSSize(width: 820, height: 640), appearance: appearance,
+                       to: output.appendingPathComponent("agent-declutter-\(name).png"))
+        }
     }
 
     /// The Main page with its agents list and a session restored from a Claude Code transcript, the session list, and a pull
