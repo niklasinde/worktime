@@ -26,6 +26,8 @@ struct AgentState: Codable, Equatable {
     /// A topic agent's links.
     var jiraKey: String?
     var slackURL: String?
+    /// The pull requests of a set agent.
+    var pullRequests: [String]?
     var workspace: String?
     /// `assistant` for a role agent under a Main, with the role's name.
     var kind: String?
@@ -39,6 +41,7 @@ struct AgentState: Codable, Equatable {
         var state = loaded ?? AgentState(key: topic.key, title: topic.name, folder: topic.folder, sessionID: sessionID, status: .idle, loaded: false)
         state.jiraKey = topic.jiraKey
         state.slackURL = topic.slackURL
+        state.pullRequests = topic.linked.isEmpty ? nil : topic.linked.map(\.url)
         return state
     }
 }
@@ -177,8 +180,9 @@ enum AgentOverview {
         if let url = state.prURL { lines.append("  \(url) \u{00B7} agent: \(GitHubLink.agentLink(for: url))") }
         if state.isAssistant { lines.append("  assistant \(state.role ?? state.title) \u{00B7} key \(state.key)") }
         if state.isTopic {
-            lines.append("  \(state.jiraKey == nil ? "topic" : "ticket") agent \(state.key)" + [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }]
-                .compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
+            let kind = state.pullRequests != nil ? "pull request set" : state.jiraKey == nil ? "topic" : "ticket"
+            let links = [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }, state.pullRequests.map { "PRs " + $0.joined(separator: ", ") }]
+            lines.append("  \(kind) agent \(state.key)" + links.compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
         }
         if let folder = state.folder { lines.append("  folder: \(folder)") }
         if let session = state.sessionID { lines.append("  session: \(session)") }
@@ -324,6 +328,8 @@ enum AgentInbox {
         var agent: String
         var text: String
         var created: Date
+        /// Several pull requests to work on together as one set agent; `agent` is the first of them.
+        var prs: [String]?
     }
 
     struct Reply: Codable, Equatable {
@@ -344,9 +350,9 @@ enum AgentInbox {
     static func isRequest(_ name: String) -> Bool { name.hasSuffix(".request.json") }
 
     /// A request for an agent (a pull request url or a topic key) and some text, or why there can be none.
-    static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString) -> Result<Request, AgentInboxError> {
+    static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString, prs: [String]? = nil) -> Result<Request, AgentInboxError> {
         let request = Request(id: id, agent: agent.trimmingCharacters(in: .whitespaces), text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                              created: now)
+                              created: now, prs: prs)
         return problem(request, now: now).map { .failure($0) } ?? .success(request)
     }
 
@@ -354,6 +360,13 @@ enum AgentInbox {
         guard ClaudeTranscripts.isSessionID(request.id) else { return AgentInboxError("The request id is not a UUID.") }
         guard GitHubLink.pullRequest(at: request.agent) != nil || TopicAgents.isKey(request.agent) || Assistants.isKey(request.agent) else {
             return AgentInboxError("agent must be a GitHub pull request url, a topic agent key or an assistant key, not \(request.agent).")
+        }
+        if let prs = request.prs {
+            switch PullRequestSets.linked(prs) {
+            case .failure(let error): return AgentInboxError(error.message)
+            case .success(let found) where found.count < 2: return AgentInboxError(AgentSetError.needTwo.message)
+            case .success: break
+            }
         }
         guard !request.text.isEmpty else { return AgentInboxError("text is empty.") }
         guard request.text.count <= textLimit else { return AgentInboxError("text is \(request.text.count) characters; the limit is \(textLimit).") }

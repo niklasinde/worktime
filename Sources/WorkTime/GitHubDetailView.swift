@@ -465,7 +465,11 @@ struct PageActionBar: View {
         case .review: Menu { reviewItems } label: { Label("Review", systemImage: "checkmark.bubble") }
             .menuIndicator(.visible).fixedSize().disabled(!pageActions.enabled)
         case .openInClaude: OpenInClaudeMenu(pr: pr, detail: detail, model: claude)
-        case .openInAgent: Button(action: openInAgent) { Label("Open in Agent", systemImage: "sparkles") }.help(openInAgentHelp)
+        case .openInAgent:
+            Menu { AddToAgentMenu(prs: [LinkedPR(pr: pr)]) } label: { Label("Open in Agent", systemImage: "sparkles") } primaryAction: { openInAgent() }
+                .menuIndicator(.visible)
+                .fixedSize()
+                .help(openInAgentHelp + ". The arrow adds it to an agent that works on several pull requests.")
         case .terminal: TerminalToggle(key: pr.url, model: terminals)
         case .merge: mergeButton
         case .close: closeButton
@@ -493,7 +497,9 @@ struct PageActionBar: View {
                 if claude.resumable(pr.url) != nil { Button("Resume Previous Session") { claude.resumeInClaude(pr, detail) } }
                 ForEach(GitHubClaude.Preset.allCases) { preset in Button(preset.title) { claude.openInClaude(pr, detail, preset) } }
             }
-        case .openInAgent: Button("Open in Agent", action: openInAgent)
+        case .openInAgent:
+            Button("Open in Agent", action: openInAgent)
+            Menu("Add to Agent") { AddToAgentMenu(prs: [LinkedPR(pr: pr)]) }
         case .terminal:
             Button(terminals.isShown(pr.url) ? "Hide Terminal" : "Show Terminal") { terminals.setShown(pr.url, !terminals.isShown(pr.url)) }
         case .merge: mergeButton

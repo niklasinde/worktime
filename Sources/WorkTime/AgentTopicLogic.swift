@@ -3,7 +3,7 @@ import Foundation
 /// An agent for a topic rather than a pull request, such as a support case: its own folder, optionally linked to a Jira
 /// ticket and a Slack thread.
 struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
-    enum Kind: String, Codable, Sendable { case ticket, slack, topic }
+    enum Kind: String, Codable, Sendable { case ticket, slack, pullRequests, topic }
 
     var id: String
     var name: String
@@ -14,10 +14,14 @@ struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
     var archived = false
     /// The Claude Code session this agent was made to continue; its folder is that session's own.
     var importedSession: String?
+    /// The pull requests this agent works on together; nil for the ordinary topics.
+    var pullRequests: [LinkedPR]?
 
     var key: String { TopicAgents.prefix + id }
 
-    var kind: Kind { jiraKey != nil ? .ticket : slackURL != nil ? .slack : .topic }
+    var linked: [LinkedPR] { pullRequests ?? [] }
+
+    var kind: Kind { jiraKey != nil ? .ticket : slackURL != nil ? .slack : linked.isEmpty ? .topic : .pullRequests }
 
     var slackLink: SlackThreadLink? { slackURL.flatMap(SlackLogic.threadLink) }
 }
@@ -107,7 +111,10 @@ enum TopicAgents {
     /// contains it), ignoring case.
     static func resolve(_ input: String, topics: [TopicAgent]) -> Result<AgentTarget, TopicAgentError> {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if GitHubLink.pullRequest(at: text) != nil { return .success(AgentTarget(key: text, title: AgentOverview.prTitle(text))) }
+        if GitHubLink.pullRequest(at: text) != nil {
+            if let set = PullRequestSets.set(containing: text, in: topics), !set.archived { return .success(AgentTarget(key: set.key, title: set.name)) }
+            return .success(AgentTarget(key: text, title: AgentOverview.prTitle(text)))
+        }
         if let key = JiraLogic.issueKey(text) {
             let matching = topics.filter { $0.jiraKey == key }
             if let topic = matching.first(where: { !$0.archived }) ?? matching.first {
@@ -137,7 +144,7 @@ enum TopicAgents {
     /// The prompt waiting in a new topic agent's composer.
     static func prompt(_ topic: TopicAgent) -> String {
         let sources = [topic.jiraKey, topic.slackURL.map { "the Slack thread \($0)" }].compactMap { $0 }
-        guard !sources.isEmpty else { return "" }
+        guard !sources.isEmpty else { return topic.linked.isEmpty ? "" : PullRequestSets.prompt(topic.linked) }
         return "Look at \(sources.joined(separator: " and ")) and summarise what\u{2019}s needed from me."
     }
 
@@ -152,10 +159,17 @@ enum TopicAgents {
     }
 
     static func systemPrompt(_ topic: TopicAgent) -> String {
+        let base = baseSystemPrompt(topic)
+        guard topic.kind != .pullRequests, !topic.linked.isEmpty else { return base }
+        return base + "\n\n" + PullRequestSets.linkedSection(topic.linked)
+    }
+
+    private static func baseSystemPrompt(_ topic: TopicAgent) -> String {
         if topic.importedSession != nil {
             return "You are continuing a Claude Code session in WorkTime for \u{201C}\(topic.name)\u{201D}, in its original working folder "
                 + "\(topic.folder). Carry on where the conversation left off."
         }
+        if topic.kind == .pullRequests { return PullRequestSets.systemPrompt(topic) }
         if let key = topic.jiraKey, topic.slackURL == nil { return JiraAgents.systemPrompt(ticket: key, name: topic.name, folder: topic.folder) }
         var links: [String] = []
         if let key = topic.jiraKey { links.append("Linked Jira ticket: \(key). Read it first with the worktime jira_issue tool.") }

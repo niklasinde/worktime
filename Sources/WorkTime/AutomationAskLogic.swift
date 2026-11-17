@@ -28,6 +28,8 @@ struct NoticeAsk: Codable, Equatable, Sendable {
     var prompt: String
     /// The reminder that stays until the question is answered.
     var reminder: String?
+    /// The pull requests the first button hands to one agent that works on them together, when the event names several.
+    var pullRequests: [String]?
 }
 
 /// The user's last answer to an automation's question, for its row.
@@ -115,13 +117,19 @@ enum AutomationAsks {
     static func notice(for routine: Routine, event: AutomationEvent, run: RoutineRun, ask: AutomationAsk, reminder: String?) -> NoticeAsk? {
         guard let agent = ask.agent.isEmpty ? event.pullRequest : ask.agent else { return nil }
         let advice = recommendation(in: run.summary, yes: ask.yes, no: ask.no)
+        let several = ask.agent.isEmpty ? event.pullRequests : nil
         var text = ask.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.isEmpty { text = defaultPrompt(for: event.kind) }
+        if text.isEmpty { text = several == nil ? defaultPrompt(for: event.kind) : defaultSetPrompt }
         text = Automations.prompt(text, event: event)
         text = text.replacingOccurrences(of: "{recommendation}", with: advice?.reason ?? "")
         text = text.replacingOccurrences(of: "{answer}", with: String(answer(run.summary).prefix(answerLimit)))
-        return NoticeAsk(routine: routine.id, yes: ask.yes, no: ask.no, agent: agent, prompt: String(text.prefix(AgentInbox.textLimit)), reminder: reminder)
+        return NoticeAsk(routine: routine.id, yes: ask.yes, no: ask.no, agent: agent, prompt: String(text.prefix(AgentInbox.textLimit)), reminder: reminder,
+                         pullRequests: several)
     }
+
+    /// What the first button sends to the one agent for several pull requests.
+    static let defaultSetPrompt = "Review these pull requests together as one change:\n{pr_urls}\nDraft one verdict per pull request and what must agree across them. "
+        + "You only draft: do not post, approve or comment. Notes from the first look:\n{answer}"
 
     /// What the first button sends when the automation names nothing.
     static func defaultPrompt(for kind: AutomationTrigger.Kind) -> String {

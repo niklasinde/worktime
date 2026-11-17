@@ -159,7 +159,7 @@ extension AutomationTrigger {
         /// The placeholders a prompt can use for this kind of event.
         var fields: [String] {
             switch source {
-            case .slack: ["slack_text", "slack_place", "slack_author", "slack_link", "pr_url", "ticket"]
+            case .slack: ["slack_text", "slack_place", "slack_author", "slack_link", "pr_url", "pr_urls", "ticket"]
             case .github:
                 ["pr_url", "pr_title", "pr_repo", "pr_number", "pr_author", "ticket"] + (self == .prFeedback ? ["reviewer", "review_state"] : [])
             case .jira: ["ticket", "ticket_title", "status", "from_status", "url", "project", "assignee", "comment", "comment_author"]

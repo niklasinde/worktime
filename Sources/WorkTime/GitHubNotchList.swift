@@ -141,6 +141,7 @@ struct WaitingPullRequests: View {
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 8)
+        .contextMenu { Menu("Add to Agent") { AddToAgentMenu(prs: [LinkedPR(pr: pr)]) } }
     }
 
     private func begin(_ pr: GitHubPR) {
@@ -227,8 +228,11 @@ struct PullRequestSummaryRow<Accessory: View>: View {
 
     private var labels: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(pr.repo) #\(String(pr.number))\(showsAuthor ? pr.author.map { " \u{00B7} \($0)" } ?? "" : "")")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 6) {
+                Text("\(pr.repo) #\(String(pr.number))\(showsAuthor ? pr.author.map { " \u{00B7} \($0)" } ?? "" : "")")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                InSetBadge(url: pr.url)
+            }
             Text(pr.title).lineLimit(titleLines).truncationMode(.tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

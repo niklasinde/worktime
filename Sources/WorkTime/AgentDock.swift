@@ -18,6 +18,8 @@ final class PRAgents: ObservableObject {
     /// Shows the pull request's agent, made in its checkout with the review prompt waiting the first time. Without the
     /// embedded panes (the swiftc build) it shows on the Main page instead.
     func open(_ target: GitHubLink.Target) {
+        let topics = TopicAgentStore.shared.topics
+        if let set = PullRequestSets.set(containing: target.url, in: topics), !set.archived { return AgentHub.shared.show(set.key) }
         guard EmbeddedTerminalModel.available else { return AgentHub.shared.show(target.url) }
         let key = target.url
         if models[key] != nil { return show(key) }
@@ -268,14 +270,20 @@ final class AgentInboxWatcher {
         if let problem = AgentInbox.problem(request, now: Date()) {
             return AgentInbox.Reply(id: request.id, status: .rejected, message: problem.message)
         }
+        if let urls = request.prs, urls.count > 1 { return await TopicAgentStore.shared.deliverSet(request) }
+        if let set = PullRequestSets.set(containing: request.agent, in: TopicAgentStore.shared.topics), !set.archived {
+            var forSet = request
+            forSet.agent = set.key
+            return TopicAgentStore.shared.deliver(forSet)
+        }
         if TopicAgents.isKey(request.agent) { return TopicAgentStore.shared.deliver(request) }
         if Assistants.isKey(request.agent) { return AssistantStore.shared.deliver(request) }
         return await PRAgents.shared.deliver(request)
     }
 
     /// A prompt the user chose to send, from a notification's button: the same path as Main's send_to_agent, which asks first.
-    static func send(_ text: String, to agent: String) async -> AgentInbox.Reply {
-        await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date()))
+    static func send(_ text: String, to agent: String, pullRequests: [String]? = nil) async -> AgentInbox.Reply {
+        await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date(), prs: pullRequests))
     }
 
     /// Takes the inbox's requests of one kind off the folder, dropping any that cannot be read.

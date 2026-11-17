@@ -73,6 +73,8 @@ struct AutomationEvent: Codable, Equatable, Sendable {
     var fields: [String: String]
     /// The pull request the event is about or mentions.
     var pullRequest: String?
+    /// Every pull request the event mentions when there are several, for an agent that works on them together.
+    var pullRequests: [String]?
     var link: String?
     var date: Date
 }
@@ -197,13 +199,16 @@ enum Automations {
     // MARK: Events
 
     static func slackEvent(_ message: SlackMessage, link: URL?, kind: AutomationTrigger.Kind = .slackMessage) -> AutomationEvent {
-        let mentioned = GitHubLink.mentions(in: message.text).first
+        let mentions = GitHubLink.mentions(in: message.text)
+        let mentioned = mentions.first
         var fields = ["slack_text": message.text, "slack_place": message.place, "slack_author": message.author ?? message.place,
                       "slack_link": link?.absoluteString ?? ""]
         if let mentioned { fields["pr_url"] = mentioned.url }
+        let several = PullRequestSets.urls(in: message.text)
+        if let several { fields["pr_urls"] = several.joined(separator: "\n") }
         if let ticket = ActivityLogic.ticket(in: message.text) { fields["ticket"] = ticket }
         return AutomationEvent(id: "\(kind.idPrefix):" + message.id, kind: kind, title: String(message.text.prefix(titleLimit)), place: message.place,
-                               text: message.text, fields: fields, pullRequest: mentioned?.url, link: link?.absoluteString, date: message.date)
+                               text: message.text, fields: fields, pullRequest: mentioned?.url, pullRequests: several, link: link?.absoluteString, date: message.date)
     }
 
     /// A pull request as an event. `suffix` tells apart the events one pull request makes, such as each review or each push.

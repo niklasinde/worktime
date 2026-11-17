@@ -71,6 +71,71 @@ final class TopicAgentStore: ObservableObject {
         }
     }
 
+    /// The agent working on these pull requests together: the one already on all of them, else a new one with a folder of its own
+    /// (or the repository's checkout they share). A pull request is in one set only, so they leave any other.
+    @discardableResult
+    func makeSet(_ prs: [LinkedPR]) -> TopicAgent {
+        if let existing = PullRequestSets.set(coveringAll: prs.map(\.url), in: topics) {
+            add(prs, to: existing.key)
+            return topic(existing.key) ?? existing
+        }
+        let folders = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        let taken = Set(topics.map { URL(fileURLWithPath: $0.folder).lastPathComponent } + folders)
+        let name = PullRequestSets.name(prs)
+        let own = root.appendingPathComponent(TopicAgents.uniqueSlug(name, taken: taken), isDirectory: true).path
+        let folder = PullRequestSets.workingFolder(prs, own: own)
+        let set = TopicAgent(id: UUID().uuidString, name: name, folder: folder, created: Date(), pullRequests: prs)
+        if folder == own { try? FileManager.default.createDirectory(atPath: own, withIntermediateDirectories: true) }
+        apply(PullRequestSets.assigning(prs.map(\.url), to: set.key, in: topics) + [set])
+        return set
+    }
+
+    /// Makes the set for these pull requests, with their checkouts looked up, and shows it.
+    func openSet(_ prs: [LinkedPR]) {
+        Task { @MainActor in
+            let set = makeSet(await Self.withCheckouts(prs))
+            reopen(set)
+        }
+    }
+
+    /// The pull requests with the checkout of each repository filled in where one is known.
+    static func withCheckouts(_ prs: [LinkedPR]) async -> [LinkedPR] {
+        let repos = Array(Set(prs.filter { $0.checkout == nil }.map(\.repo)))
+        let found = await Task.detached { Dictionary(uniqueKeysWithValues: repos.compactMap { repo in
+            GitHubClaude.checkout(for: repo, under: GitHubClaudeModel.repositoriesRoot).map { (repo, $0.path) }
+        }) }.value
+        return prs.map { pr in
+            var pr = pr
+            pr.checkout = pr.checkout ?? found[pr.repo]
+            return pr
+        }
+    }
+
+    /// Adds pull requests to an agent (a set or any other topic); they leave the set they were in.
+    func add(_ prs: [LinkedPR], to key: String) {
+        var updated = PullRequestSets.assigning(prs.map(\.url), to: key, in: topics)
+        guard let index = updated.firstIndex(where: { $0.key == key }) else { return }
+        updated[index].pullRequests = PullRequestSets.adding(prs, to: updated[index].linked)
+        apply(updated)
+    }
+
+    /// Takes a pull request out of the agent: it opens its own agent again.
+    func remove(_ url: String, from key: String) {
+        var updated = topics
+        guard let index = updated.firstIndex(where: { $0.key == key }) else { return }
+        let remaining = PullRequestSets.removing(url, from: updated[index].linked)
+        updated[index].pullRequests = remaining.isEmpty ? nil : remaining
+        apply(updated)
+    }
+
+    /// Saves the topics and hands a changed list of pull requests to the loaded agents; their next prompt carries it.
+    private func apply(_ updated: [TopicAgent]) {
+        let before = Dictionary(uniqueKeysWithValues: topics.map { ($0.key, $0.linked) })
+        topics = updated
+        for topic in topics where before[topic.key] != topic.linked { models[topic.key]?.open(topic: topic) }
+        save()
+    }
+
     private func reopen(_ topic: TopicAgent) {
         if topic.archived { setArchived(topic.key, false) }
         show(topic.key)
@@ -116,6 +181,18 @@ final class TopicAgentStore: ObservableObject {
         _ = AgentSessionStore.update(key) { _ in [] }
         topics.removeAll { $0.key == key }
         save()
+    }
+
+    /// A prompt for several pull requests at once: the set agent for them, made when there is none.
+    func deliverSet(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
+        guard case .success(let prs) = PullRequestSets.linked(request.prs ?? [request.agent]), prs.count > 1 else {
+            return AgentInbox.Reply(id: request.id, status: .rejected, message: AgentSetError.needTwo.message)
+        }
+        let set = makeSet(await Self.withCheckouts(prs))
+        var forSet = request
+        forSet.agent = set.key
+        forSet.prs = nil
+        return deliver(forSet)
     }
 
     func deliver(_ request: AgentInbox.Request) -> AgentInbox.Reply {
@@ -186,6 +263,7 @@ struct AgentTopicHeader: View {
             Button { NSWorkspace.shared.open(url) } label: { Label("Thread", systemImage: "arrow.up.forward.square") }
                 .help("Open the Slack thread")
         }
+        if !topic.linked.isEmpty { AgentSetChips(topic: topic) }
         Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: topic.folder)]) } label: { Image(systemName: "folder") }
             .buttonStyle(.borderless)
             .help("\(topic.importedSession == nil ? "The agent\u{2019}s own folder" : "The session\u{2019}s folder"): \((topic.folder as NSString).abbreviatingWithTildeInPath)")
@@ -199,6 +277,7 @@ struct AgentTopicIcon: View {
         switch kind {
         case .ticket: BrandMark.jira.resizable().scaledToFit().frame(width: 12, height: 12)
         case .slack: BrandMark.slack.resizable().scaledToFit().frame(width: 12, height: 12)
+        case .pullRequests: Image(systemName: "square.stack.3d.up").font(.caption).foregroundStyle(.secondary)
         case .topic: Image(systemName: "text.bubble").font(.caption).foregroundStyle(.secondary)
         }
     }

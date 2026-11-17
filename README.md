@@ -547,6 +547,13 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   The SDK's cost estimate is not shown, since a plan is not charged per token.
 - **Context.** The sidecar registers WorkTime's own read-only MCP server (`WorkTime --mcp`) as `worktime`, so the agent can read
   meetings and activity.
+- **Pull request sets.** One agent can work on several pull requests as one change (a review across repositories, a ticket's pull
+  requests). Make one with **Review These Together** or **Add to Agent** on the GitHub page's rows (⌘-click or ⇧-click marks
+  several), **Add to Agent** on a notch row, the arrow on **Open in Agent** in a pull request's toolbar, `send_to_agent` with
+  `pr_urls`, or an automation's question when a Slack message names several pull requests. It is a topic agent with its pull
+  requests as chips in its header (add one by link, ✕ takes one out and it gets its own agent again). A pull request is in one
+  set; opening it from a list opens the set, marked "in set". Its prompts tell it to draft one verdict per pull request and check
+  they agree, and never to post, approve or comment.
 - **Delegation.** Main hands work to an assistant, a pull request's agent or a topic with `send_to_agent`, which asks in every
   permission mode. The card offers **Always allow Main → Reviewer**, saved as a rule for that workspace's Main and that one agent
   (listed in Settings > Agent as "Main (Work) may message Reviewer"); other agents, other workspaces and unclear names still ask,

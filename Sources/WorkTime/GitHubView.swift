@@ -372,6 +372,9 @@ private struct PullRequestRow: View {
                 if model.isWatched(pr) { Button("Stop Watching") { model.stopWatching(pr) } }
                 GitHubRowActions(pr: pr, targets: GitHubActions.targets(for: pr, marked: model.marked, in: model.visible), model: actions)
                 Divider()
+                let group = model.marked.contains(pr.url) && model.marked.count > 1 ? model.markedPRs : [pr]
+                if group.count > 1 { Button("Review These \(group.count) Together") { TopicAgentStore.shared.openSet(group.map { LinkedPR(pr: $0) }) } }
+                Menu("Add to Agent") { AddToAgentMenu(prs: group.map { LinkedPR(pr: $0) }) }
                 if showChat { Button("Ask About This Pull Request\u{2026}") { model.ask(about: pr) } }
                 Button("Open in Claude Code") { claude.openInClaudeCode(pr) }
                     .disabled(claude.checkout(pr) == nil)

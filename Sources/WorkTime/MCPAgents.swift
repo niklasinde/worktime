@@ -188,12 +188,36 @@ extension MCPServer {
                     description: "Sends a prompt to an agent in WorkTime, marked as from Main: a pull request's agent, a topic agent "
                         + "(a support case or other topic, by its key or name) or one of the workspace's assistants (by role name, like Developer). It starts when the agent is idle "
                         + "and queues while it works; it is refused while the agent waits for a permission. The agent asks the user in its "
-                        + "own pane for anything it wants to run. Returns the session id to read the outcome with agent_session later.",
+                        + "own pane for anything it wants to run. Several pull requests that belong together go to one agent with pr_urls. "
+                        + "Returns the session id to read the outcome with agent_session later.",
                     properties: ["agent": agentProperty,
                                  "pr_url": ["type": "string", "description": "A pull request's GitHub url; the same as agent."],
+                                 "pr_urls": ["type": "array", "items": ["type": "string"], "maxItems": PullRequestSets.limit,
+                                             "description": "Two or more pull requests' GitHub urls for ONE agent that works on them together as a set "
+                                                 + "(made when there is none, and the pull requests stay in it): a reviewer's cross-pull-request check, or a change that spans repositories."],
                                  "workspace": workspaceProperty,
                                  "text": ["type": "string", "maxLength": AgentInbox.textLimit, "description": "The prompt for that agent."]],
                     required: ["text"], readOnly: false) { args in
+                let urls = (args["pr_urls"] as? [Any])?.compactMap { $0 as? String } ?? []
+                if !urls.isEmpty {
+                    let prs: [LinkedPR]
+                    switch PullRequestSets.linked(urls) {
+                    case .success(let found): prs = found
+                    case .failure(let error): throw MCPToolError(error.message)
+                    }
+                    guard prs.count > 1 else { throw MCPToolError(AgentSetError.needTwo.message) }
+                    for pr in prs {
+                        try sources.checkDelegation(AgentTarget(key: pr.url, title: pr.label), args: args, agents: sources.agents())
+                    }
+                    let title = "\(prs.count) pull requests (\(PullRequestSets.summary(prs)))"
+                    switch AgentInbox.request(agent: prs[0].url, text: args["text"] as? String ?? "", now: now(), prs: prs.map(\.url)) {
+                    case .failure(let error): throw MCPToolError(error.message)
+                    case .success(let made):
+                        let reply = try deliver(made, inbox: sources.inbox, timeout: sources.replyTimeout)
+                        if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: title)) }
+                        return AgentInbox.replyText(reply, title: title)
+                    }
+                }
                 guard let target = try sources.target(args) else { throw MCPToolError("agent is required.") }
                 try sources.checkDelegation(target, args: args, agents: sources.agents())
                 let request: AgentInbox.Request

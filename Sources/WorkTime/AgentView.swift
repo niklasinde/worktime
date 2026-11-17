@@ -35,7 +35,7 @@ final class AgentHub: ObservableObject {
     var currentMainKey: String { isMainSelected ? selected : UserDefaults.standard.string(forKey: Self.lastMainKey) ?? Workspaces.mainKey(Workspaces.defaultID) }
 
     func show(_ key: String? = nil) {
-        selected = key ?? currentMainKey
+        selected = key.map { PullRequestSets.route($0, in: TopicAgentStore.shared.topics) } ?? currentMainKey
         showPage?()
     }
 }
