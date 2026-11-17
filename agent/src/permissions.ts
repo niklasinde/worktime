@@ -23,14 +23,19 @@ export function mcpDenied(tool: string, allowed: string[] | undefined): boolean 
 
 export const sessionRule = "this session";
 
-/// Claude in Chrome acts in the user's own browser, so only its reads and the calls the user allowed for this session run
-/// without asking, in every mode and whatever the rules. `sessionAllowed` holds those calls' `sessionKey`s.
+/// Claude in Chrome acts in the user's own browser, so only its reads and the calls the user allowed (for this session, or
+/// with a saved rule for that tool or computer action) run without asking, in every mode. `sessionAllowed` holds those calls' `sessionKey`s.
 /// `delegated` is the delegate rule that lets this call of send_to_agent through, the only thing that does.
 export function preToolDecision(tool: string, input: Record<string, unknown>, cwd: string, rules: Rule[], mode: Mode, allowedMcp?: string[], delegated?: string,
                                 sessionAllowed: ReadonlySet<string> = new Set()): Decision {
   const session = isSessionAllowable(tool) && sessionAllowed.has(sessionKey(tool, input));
   if (mcpDenied(tool, allowedMcp)) return { kind: "deny", reason: `${tool} is not one of this assistant's tools. Its role file lists the tools it may use.` };
-  if (isChromeTool(tool)) return isChromeRead(tool, input) ? { kind: "allow", readOnly: true } : session ? { kind: "allow", rule: sessionRule } : { kind: "ask" };
+  if (isChromeTool(tool)) {
+    if (isChromeRead(tool, input)) return { kind: "allow", readOnly: true };
+    if (session) return { kind: "allow", rule: sessionRule };
+    const rule = matchRules(rules, tool, input, cwd);
+    return rule ? { kind: "allow", rule } : { kind: "ask" };
+  }
   if (builtInAllowed.alwaysAsk.includes(tool)) return delegated ? { kind: "allow", rule: delegated } : { kind: "ask" };
   if (isAutoAllowedTool(tool)) return { kind: "allow" };
   if (tool === "Bash" && typeof input.command === "string" && isReadOnlyCommand(input.command)) return { kind: "allow", readOnly: true };

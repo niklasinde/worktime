@@ -16,6 +16,7 @@ final class AgentAttentionCenter {
         guard let model = models[agent]?.model else { return AgentHub.shared.show(agent) }
         switch AgentAttention.response(action: action, text: text) {
         case .allow: if let request { model.answer(permission: request, allow: true) }
+        case .allowSession: if let request { model.answer(permission: request, allow: true, session: true) }
         case .deny: if let request { model.answer(permission: request, allow: false) }
         case .answer(let reply): model.reply(reply)
         case .open: AgentHub.shared.show(agent)

@@ -118,6 +118,8 @@ final class AgentModel: ObservableObject {
     }
     /// Why the Chrome tools failed last, usually the extension not being connected; cleared when one works.
     @Published private(set) var chromeProblem: String?
+    /// The calls allowed for the rest of this session, as the sidecar keys them.
+    @Published private(set) var sessionAllowed: [String] = []
     /// Bumped when the transcript is replaced rather than added to: another session, a restored one, a new one.
     @Published private(set) var transcriptRevision = 0
     /// What this session has done since it was shown, for the work map; kept in memory only.
@@ -194,7 +196,8 @@ final class AgentModel: ObservableObject {
         guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
               notifiedApprovals.insert(id).inserted else { return }
         AgentAttentionCenter.shared.register(self, id: attentionID)
-        Notifier.postApproval(agent: attentionID, permission: id, text: AgentAttention.approval(agent: attentionTitle, tool: tool, summary: summary))
+        Notifier.postApproval(agent: attentionID, permission: id, text: AgentAttention.approval(agent: attentionTitle, tool: tool, summary: summary),
+                              sessionOffered: AgentRules.sessionOffered(tool: tool))
     }
 
     private func announceQuestion() {
@@ -623,13 +626,18 @@ final class AgentModel: ObservableObject {
         }
     }
 
+    /// Takes back one call allowed for the session, or all of them.
+    func revokeSession(_ key: String? = nil) {
+        client?.send(.revokeSession(key: key))
+    }
+
     /// The answer of a notification's Allow once or Deny to the prompt with the sidecar's `id`, if it still waits.
-    func answer(permission id: String, allow: Bool) {
+    func answer(permission id: String, allow: Bool, session: Bool = false) {
         let waiting = items.first { item in
             guard AgentLogic.permissionID(of: item.id) == id, case .permission(_, _, _, _, nil) = item.kind else { return false }
             return true
         }
-        if let waiting { answer(waiting, allow: allow) }
+        if let waiting { answer(waiting, allow: allow, session: session) }
     }
 
     /// What was typed into a notification's Reply: the next prompt, or the one after the current turn.
@@ -725,6 +733,7 @@ final class AgentModel: ObservableObject {
             event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [rule])
         }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
+        if case .sessionAllowed(let keys) = event { return sessionAllowed = keys }
         if case .delivered(let id) = event { return AgentPending.deliver(id, queue: &pending, items: &items) }
         if case .cancelled(let id) = event { return restore(AgentPending.take([id], from: &pending)) }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
@@ -753,6 +762,7 @@ final class AgentModel: ObservableObject {
 
     private func exited(status: Int32, errors: String) {
         client = nil
+        sessionAllowed = []
         restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
         guard busy else { return }
         busy = false

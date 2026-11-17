@@ -147,6 +147,18 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
         check(!AgentRules.sessionOffered(tool: "Bash", builtIn: builtIn), "nor can Bash")
         check(AgentRequest.permission(id: "4", allow: false).line == #"{"allow":false,"id":"4","type":"permission"}"# + "\n", "permission")
         check(AgentRequest.interrupt.line == #"{"type":"interrupt"}"# + "\n", "interrupt")
+        check(AgentRequest.revokeSession(key: "mcp__x__y").line == #"{"key":"mcp__x__y","type":"revoke_session"}"# + "\n", "revoke one")
+        check(AgentRequest.revokeSession(key: nil).line == #"{"type":"revoke_session"}"# + "\n", "revoke all")
+        check(AgentEvent.decode(#"{"type":"session_allowed","keys":["a","b"]}"#, cwd: "/") == .sessionAllowed(["a", "b"]), "session allowances decoded")
+        check(AgentEvent.decode(#"{"type":"session_allowed","keys":[]}"#, cwd: "/") == .sessionAllowed([]), "none left")
+    }),
+    ("agent: Chrome allowances are listed by tool, and a computer action by its name", {
+        let click = "mcp__claude-in-chrome__computer:left_click"
+        check(AgentRules.toolLabel("mcp__claude-in-chrome__javascript_tool") == AgentLogic.displayName("mcp__claude-in-chrome__javascript_tool"), "a tool")
+        check(AgentRules.toolLabel(click) == AgentLogic.displayName("mcp__claude-in-chrome__computer") + " \u{00B7} left click", "a computer action: \(AgentRules.toolLabel(click))")
+        check(AgentRules.label(AgentRule(kind: .tool, value: click)) == AgentRules.toolLabel(click), "listed in Settings")
+        check(AgentRules.chromeChoices.allSatisfy { $0.hasPrefix("mcp__claude-in-chrome__") } && Set(AgentRules.chromeChoices).count == AgentRules.chromeChoices.count,
+              "choices are Chrome's and unique")
     }),
 
     ("agent: Claude in Chrome is off unless saved for the agent, sent with the prompt, and its connection decoded", {

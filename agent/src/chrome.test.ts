@@ -35,7 +35,7 @@ test("the flag reaches the spawned Claude Code process", async () => {
   }
 });
 
-test("only Chrome's reads run without asking, in every mode; actions always ask and are never offered as a rule", () => {
+test("only Chrome's reads run without asking, in every mode; actions ask until the user saves a rule for that tool or action", () => {
   for (const mode of modes) {
     for (const name of ["tabs_context_mcp", "read_page", "get_page_text", "find", "list_connected_browsers"]) {
       assert.deepEqual(preToolDecision(chrome(name), {}, "/repo", [], mode), { kind: "allow", readOnly: true }, `${mode} ${name}`);
@@ -45,14 +45,25 @@ test("only Chrome's reads run without asking, in every mode; actions always ask 
       assert.deepEqual(preToolDecision(chrome("computer"), { action }, "/repo", [], mode), { kind: "ask" }, `${mode} ${action}`);
     }
     for (const name of actions.filter((a) => a !== "computer")) {
-      const rules = [{ kind: "tool" as const, value: chrome(name) }];
-      assert.deepEqual(preToolDecision(chrome(name), {}, "/repo", rules, mode), { kind: "ask" }, `${mode} ${name}`);
+      assert.deepEqual(preToolDecision(chrome(name), {}, "/repo", [], mode), { kind: "ask" }, `${mode} ${name}`);
     }
   }
   assert.deepEqual(preToolDecision("mcp__Claude_in_Chrome__navigate", {}, "/repo", [], "auto"), { kind: "ask" });
-  assert.deepEqual(suggestRules(chrome("navigate"), {}, "/repo"), []);
-  assert.equal(matchRules([{ kind: "tool", value: chrome("navigate") }], chrome("navigate"), {}, "/repo"), undefined);
   assert.ok(isChromeTool(chrome("navigate")) && !isChromeTool("mcp__worktime__github_pr") && !isChromeRead("Read", {}));
+});
+
+test("Always allow on a Chrome action saves that tool, or that computer action, and nothing wider", () => {
+  assert.deepEqual(suggestRules(chrome("javascript_tool"), {}, "/repo"), [{ kind: "tool", value: chrome("javascript_tool") }]);
+  assert.deepEqual(suggestRules(chrome("computer"), { action: "left_click" }, "/repo"), [{ kind: "tool", value: `${chrome("computer")}:left_click` }]);
+  assert.deepEqual(suggestRules(chrome("read_page"), {}, "/repo"), []);
+  const rules = [{ kind: "tool" as const, value: chrome("javascript_tool") }, { kind: "tool" as const, value: `${chrome("computer")}:left_click` }];
+  for (const mode of modes) {
+    assert.deepEqual(preToolDecision(chrome("javascript_tool"), {}, "/repo", rules, mode), { kind: "allow", rule: chrome("javascript_tool") }, mode);
+    assert.deepEqual(preToolDecision(chrome("computer"), { action: "left_click" }, "/repo", rules, mode).kind, "allow", mode);
+    assert.deepEqual(preToolDecision(chrome("computer"), { action: "type" }, "/repo", rules, mode), { kind: "ask" }, mode);
+    assert.deepEqual(preToolDecision(chrome("navigate"), {}, "/repo", rules, mode), { kind: "ask" }, mode);
+  }
+  assert.equal(matchRules([{ kind: "tool", value: chrome("computer") }], chrome("computer"), { action: "left_click" }, "/repo"), undefined);
 });
 
 test("the connection is read from the server list and from tool errors that are about it", () => {

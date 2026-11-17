@@ -63,10 +63,25 @@ enum AgentRules {
         switch rule.kind {
         case .bash: return rule.value
         case .edits: return "Edits in " + abbreviated(rule.value)
-        case .tool: return AgentLogic.displayName(rule.value)
+        case .tool: return toolLabel(rule.value)
         case .delegate: return rule.delegateLabel
         }
     }
+
+    /// A tool as listed, with Chrome's computer action after a colon: `Claude In Chrome \u{00B7} Computer \u{00B7} left click`.
+    static func toolLabel(_ value: String) -> String {
+        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return AgentLogic.displayName(value) }
+        return AgentLogic.displayName(parts[0]) + " \u{00B7} " + parts[1].replacingOccurrences(of: "_", with: " ")
+    }
+
+    private static let chromePrefix = "mcp__claude-in-chrome__"
+
+    /// The Claude in Chrome tools and computer actions that can be allowed by hand in Settings; its reads never ask.
+    static let chromeChoices: [String] = ["navigate", "javascript_tool", "form_input", "file_upload", "upload_image", "browser_batch", "tabs_create_mcp",
+                                          "tabs_close_mcp", "resize_window", "computer:left_click", "computer:double_click", "computer:right_click",
+                                          "computer:type", "computer:key", "computer:scroll", "computer:left_click_drag", "computer:hover"]
+        .map { chromePrefix + $0 }
 
     static let builtIn = AgentBuiltIn.load(sidecars: AgentLogic.sidecarCandidates(
         environment: ProcessInfo.processInfo.environment, resources: Bundle.main.resourceURL, sourceFile: #filePath))
@@ -88,7 +103,7 @@ enum AgentRules {
         switch first.kind {
         case .bash: return "Always allow: " + rules.map(\.value).joined(separator: ", ")
         case .edits: return "Always allow edits in " + abbreviated(first.value)
-        case .tool: return "Always allow " + AgentLogic.displayName(first.value)
+        case .tool: return "Always allow " + toolLabel(first.value)
         case .delegate: return first.delegateLabel + " without asking"
         }
     }

@@ -444,6 +444,7 @@ struct AgentView: View {
                 AgentSessionsButton(model: model)
                 AgentChromeToggle(model: model)
                 AgentPermissionPicker(model: model)
+                AgentSessionAllowButton(model: model)
             }
             .labelStyle(CompactLabelStyle(compact: compact))
             AgentModelPicker(model: model)
@@ -593,7 +594,36 @@ struct AgentChromeToggle: View {
         .toggleStyle(.button)
         .help(model.chromeProblem.map { "Claude in Chrome is not working: \($0)" }
               ?? (model.chrome ? "Claude in Chrome is on: the agent can use your Chrome through the extension. Reading tabs and pages "
-                  + "runs without asking; navigating, clicking and typing ask, with Allow for this session on the prompt." : "Let the agent use Chrome through the Claude in Chrome extension"))
+                  + "runs without asking; navigating, clicking and typing ask, with Allow for this session or Always allow on the prompt." : "Let the agent use Chrome through the Claude in Chrome extension"))
+    }
+}
+
+/// The calls allowed for the rest of this session, with Remove for each and Remove all; hidden when there are none.
+struct AgentSessionAllowButton: View {
+    @ObservedObject var model: AgentModel
+    @State private var shown = false
+
+    var body: some View {
+        if !model.sessionAllowed.isEmpty {
+            Button { shown.toggle() } label: { Label("\(model.sessionAllowed.count)", systemImage: "checkmark.shield") }
+                .help("Allowed for this session: \(model.sessionAllowed.count)")
+                .popover(isPresented: $shown, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Allowed for this session").font(.headline)
+                        ForEach(model.sessionAllowed, id: \.self) { key in
+                            HStack {
+                                Text(AgentRules.toolLabel(key)).font(.callout)
+                                Spacer(minLength: 16)
+                                Button("Remove") { model.revokeSession(key) }
+                            }
+                        }
+                        if model.sessionAllowed.count > 1 {
+                            Button("Remove all", role: .destructive) { model.revokeSession() }
+                        }
+                    }
+                    .padding(12)
+                }
+        }
     }
 }
 
@@ -989,7 +1019,7 @@ struct AgentSettingsSection: View {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
         }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
-                        + "allowed when each part that is not read-only starts with one of these; Claude in Chrome\u{2019}s actions need Allow for this session instead, and send to agent is always asked, unless you allowed Main to message that agent.") {
+                        + "allowed when each part that is not read-only starts with one of these. Claude in Chrome\u{2019}s actions are allowed one tool at a time (a click, typing and the like one computer action at a time), and send to agent is always asked, unless you allowed Main to message that agent.") {
             if store.rules.isEmpty {
                 SettingsRow("Nothing yet", detail: "Choose Always allow when an agent asks to run something") {}
             }
@@ -1053,6 +1083,11 @@ private struct AgentAddRuleRow: View {
                 Button("Add", action: addCommand).disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
                 Menu("More") {
                     Button("Edits in a Folder\u{2026}", action: addFolder)
+                    Menu("Claude in Chrome Action") {
+                        ForEach(AgentRules.chromeChoices, id: \.self) { tool in
+                            Button(AgentRules.toolLabel(tool)) { store.add([AgentRule(kind: .tool, value: tool)]) }
+                        }
+                    }
                     if let builtIn {
                         Menu("WorkTime Tool") {
                             ForEach(AgentRules.toolChoices(MCPServer.toolNames, builtIn: builtIn), id: \.self) { tool in

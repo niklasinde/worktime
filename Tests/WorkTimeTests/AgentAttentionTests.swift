@@ -27,7 +27,10 @@ let agentAttentionTests: [(name: String, run: () throws -> Void)] = [
     }),
     ("attention: a tap answers the approval, a typed reply answers the question, anything else opens the agent", {
         check(AgentAttention.response(action: AgentAttention.allowAction, text: nil) == .allow, "allow")
+        check(AgentAttention.response(action: AgentAttention.allowSessionAction, text: nil) == .allowSession, "allow for the session")
         check(AgentAttention.response(action: AgentAttention.denyAction, text: nil) == .deny, "deny")
+        check(AgentAttention.approvalCategory(sessionOffered: true) == AgentAttention.sessionApprovalCategory, "session button where offered")
+        check(AgentAttention.approvalCategory(sessionOffered: false) == AgentAttention.approvalCategory, "plain buttons otherwise")
         check(AgentAttention.response(action: AgentAttention.replyAction, text: "  Yes, go ahead \n") == .answer("Yes, go ahead"), "reply trimmed")
         check(AgentAttention.response(action: AgentAttention.replyAction, text: "  ") == .open, "an empty reply just opens it")
         check(AgentAttention.response(action: "com.apple.UNNotificationDefaultActionIdentifier", text: nil) == .open, "a click opens it")

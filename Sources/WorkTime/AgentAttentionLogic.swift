@@ -4,8 +4,10 @@ import Foundation
 enum AgentAttention {
     static let settingKey = "agentNotifyAttention"
     static let approvalCategory = "agent-approval"
+    static let sessionApprovalCategory = "agent-approval-session"
     static let questionCategory = "agent-question"
     static let allowAction = "agent-allow"
+    static let allowSessionAction = "agent-allow-session"
     static let denyAction = "agent-deny"
     static let replyAction = "agent-reply"
     static let agentKey = "agentAttentionAgent"
@@ -14,7 +16,7 @@ enum AgentAttention {
     static let questionLimit = 200
 
     enum Response: Equatable {
-        case allow, deny, answer(String), open
+        case allow, allowSession, deny, answer(String), open
     }
 
     static func enabled(defaults: UserDefaults = .standard) -> Bool {
@@ -23,6 +25,9 @@ enum AgentAttention {
 
     /// Routines run unattended and deny what needs approval; an agent the user is looking at asks in its own window.
     static func shouldNotify(enabled: Bool, isRoutine: Bool, isShown: Bool) -> Bool { enabled && !isRoutine && !isShown }
+
+    /// The buttons of an approval: Allow for this session only where the prompt offers it.
+    static func approvalCategory(sessionOffered: Bool) -> String { sessionOffered ? sessionApprovalCategory : approvalCategory }
 
     static func approvalIdentifier(agent: String, permission: String) -> String { "agent-approval:\(agent):\(permission)" }
 
@@ -41,6 +46,7 @@ enum AgentAttention {
     static func response(action: String, text: String?) -> Response {
         switch action {
         case allowAction: return .allow
+        case allowSessionAction: return .allowSession
         case denyAction: return .deny
         case replyAction:
             let answer = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

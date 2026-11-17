@@ -17,6 +17,8 @@ enum AgentEvent: Equatable {
     /// Whether the Claude in Chrome tools work: nil once one has, the error text when the extension is not reachable.
     case chrome(problem: String?)
     case idle
+    /// The calls allowed for the rest of the session, by the sidecar's keys; sent each time they change.
+    case sessionAllowed([String])
     /// A message sent while the agent worked reached it.
     case delivered(id: String)
     /// A message sent while the agent worked was taken back, by the user or because the turn ended.
@@ -50,6 +52,7 @@ enum AgentEvent: Equatable {
         case "error" where object["missingFolder"] is String: return .missingFolder(string("missingFolder"))
         case "error": return object["auth"] as? Bool == true || AgentLogic.needsSignIn(string("message")) ? .signIn : .error(string("message"))
         case "idle": return .idle
+        case "session_allowed": return .sessionAllowed(object["keys"] as? [String] ?? [])
         case "delivered": return .delivered(id: string("id"))
         case "cancelled": return .cancelled(id: string("id"))
         case "chrome": return .chrome(problem: object["connected"] as? Bool == true ? nil : string("message").isEmpty ? "Not connected" : string("message"))
@@ -130,6 +133,8 @@ enum AgentRequest {
     case target(id: String, key: String?)
     case mode(AgentPermissionMode)
     case rules([AgentRule])
+    /// Takes back one call allowed for the session, or all of them when `key` is nil.
+    case revokeSession(key: String?)
     case interrupt
 
     var line: String {
@@ -159,6 +164,9 @@ enum AgentRequest {
             object = ["type": "target", "id": id]
             if let key { object["key"] = key }
         case .rules(let rules): object = ["type": "rules", "rules": rules.map(\.json)]
+        case .revokeSession(let key):
+            object = ["type": "revoke_session"]
+            if let key { object["key"] = key }
         case .interrupt: object = ["type": "interrupt"]
         }
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
@@ -237,7 +245,7 @@ enum AgentLogic {
     @discardableResult
     static func apply(_ event: AgentEvent, to items: inout [AgentItem]) -> String? {
         switch event {
-        case .ready, .chrome, .delivered, .cancelled: return nil
+        case .ready, .chrome, .sessionAllowed, .delivered, .cancelled: return nil
         case .idle:
             settleStreaming(in: &items)
             return nil

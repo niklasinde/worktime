@@ -121,6 +121,7 @@ struct AgentDockPane: View {
             AgentSessionsButton(model: model).labelStyle(.iconOnly)
             AgentChromeToggle(model: model).labelStyle(.iconOnly)
             AgentPermissionPicker(model: model)
+            AgentSessionAllowButton(model: model).labelStyle(.iconOnly)
             AgentModelPicker(model: model)
             AgentNewSessionButton(model: model).buttonStyle(.bordered).labelStyle(.titleOnly)
             AgentWorkMapToggle(model: model, wide: wide).labelStyle(.iconOnly)

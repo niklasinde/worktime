@@ -18,7 +18,8 @@ type Input =
   | { type: "target"; id: string; key?: string }
   | { type: "mode"; mode: string }
   | { type: "interrupt" }
-  | { type: "rules"; rules: unknown };
+  | { type: "rules"; rules: unknown }
+  | { type: "revoke_session"; key?: string };
 
 const model = process.env.WORKTIME_AGENT_MODEL ?? "claude-opus-5-5";
 /// Tool calls allowed without asking, with the rule that allowed them when it was one of the user's.
@@ -28,6 +29,10 @@ const chromeCalls = new Set<string>();
 let rules: Rule[] = [];
 /// The calls the user allowed for the rest of this session, by `sessionKey`.
 const sessionAllowed = new Set<string>();
+
+function reportSessionAllowed() {
+  send({ type: "session_allowed", keys: [...sessionAllowed] });
+}
 /// What each waiting permission prompt would add to `sessionAllowed`, nothing for a tool that is asked about every time.
 const sessionKeys = new Map<string, string | undefined>();
 const resultLimit = 4000;
@@ -273,7 +278,10 @@ function handle(line: string) {
       pending.delete(input.id);
       const key = sessionKeys.get(input.id);
       sessionKeys.delete(input.id);
-      if (input.allow && input.session && key) sessionAllowed.add(key);
+      if (input.allow && input.session && key && !sessionAllowed.has(key)) {
+        sessionAllowed.add(key);
+        reportSessionAllowed();
+      }
       resolve?.(input.allow ? { behavior: "allow" } : { behavior: "deny", message: "The user denied this tool call." });
       break;
     }
@@ -289,6 +297,11 @@ function handle(line: string) {
       break;
     case "rules":
       rules = parseRules(input.rules);
+      break;
+    case "revoke_session":
+      if (input.key === undefined) sessionAllowed.clear();
+      else sessionAllowed.delete(input.key);
+      reportSessionAllowed();
       break;
     case "interrupt":
       denyPending("The user stopped the agent.");

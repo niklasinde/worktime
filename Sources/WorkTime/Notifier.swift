@@ -28,6 +28,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let stop = UNNotificationAction(identifier: Self.stopAction, title: "Stop", options: [])
         let keep = UNNotificationAction(identifier: Self.keepAction, title: "Keep recording", options: [])
         let allow = UNNotificationAction(identifier: AgentAttention.allowAction, title: "Allow once", options: [])
+        let allowSession = UNNotificationAction(identifier: AgentAttention.allowSessionAction, title: "Allow for this session", options: [])
         let deny = UNNotificationAction(identifier: AgentAttention.denyAction, title: "Deny", options: [.destructive])
         let reply = UNTextInputNotificationAction(identifier: AgentAttention.replyAction, title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Answer the agent")
@@ -35,6 +36,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [record], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.approvalCategory, actions: [allow, deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.sessionApprovalCategory, actions: [allow, allowSession, deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.questionCategory, actions: [reply], intentIdentifiers: [], options: []),
         ])
     }
@@ -67,9 +69,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
-    /// An agent stopped on a permission prompt; Allow once and Deny answer it without opening the app, a click opens the agent.
-    static func postApproval(agent: String, permission: String, text: (title: String, body: String)) {
-        post(text, category: AgentAttention.approvalCategory, agent: agent, request: permission,
+    /// An agent stopped on a permission prompt; Allow once, Allow for this session (where offered) and Deny answer it without opening the app, a click opens the agent.
+    static func postApproval(agent: String, permission: String, text: (title: String, body: String), sessionOffered: Bool = false) {
+        post(text, category: AgentAttention.approvalCategory(sessionOffered: sessionOffered), agent: agent, request: permission,
              identifier: AgentAttention.approvalIdentifier(agent: agent, permission: permission))
     }
 
