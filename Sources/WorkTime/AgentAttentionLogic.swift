@@ -12,7 +12,8 @@ enum AgentAttention {
     static let replyAction = "agent-reply"
     static let agentKey = "agentAttentionAgent"
     static let requestKey = "agentAttentionRequest"
-    static let bodyLimit = 160
+    static let bodyLimit = 400
+    static let handoffLimit = 400
     static let questionLimit = 200
 
     enum Response: Equatable {

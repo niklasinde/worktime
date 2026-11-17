@@ -35,6 +35,11 @@ let agentAttentionTests: [(name: String, run: () throws -> Void)] = [
         check(AgentAttention.response(action: AgentAttention.replyAction, text: "  ") == .open, "an empty reply just opens it")
         check(AgentAttention.response(action: "com.apple.UNNotificationDefaultActionIdentifier", text: nil) == .open, "a click opens it")
     }),
+    ("attention: a hand-off's whole prompt fits in the approval", {
+        let prompt = String(repeating: "word ", count: 70)
+        let approval = AgentAttention.approval(agent: "Main", tool: "mcp__worktime__send_to_agent", summary: prompt)
+        check(approval.body.contains(prompt.trimmingCharacters(in: .whitespaces)), "a 350 character prompt is not cut")
+    }),
     ("attention: the identifiers are per request and per agent, so a repeat replaces instead of piling up", {
         check(AgentAttention.approvalIdentifier(agent: "a", permission: "1") != AgentAttention.approvalIdentifier(agent: "a", permission: "2"), "per request")
         check(AgentAttention.approvalIdentifier(agent: "a", permission: "1") == AgentAttention.approvalIdentifier(agent: "a", permission: "1"), "stable")

@@ -52,7 +52,7 @@ final class PRAgents: ObservableObject {
         case .reject(let why): return AgentInbox.Reply(id: request.id, status: .rejected, message: why)
         case .start, .queue:
             let queued = !model.queued.isEmpty
-            Notifier.postAgentMessage(title: "Main \u{2192} \(title)", body: request.text)
+            Notifier.postAgentMessage(title: "Main \u{2192} \(title)", body: request.text, agent: model.attentionID)
             return AgentInbox.Reply(id: request.id, status: queued ? .queued : .started, sessionID: model.sessionID, message: queued ? "queued" : "started")
         }
     }

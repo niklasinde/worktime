@@ -188,7 +188,7 @@ final class AgentModel: ObservableObject {
     }
 
     /// The key a notification carries to find this agent again: the one the Agent page selects it by.
-    private var attentionID: String { isMain ? Workspaces.mainKey(workspace ?? Workspaces.defaultID) : agentKey ?? historyKey }
+    var attentionID: String { isMain ? Workspaces.mainKey(workspace ?? Workspaces.defaultID) : agentKey ?? historyKey }
 
     private var isInFront: Bool { visiblePanes > 0 && NSApp.isActive }
 

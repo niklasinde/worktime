@@ -72,10 +72,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Says Main handed a pull request's agent a prompt, so it is not missed while that agent works out of sight.
-    static func postAgentMessage(title: String, body: String) {
+    static func postAgentMessage(title: String, body: String, agent: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
-        content.body = String(body.prefix(200))
+        content.body = String(body.prefix(AgentAttention.handoffLimit))
+        if let agent { content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: ""] }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
