@@ -202,45 +202,56 @@ final class TopicAgentStore: ObservableObject {
         return PRAgents.deliver(request, to: load(topic), title: topic.name)
     }
 
-    // MARK: Ticket sessions
+    // MARK: Ticket and pull request sessions
 
-    /// Makes the assistant's session for the ticket, working in the assistant's own folder, without showing it.
+    /// Makes the assistant's session for the ticket or pull request, working in the assistant's own folder, without showing it.
     @discardableResult
-    func makeTicketSession(_ entry: AssistantEntry, ticket: String) -> TopicAgent {
+    func makeSession(_ entry: AssistantEntry, subject: SessionSubject) -> TopicAgent {
         let folder = AssistantStore.shared.folder(entry)
         if entry.role.folder == Assistants.ownFolder { try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true) }
-        let topic = TicketSessions.make(entry: entry, ticket: ticket, folder: folder, now: Date())
+        let topic = TicketSessions.make(entry: entry, subject: subject, folder: folder, now: Date())
         topics.append(topic)
         save()
         return topic
     }
 
-    /// A prompt for an assistant about one ticket: sent to the session it already has for it or to a new one. With a session already there,
-    /// the user decides unless the setting or `new_session` does, and the answer is waited for, but only as long as the setting says.
-    func deliver(ticketSession request: AgentInbox.Request) async -> AgentInbox.Reply {
+    /// What a request is about: the ticket it names, else the ticket the pull request's title names, else the pull request itself.
+    func subject(of request: AgentInbox.Request, entry: AssistantEntry) -> SessionSubject? {
+        if let ticket = request.ticket { return .ticket(ticket) }
+        guard let url = request.pr else { return nil }
+        let projects = WorkspaceStore.shared.workspace(entry.workspace)?.jiraProjects ?? []
+        let title = GitHubModel.shared.prs.values.joined().first { $0.url == url }?.title
+        return TicketSessions.ticket(inTitle: title, projects: projects).map(SessionSubject.ticket) ?? .pullRequest(url)
+    }
+
+    /// A prompt for an assistant about one ticket or pull request: sent to the session it already has for it or to a new one. With a session
+    /// already there, the user decides unless the setting or `new_session` does, and the answer is waited for, but only as long as the
+    /// setting says.
+    func deliver(roleSession request: AgentInbox.Request) async -> AgentInbox.Reply {
         func reject(_ message: String) -> AgentInbox.Reply { AgentInbox.Reply(id: request.id, status: .rejected, message: message) }
         let assistants = AssistantStore.shared
-        guard let ticket = request.ticket, let entry = assistants.entry(request.agent) else { return reject("No assistant \(request.agent) in WorkTime.") }
+        guard let entry = assistants.entry(request.agent) else { return reject("No assistant \(request.agent) in WorkTime.") }
         guard entry.role.isUsable else { return reject(AssistantError.broken(entry.role.name, entry.role.problems.first?.text ?? "").message) }
-        let existing = TicketSessions.existing(assistant: entry.key, ticket: ticket, in: topics)
+        guard let subject = subject(of: request, entry: entry) else { return reject("A ticket or a pull request is needed.") }
+        let existing = TicketSessions.existing(assistant: entry.key, subject: subject, in: topics)
         switch TicketSessions.resolve(existing: existing, forceNew: request.newSession == true, policy: TicketSessions.policy(),
                                       alwaysReuse: TicketSessions.alwaysReuse().contains(entry.key)) {
         case .create:
-            let topic = makeTicketSession(entry, ticket: ticket)
+            let topic = makeSession(entry, subject: subject)
             return send(request, to: topic, note: TicketSessions.createdNote(name: topic.name))
         case .reuse(let topic):
             return send(request, to: topic, note: TicketSessions.reusedNote(name: topic.name, preview: nil, now: Date()))
         case .ask(let topic):
-            if TicketAsks.pending(assistant: entry.key, ticket: ticket, in: TicketAskStore.shared.pending) != nil {
-                return reject("A question about reusing the \(entry.role.name) session for \(ticket) is already waiting for the user's answer; send again once they have answered.")
+            if TicketAsks.pending(assistant: entry.key, subject: subject, in: TicketAskStore.shared.pending) != nil {
+                return reject("A question about reusing the \(entry.role.name) session for \(subject.label) is already waiting for the user's answer; send again once they have answered.")
             }
             let now = Date(), seconds = RoleTools.waitSeconds()
             let state = AgentStateWriter.shared.states().first { $0.key == topic.key }
-            let ask = TicketAsk(id: request.id, workspace: entry.workspace, assistant: entry.key, assistantName: entry.role.name, ticket: ticket,
-                                existing: TicketSessions.preview(of: topic, state: state), text: request.text, created: now,
-                                deadline: now.addingTimeInterval(TimeInterval(seconds)))
+            let ask = TicketAsk(id: request.id, workspace: entry.workspace, assistant: entry.key, assistantName: entry.role.name, ticket: subject.ticket,
+                                pullRequest: subject.pullRequest, existing: TicketSessions.preview(of: topic, state: state), text: request.text, created: now,
+                                deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin)
             guard let answer = await TicketAskStore.shared.ask(ask) else {
-                return reject(TicketSessions.timeoutMessage(role: entry.role.name, ticket: ticket, minutes: max(1, seconds / 60)))
+                return reject(TicketSessions.timeoutMessage(role: entry.role.name, subject: subject.label, minutes: max(1, seconds / 60)))
             }
             return await finish(ask: ask, answer: answer, request: request)
         }
@@ -249,7 +260,8 @@ final class TopicAgentStore: ObservableObject {
     /// Does what the user chose for a waiting question: the prompt goes to the session it was about, or to a new one. When that session
     /// is gone meanwhile, a new one is made.
     func finish(ask: TicketAsk, answer: TicketSessions.Answer, request: AgentInbox.Request? = nil) async -> AgentInbox.Reply {
-        let request = request ?? AgentInbox.Request(id: ask.id, agent: ask.assistant, text: ask.text, created: Date(), ticket: ask.ticket)
+        let request = request ?? AgentInbox.Request(id: ask.id, agent: ask.assistant, text: ask.text, created: Date(), ticket: ask.ticket, pr: ask.pullRequest,
+                                                    origin: ask.origin)
         guard let entry = AssistantStore.shared.entry(ask.assistant), entry.role.isUsable else {
             return AgentInbox.Reply(id: request.id, status: .rejected, message: "The assistant \(ask.assistantName) is gone; nothing was sent.")
         }
@@ -257,7 +269,7 @@ final class TopicAgentStore: ObservableObject {
         if answer != .startNew, let topic = topic(ask.existing.key), !topic.archived {
             return send(request, to: topic, note: TicketSessions.chosenNote(answer, name: topic.name))
         }
-        let topic = makeTicketSession(entry, ticket: ask.ticket)
+        let topic = makeSession(entry, subject: ask.subject)
         return send(request, to: topic, note: TicketSessions.chosenNote(.startNew, name: topic.name))
     }
 
@@ -265,6 +277,7 @@ final class TopicAgentStore: ObservableObject {
         var forTopic = request
         forTopic.agent = topic.key
         forTopic.ticket = nil
+        forTopic.pr = nil
         forTopic.newSession = nil
         var reply = deliver(forTopic)
         reply.note = [note, reply.note].compactMap { $0 }.joined(separator: " ")
@@ -332,6 +345,10 @@ struct AgentTopicHeader: View {
             Button { jira.site.flatMap { JiraLogic.browseURL(site: $0, key: key) }.map { _ = NSWorkspace.shared.open($0) } } label: { Text(key) }
                 .disabled(jira.site == nil)
                 .help(jira.site == nil ? "Set up Jira in Settings to open the ticket" : "Open \(key) in Jira")
+        }
+        if let address = topic.pullRequestURL, let url = URL(string: address) {
+            Button { NSWorkspace.shared.open(url) } label: { Label(AgentSessions.shortReference(address), systemImage: "arrow.triangle.pull") }
+                .help("Open the pull request this session is for")
         }
         if let url = topic.slackURL.flatMap(URL.init(string:)) {
             Button { NSWorkspace.shared.open(url) } label: { Label("Thread", systemImage: "arrow.up.forward.square") }

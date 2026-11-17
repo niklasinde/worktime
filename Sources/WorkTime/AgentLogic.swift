@@ -249,6 +249,13 @@ struct AgentItem: Identifiable, Equatable {
     var decision: Bool?
     /// For a tool row: how many identical calls it stands for.
     var repeats = 1
+    /// When it was said or done: the time it was made, or the transcript's own time for a restored session. Not part of what makes two items equal.
+    var date = Date()
+
+    static func == (lhs: AgentItem, rhs: AgentItem) -> Bool {
+        lhs.id == rhs.id && lhs.kind == rhs.kind && lhs.images == rhs.images && lhs.streaming == rhs.streaming && lhs.call == rhs.call
+            && lhs.decision == rhs.decision && lhs.repeats == rhs.repeats
+    }
 }
 
 enum AgentLogic {

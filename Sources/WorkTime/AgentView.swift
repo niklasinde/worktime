@@ -38,6 +38,17 @@ final class AgentHub: ObservableObject {
         selected = key.map { PullRequestSets.route($0, in: TopicAgentStore.shared.topics) } ?? currentMainKey
         showPage?()
     }
+
+    /// Opens a session at an item of its transcript, as the timeline of a ticket or pull request does.
+    func jump(to session: String, item: String?) {
+        show(session)
+        guard let item else { return }
+        if TopicAgents.isKey(session), let topic = TopicAgentStore.shared.topic(session) {
+            TopicAgentStore.shared.load(topic).jump(to: item)
+        } else if let target = GitHubLink.pullRequest(at: session) {
+            Task { @MainActor in await PRAgents.shared.load(target).jump(to: item) }
+        }
+    }
 }
 
 struct AgentsPage: View {
@@ -59,6 +70,8 @@ struct AgentsPage: View {
             Group {
                 if let main = hub.selectedMain {
                     AgentView(model: main, listHidden: $listHidden)
+                } else if SessionSubject.isKey(hub.selected) {
+                    TicketTimelinePage(id: hub.selected, listHidden: $listHidden)
                 } else if TopicAgents.isKey(hub.selected) {
                     AgentTopicPage(key: hub.selected, listHidden: $listHidden)
                 } else if Assistants.isKey(hub.selected) {
@@ -104,7 +117,7 @@ struct AgentList: View {
                             assistantSection(group, now: now)
                             RoutineSection(workspace: group.workspace, hub: hub)
                             RoutineSection(workspace: group.workspace, hub: hub, automations: true)
-                            AgentsSection(workspace: group.workspace, agents: group.agents, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0) }
+                            AgentsSection(workspace: group.workspace, agents: group.agents, titles: prTitles, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0) }
                         }
                     }
                 }
@@ -138,9 +151,13 @@ struct AgentList: View {
         }
     }
 
-    /// A ticket's sessions under one row for the ticket.
+    private var prTitles: [String: String] {
+        Dictionary(GitHubModel.shared.prs.values.joined().map { ($0.url, $0.title) }) { first, _ in first }
+    }
+
+    /// A ticket's or pull request's sessions under one row.
     private func ticketGroup(_ ticket: TicketGroup) -> some View {
-        TicketGroupView(group: ticket) { state in
+        TicketGroupView(group: ticket, titles: prTitles, select: { hub.selected = $0 }, openTimeline: { hub.selected = ticket.id }) { state in
             Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: hub.selected == state.key) }
                 .buttonStyle(.plain)
                 .contextMenu { menu(state) }
@@ -311,7 +328,7 @@ struct AgentList: View {
         }
         if let topic = topics.topic(state.key) {
             Divider()
-            Button("Archive") { topics.setArchived(topic.key, true) }
+            if topic.archived { Button("Unarchive") { topics.setArchived(topic.key, false) } } else { Button("Archive") { topics.setArchived(topic.key, true) } }
             Button("Delete\u{2026}", role: .destructive) { deleting = topic }
         }
     }
@@ -657,6 +674,8 @@ struct AgentPanel: View {
     @State private var height: CGFloat = 26
     @State private var atBottom = true
     @State private var newBelow = false
+    /// The block the timeline sent the user to, tinted for a moment.
+    @State private var highlighted: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -698,11 +717,14 @@ struct AgentPanel: View {
                         }
                     }
                     ForEach(AgentToolGroups.blocks(model.items, unattended: model.routine != nil)) { block in
-                        switch block {
-                        case .item(let item): row(item)
-                        case .tools(_, let items, let label): AgentToolGroup(label: label, items: items, row: row)
-                        case .refused(_, let items, let label): AgentToolGroup(label: label, items: items, row: row, icon: "xmark.circle")
+                        Group {
+                            switch block {
+                            case .item(let item): row(item)
+                            case .tools(_, let items, let label): AgentToolGroup(label: label, items: items, row: row)
+                            case .refused(_, let items, let label): AgentToolGroup(label: label, items: items, row: row, icon: "xmark.circle")
+                            }
                         }
+                        .background(RoundedRectangle(cornerRadius: 8).fill(highlighted == block.id ? Color.accentColor.opacity(0.14) : .clear))
                     }
                     if isMain { TicketAskCards(workspace: model.workspace) }
                     if !model.busy, !model.blocked.isEmpty {
@@ -740,8 +762,11 @@ struct AgentPanel: View {
             }
             .onChange(of: model.items) {
                 let sent = if case .user = model.items.last?.kind { true } else { false }
+                if model.jumpRequest != nil { return jump(proxy) }
                 if atBottom || sent { proxy.scrollTo("end", anchor: .bottom) } else { newBelow = true }
             }
+            .onChange(of: model.jumpRequest) { jump(proxy) }
+            .onAppear { jump(proxy) }
             .overlay(alignment: .bottom) {
                 if newBelow {
                     Button { proxy.scrollTo("end", anchor: .bottom) } label: { Label("Jump to latest", systemImage: "arrow.down") }
@@ -756,6 +781,20 @@ struct AgentPanel: View {
                 atBottom = true
                 newBelow = false
             }
+        }
+    }
+
+    /// Scrolls to the item the timeline asked for, once the transcript has it, and tints it for a moment.
+    private func jump(_ proxy: ScrollViewProxy) {
+        guard let request = model.jumpRequest else { return }
+        guard let id = AgentToolGroups.blockID(containing: request.item, in: model.items, unattended: model.routine != nil) else { return }
+        model.jumpHandled()
+        atBottom = false
+        proxy.scrollTo(id, anchor: .center)
+        highlighted = id
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            if highlighted == id { highlighted = nil }
         }
     }
 
@@ -845,7 +884,7 @@ struct AgentItemRow: View {
                 Spacer(minLength: 80)
                 if let message = AgentInbox.fromMain(text) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("From Main", systemImage: "sparkles").font(.caption.weight(.medium)).foregroundStyle(.purple)
+                        Label("From Main" + (AgentInbox.origin(of: text).map { " \u{00B7} \($0)" } ?? ""), systemImage: "sparkles").font(.caption.weight(.medium)).foregroundStyle(.purple)
                         Text(message).lineSpacing(typography?.lineSpacing ?? 0).textSelection(.enabled)
                     }
                     .padding(.horizontal, 12)

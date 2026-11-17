@@ -36,6 +36,20 @@ enum AgentToolGroups {
         return blocks
     }
 
+    /// The block of the transcript that shows the item: its own, the group of tool rows it is in, or the row its permission prompt was merged into.
+    static func blockID(containing id: String, in items: [AgentItem], unattended: Bool = false) -> String? {
+        let call = items.first { $0.id == id }?.call
+        for block in blocks(items, unattended: unattended) {
+            let shown: [AgentItem]
+            switch block {
+            case .item(let item): shown = [item]
+            case .tools(_, let items, _), .refused(_, let items, _): shown = items
+            }
+            if shown.contains(where: { $0.id == id || (call != nil && $0.call == call) }) { return block.id }
+        }
+        return nil
+    }
+
     static func refusedLabel(_ count: Int) -> String {
         "\(count) call\(count == 1 ? " was" : "s were") refused: nobody was there to approve"
     }

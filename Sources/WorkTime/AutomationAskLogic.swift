@@ -34,6 +34,11 @@ struct NoticeAsk: Codable, Equatable, Sendable {
     var event: String?
     /// What the event said, for the row to show when it is opened.
     var eventText: String?
+    /// For an assistant: the ticket, else the pull request, whose session of it gets the prompt.
+    var ticket: String?
+    var pullRequest: String?
+    /// What the event was, like `Review requested in #review-request`, shown in the session's timeline.
+    var origin: String?
 }
 
 /// The user's last answer to an automation's question, for its row.
@@ -131,8 +136,16 @@ enum AutomationAsks {
         text = Automations.prompt(text, event: event)
         text = text.replacingOccurrences(of: "{recommendation}", with: advice?.reason ?? "")
         text = text.replacingOccurrences(of: "{answer}", with: String(answer(run.summary).prefix(answerLimit)))
+        let forAssistant = Assistants.isKey(agent)
+        let ticket = forAssistant ? event.fields["ticket"].flatMap(JiraLogic.issueKey) : nil
         return NoticeAsk(routine: routine.id, yes: ask.yes, no: ask.no, agent: agent, prompt: String(text.prefix(AgentInbox.textLimit)), reminder: reminder,
-                         pullRequests: several, event: event.id, eventText: [event.title, event.text].filter { !$0.isEmpty }.joined(separator: "\n"))
+                         pullRequests: several, event: event.id, eventText: [event.title, event.text].filter { !$0.isEmpty }.joined(separator: "\n"),
+                         ticket: ticket, pullRequest: forAssistant && ticket == nil ? event.pullRequest : nil, origin: origin(of: event))
+    }
+
+    /// What started the run: the kind of event and where it happened.
+    static func origin(of event: AutomationEvent) -> String {
+        event.kind.shortTitle + (event.place.isEmpty ? "" : " in " + event.place)
     }
 
     /// What the first button sends to the one agent for several pull requests, with `{pr_urls}` and `{answer}` still to fill in.

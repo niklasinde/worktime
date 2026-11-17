@@ -30,69 +30,152 @@ struct TicketAskCards: View {
     }
 }
 
-/// A ticket's sessions in the agents list: one row for the ticket with its title and status, and under it the sessions by role.
+/// A ticket's or pull request's sessions in the agents list: one row for the subject with its title and status, its pull requests as chips,
+/// the sessions under it by role, and the closed ones under "Earlier". The clock opens its timeline.
 struct TicketGroupView<Member: View>: View {
     let group: TicketGroup
-    let member: (AgentState) -> Member
+    var titles: [String: String] = [:]
+    let select: (String) -> Void
+    let openTimeline: () -> Void
+    @ViewBuilder let member: (AgentState) -> Member
     @AppStorage("agentTicketGroupsCollapsed") private var collapsed = ""
+    @AppStorage("agentTicketGroupsEarlier") private var earlierOpen = ""
     @ObservedObject private var directory = SessionRefDirectory.shared
     @ObservedObject private var asks = TicketAskStore.shared
     @ObservedObject private var jira = JiraModel.shared
 
-    private var collapsedKeys: Set<String> { Set(collapsed.split(separator: ",").map(String.init)) }
-    private var isCollapsed: Bool { collapsedKeys.contains(group.ticket) }
-    private var info: SessionRefInfo? { directory.entries[SessionRef.jira(group.ticket).cacheKey]?.info }
-    private var asking: Bool { asks.isAsking(ticket: group.ticket) }
+    private var key: String { group.id }
+    private var isCollapsed: Bool { Set(collapsed.split(separator: ",").map(String.init)).contains(key) }
+    private var showsEarlier: Bool { Set(earlierOpen.split(separator: ",").map(String.init)).contains(key) }
+    private var ref: SessionRef? {
+        switch group.subject {
+        case .ticket(let key): .jira(key)
+        case .pullRequest(let url): GitHubLink.pullRequest(at: url).map(SessionRef.init)
+        }
+    }
+    private var info: SessionRefInfo? { ref.flatMap { directory.entries[$0.cacheKey]?.info } }
+    private var title: String? {
+        if let title = info?.title, !title.isEmpty { return title }
+        return group.subject.pullRequest.flatMap { titles[$0] }
+    }
+    private var asking: Bool { asks.isAsking(subject: group.subject) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             header
-            if !isCollapsed { ForEach(group.members, id: \.key) { member($0) } }
+            if !isCollapsed {
+                if !group.chips.isEmpty { chips }
+                ForEach(group.rows, id: \.key) { member($0) }
+                if !group.earlier.isEmpty { earlier }
+            }
         }
-        .task(id: group.ticket) { await directory.ensure([.jira(group.ticket)], skip: []) }
+        .task(id: group.id) { if let ref { await directory.ensure([ref], skip: []) } }
     }
 
     private var header: some View {
         let need = asking ? AgentOverview.Need.waiting : group.need
         return HStack(spacing: 6) {
-            Button { toggle() } label: {
+            Button { toggle(&collapsed) } label: {
                 Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
                     .foregroundStyle(.secondary).frame(width: 12)
             }
             .buttonStyle(.plain)
             Circle().fill(AgentList.color(need)).frame(width: 8, height: 8).help(asking ? "Waiting for your choice: reuse a session or start a new one" : need.label)
-            BrandMark.jira.resizable().scaledToFit().frame(width: 12, height: 12)
+            if group.ticket != nil {
+                BrandMark.jira.resizable().scaledToFit().frame(width: 12, height: 12)
+            } else {
+                Image(systemName: "arrow.triangle.pull").font(.caption).foregroundStyle(.secondary).frame(width: 12)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(group.ticket).font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
-                    if let status = info?.status { StatusChip(text: status, kind: info?.statusKind) }
+                    Text(group.subject.label).font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
+                    if group.ticket != nil, let status = info?.status { StatusChip(text: status, kind: info?.statusKind) }
                     Spacer(minLength: 4)
-                    Text("\(group.members.count)").font(.caption2).foregroundStyle(.tertiary)
+                    Text("\(group.live.count)").font(.caption2).foregroundStyle(.tertiary)
                     if let updated = group.latest {
                         Text(GitHubLogic.updatedText(updated, now: Date())).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                if let title = info?.title, !title.isEmpty { Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if let title, !title.isEmpty { Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 if asking { Text("Reuse a session or start a new one?").font(.caption2).foregroundStyle(.orange) }
             }
+            Button(action: openTimeline) { Image(systemName: "clock.arrow.circlepath").font(.caption) }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Timeline of \(group.subject.label): what triggered it, what was asked, the outcomes and the reviews, across its sessions")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { toggle() }
+        .onTapGesture { toggle(&collapsed) }
         .contextMenu {
-            if let site = jira.site, let url = JiraLogic.browseURL(site: site, key: group.ticket) {
-                Button("Open \(group.ticket) in Jira") { NSWorkspace.shared.open(url) }
+            Button("Open Timeline", action: openTimeline)
+            if let ticket = group.ticket, let site = jira.site, let url = JiraLogic.browseURL(site: site, key: ticket) {
+                Button("Open \(ticket) in Jira") { NSWorkspace.shared.open(url) }
             }
+            if let url = group.subject.pullRequest.flatMap(URL.init(string:)) { Button("Open in Browser") { NSWorkspace.shared.open(url) } }
         }
-        .help(isCollapsed ? "Show the sessions for \(group.ticket)" : "Hide the sessions for \(group.ticket)")
+        .help(isCollapsed ? "Show the sessions for \(group.subject.label)" : "Hide the sessions for \(group.subject.label)")
     }
 
-    private func toggle() {
-        var keys = collapsedKeys
-        if isCollapsed { keys.remove(group.ticket) } else { keys.insert(group.ticket) }
-        collapsed = keys.sorted().joined(separator: ",")
+    /// The ticket's pull requests: a chip each, which opens the agent or session about it, or lists them when there are several.
+    private var chips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(group.chips) { chip in
+                    if chip.sessions.count == 1 {
+                        Button { select(chip.sessions[0].key) } label: { chipLabel(chip) }.buttonStyle(.plain)
+                    } else {
+                        Menu {
+                            ForEach(chip.sessions, id: \.key) { state in Button(TicketGrouping.label(state)) { select(state.key) } }
+                        } label: { chipLabel(chip) }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                    }
+                }
+            }
+            .padding(.leading, 30)
+            .padding(.trailing, 8)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func chipLabel(_ chip: PullRequestChip) -> some View {
+        let need = chip.sessions.map(AgentOverview.need).min() ?? .idle
+        return HStack(spacing: 4) {
+            Circle().fill(AgentList.color(need)).frame(width: 6, height: 6)
+            Text(chip.label).font(.caption2.monospaced())
+            if chip.sessions.count > 1 { Text("\(chip.sessions.count)").font(.caption2).foregroundStyle(.tertiary) }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .help("Pull request \(chip.label)\(chip.sessions.count > 1 ? ": \(chip.sessions.count) agents and sessions" : "")")
+    }
+
+    /// The closed sessions: kept, so what was said and done stays one click away.
+    @ViewBuilder private var earlier: some View {
+        Button { toggle(&earlierOpen) } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.right").font(.system(size: 7, weight: .bold)).rotationEffect(.degrees(showsEarlier ? 90 : 0))
+                Text("Earlier").font(.caption2.weight(.medium))
+                Text("\(group.earlier.count)").font(.caption2).foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.leading, 30)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        if showsEarlier { ForEach(group.earlier, id: \.key) { member($0).opacity(0.7) } }
+    }
+
+    private func toggle(_ store: inout String) {
+        var keys = Set(store.split(separator: ",").map(String.init))
+        if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
+        store = keys.sorted().joined(separator: ",")
     }
 }
 

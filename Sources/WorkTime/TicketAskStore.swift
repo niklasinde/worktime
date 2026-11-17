@@ -27,9 +27,9 @@ final class TicketAskStore: ObservableObject {
         pending.filter { workspace == nil || $0.workspace == workspace }
     }
 
-    /// Whether the ticket has a question waiting, for its row in the agents list.
-    func isAsking(ticket: String) -> Bool {
-        pending.contains { $0.ticket.caseInsensitiveCompare(ticket) == .orderedSame }
+    /// Whether the ticket or pull request has a question waiting, for its row in the agents list.
+    func isAsking(subject: SessionSubject) -> Bool {
+        pending.contains { TicketAsks.pending(assistant: $0.assistant, subject: subject, in: [$0]) != nil }
     }
 
     /// Puts the question to the user and waits for the answer; nil when the time ran out.

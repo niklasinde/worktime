@@ -560,19 +560,31 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   requests as chips in its header (add one by link, ✕ takes one out and it gets its own agent again). A pull request is in one
   set; opening it from a list opens the set, marked "in set". Its prompts tell it to draft one verdict per pull request and check
   they agree, and never to post, approve or comment.
-- **Sessions per ticket.** Work on a Jira ticket goes to an assistant with `send_to_agent` (`agent` the role name, `ticket` the key, in
-  the workspace's Jira projects), one call per ticket. The assistant gets a session of its own for that ticket, named "KEY · Role", working
-  as that assistant (its file, model, tools and permissions) in its folder; a session per ticket and role, so feedback comes back to one
-  place and the agents list gathers a ticket's sessions (the assistants', its own agent, the pull requests' agents whose title names it)
-  under one row for the ticket with its title and status. When that assistant already has a session for the ticket that is not archived,
-  the user is asked: a card in Main's chat, a row in the notch bar's "Waiting for you" and a notification with **Reuse this one** and
-  **Start a new one** (the card also has **Always reuse for <assistant>**), answered without opening the app. The call waits for the
-  answer, as long as the time set for a tool's question (30 minutes by default), and nothing is sent when that runs out. Other tickets are
-  not held up: each ticket has its own question. `new_session` starts a new session without asking, and Settings > Agent > Assistant sessions
-  has "Ask / Always reuse / Always start a new one". `agents_overview` takes `ticket` and lists the sessions with their role. At most N
-  assistant sessions work at once (Settings, 3 by default, 0 for no limit; an assistant's file can add `concurrency: 1`): a prompt from Main
-  over the limit waits for a free slot, shown on the row, and a prompt you type is never held back. Sessions report to Main with
-  `send_to_main` in one line starting with the ticket key, which Main collects into one table.
+- **Sessions per ticket and pull request.** Work on a Jira ticket goes to an assistant with `send_to_agent` (`agent` the role name, `ticket`
+  the key, in the workspace's Jira projects), one call per ticket. The assistant gets a session of its own for that ticket, named
+  "KEY · Role", working as that assistant (its file, model, tools and permissions) in its folder; a session per ticket and role, so feedback
+  comes back to one place. For a pull request that names no ticket (nothing in its title, branch or linked Jira) Main passes `pr_url` with the
+  assistant instead, and the session is kept by assistant and pull request (named "repo#12 · Role"); when the pull request's title does name
+  a ticket the app keys it by the ticket. When that assistant already has a session for the ticket or pull request that is not archived, the
+  user is asked: a card in Main's chat, a row in the notch bar's "Waiting for you" and a notification with **Reuse this one** and **Start a
+  new one** (the card also has **Always reuse for <assistant>**), answered without opening the app. The call waits for the answer, as long as
+  the time set for a tool's question (30 minutes by default), and nothing is sent when that runs out. Other tickets are not held up: each
+  has its own question. `new_session` starts a new session without asking, and Settings > Agent > Assistant sessions has "Ask / Always reuse /
+  Always start a new one". `agents_overview` takes `ticket` and lists the sessions with their role. At most N assistant sessions work at once
+  (Settings, 3 by default, 0 for no limit; an assistant's file can add `concurrency: 1`): a prompt from Main over the limit waits for a free
+  slot, shown on the row, and a prompt you type is never held back. Sessions report to Main with `send_to_main` in one line starting with
+  the ticket key, which Main collects into one table.
+- **Ticket and pull request rows.** The Agents list gathers a ticket's sessions (the assistants', its own agent) under one row with the
+  ticket's title and status, and its pull requests as chips on that row (a pull request whose title names the ticket, its agent and the
+  sessions about it); a pull request with sessions of its own and no ticket gets a row of its own. Sessions are never deleted by the app:
+  an archived one stays in its row under **Earlier**.
+- **Timeline.** The clock on a ticket's or pull request's row, or its context menu, opens its page: **Timeline** lists across all its
+  sessions, oldest first, what triggered the work (a Slack message, a review request, my ticket, from the automation that asked), what
+  Main asked, the replies that ended a turn, verdicts (PASS, FAIL, BLOCKED, a recommendation), drafted reviews, offered steps, what you
+  wrote, permission prompts you answered (folded into one line), reviews posted by an agent's `gh` call and the ones you posted from a
+  notification or card (from the log of GitHub actions). Each one opens its session at that point in the transcript. It is read from the
+  sessions' own items and their saved transcripts, which keep their times, and it needs no store; a session is read a changed item at a
+  time. **Sessions** lists them, the closed ones under Earlier.
 - **Delegation.** Main hands work to an assistant, a pull request's agent or a topic with `send_to_agent`, which asks in every
   permission mode. The card offers **Always allow Main → Reviewer**, saved as a rule for that workspace's Main and that one agent
   (listed in Settings > Agent as "Main (Work) may message Reviewer"); other agents, other workspaces and unclear names still ask,

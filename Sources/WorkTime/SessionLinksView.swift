@@ -222,9 +222,17 @@ private struct SessionLinkRow: View {
             Button("Open in Browser") { NSWorkspace.shared.open(url) }
         }
         if let key = ref.key {
-            let sessions = TicketSessions.sessions(ticket: key, in: TopicAgentStore.shared.topics)
+            let sessions = TicketSessions.sessions(subject: .ticket(key), in: TopicAgentStore.shared.topics)
             if !sessions.isEmpty {
                 Menu("Sessions for \(key)") {
+                    ForEach(sessions) { topic in Button(topic.name) { AgentHub.shared.show(topic.key) } }
+                }
+            }
+        }
+        if let url = ref.target?.url {
+            let sessions = TicketSessions.sessions(subject: .pullRequest(url), in: TopicAgentStore.shared.topics)
+            if !sessions.isEmpty {
+                Menu("Sessions for this pull request") {
                     ForEach(sessions) { topic in Button(topic.name) { AgentHub.shared.show(topic.key) } }
                 }
             }

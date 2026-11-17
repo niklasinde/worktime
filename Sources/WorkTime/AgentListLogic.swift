@@ -28,6 +28,7 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
     func includes(_ state: AgentState) -> Bool { self == .all || Self.kind(of: state) == self }
 
     static func counts(_ states: [AgentState]) -> [AgentListFilter: Int] {
+        let states = states.filter { $0.archived != true }
         var counts: [AgentListFilter: Int] = [.all: states.count]
         for state in states { counts[kind(of: state), default: 0] += 1 }
         return counts

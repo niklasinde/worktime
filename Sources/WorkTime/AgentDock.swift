@@ -50,7 +50,7 @@ final class PRAgents: ObservableObject {
 
     /// Hands Main's prompt to the agent and says how it went; a notification says where it went.
     static func deliver(_ request: AgentInbox.Request, to model: AgentModel, title: String) -> AgentInbox.Reply {
-        switch model.deliver(fromMain: request.text) {
+        switch model.deliver(fromMain: request.text, origin: request.origin) {
         case .reject(let why): return AgentInbox.Reply(id: request.id, status: .rejected, message: why)
         case .start, .queue:
             let queued = !model.queued.isEmpty
@@ -212,6 +212,10 @@ final class AgentStateWriter: ObservableObject {
             states.append(AgentState.topic(topic, loaded: loaded, sessionID: sessions[topic.key],
                                            roleName: topic.assistant.flatMap { AssistantStore.shared.entry($0)?.role.name }))
         }
+        for topic in topics.archived where topic.assistant != nil {
+            states.append(AgentState.topic(topic, loaded: nil, sessionID: sessions[topic.key],
+                                           roleName: topic.assistant.flatMap { AssistantStore.shared.entry($0)?.role.name }))
+        }
         let assistants = AssistantStore.shared
         for entry in assistants.all {
             let loaded = assistants.models[entry.key].map { state($0, key: entry.key, title: entry.role.name) }
@@ -307,14 +311,15 @@ final class AgentInboxWatcher {
             return TopicAgentStore.shared.deliver(forSet)
         }
         if TopicAgents.isKey(request.agent) { return TopicAgentStore.shared.deliver(request) }
-        if request.ticket != nil, Assistants.isKey(request.agent) { return await TopicAgentStore.shared.deliver(ticketSession: request) }
+        if request.ticket != nil || request.pr != nil, Assistants.isKey(request.agent) { return await TopicAgentStore.shared.deliver(roleSession: request) }
         if Assistants.isKey(request.agent) { return AssistantStore.shared.deliver(request) }
         return await PRAgents.shared.deliver(request)
     }
 
     /// A prompt the user chose to send, from a notification's button: the same path as Main's send_to_agent, which asks first.
-    static func send(_ text: String, to agent: String, pullRequests: [String]? = nil) async -> AgentInbox.Reply {
-        await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date(), prs: pullRequests))
+    static func send(_ text: String, to agent: String, pullRequests: [String]? = nil, ticket: String? = nil, pr: String? = nil, origin: String? = nil) async -> AgentInbox.Reply {
+        await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date(), prs: pullRequests,
+                                       ticket: ticket, pr: pr, origin: origin))
     }
 
     /// Takes the inbox's requests of one kind off the folder, dropping any that cannot be read.

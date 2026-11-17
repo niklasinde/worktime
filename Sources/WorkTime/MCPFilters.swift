@@ -255,7 +255,7 @@ struct AgentFilter: Equatable {
     }
 
     func matches(_ state: AgentState) -> Bool {
-        (kind.map { Self.kind(of: state) == $0 } ?? true) && (status.map { state.status.rawValue == $0 } ?? true)
+        state.archived != true && (kind.map { Self.kind(of: state) == $0 } ?? true) && (status.map { state.status.rawValue == $0 } ?? true)
             && (needsMe.map { $0 == (AgentOverview.need(state) <= .error) } ?? true)
             && (ticket.map { Self.about(state, ticket: $0) } ?? true)
             && (query.map { text in [state.title, state.folder, state.lastPrompt, state.lastResult].contains { FilterLogic.matches($0, text) } } ?? true)

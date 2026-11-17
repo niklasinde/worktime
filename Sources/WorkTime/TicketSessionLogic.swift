@@ -6,8 +6,41 @@ struct TicketSessionError: Error, Equatable {
     init(_ message: String) { self.message = message }
 }
 
-/// A session of an assistant made for one Jira ticket: a topic agent that carries the assistant's key, so everything for that
-/// ticket and role (the prompts Main sends, the feedback after) stays in one place.
+/// What an assistant's session is about: a Jira ticket, or a pull request that names none.
+enum SessionSubject: Equatable, Hashable {
+    case ticket(String)
+    case pullRequest(String)
+
+    /// The group's id in the agents list and on the Main page: `ticket:ACME-1` or `pr:https://github.com/\u{2026}`.
+    var key: String {
+        switch self {
+        case .ticket(let key): "ticket:" + key
+        case .pullRequest(let url): "pr:" + url
+        }
+    }
+
+    /// What people call it: the ticket's key, or the pull request as `repo#12`.
+    var label: String {
+        switch self {
+        case .ticket(let key): key
+        case .pullRequest(let url): AgentSessions.shortReference(url)
+        }
+    }
+
+    var ticket: String? { if case .ticket(let key) = self { key } else { nil } }
+    var pullRequest: String? { if case .pullRequest(let url) = self { url } else { nil } }
+
+    init?(key: String) {
+        if key.hasPrefix("ticket:"), key.count > 7 { self = .ticket(String(key.dropFirst(7))) }
+        else if key.hasPrefix("pr:"), GitHubLink.pullRequest(at: String(key.dropFirst(3))) != nil { self = .pullRequest(String(key.dropFirst(3))) }
+        else { return nil }
+    }
+
+    static func isKey(_ key: String) -> Bool { SessionSubject(key: key) != nil }
+}
+
+/// A session of an assistant made for one Jira ticket or pull request: a topic agent that carries the assistant's key, so everything for
+/// that subject and role (the prompts Main sends, the feedback after) stays in one place, and stays after it is closed.
 enum TicketSessions {
     static let policyKey = "agentTicketReuse"
     static let alwaysReuseKey = "agentTicketAlwaysReuse"
@@ -17,7 +50,7 @@ enum TicketSessions {
     static let excerptLines = 3
     static let nameLimit = 60
 
-    /// What to do when the ticket already has a session of the assistant.
+    /// What to do when the subject already has a session of the assistant.
     enum Policy: String, CaseIterable, Identifiable {
         case ask, reuse, new
 
@@ -66,25 +99,50 @@ enum TicketSessions {
         return .success(key)
     }
 
-    static func name(ticket: String, role: String) -> String {
-        ActivityLogic.truncate("\(ticket) \u{00B7} \(role)", to: nameLimit)
+    /// The pull request `text` names as its canonical address, or why it is no good.
+    static func pullRequest(_ text: String?) -> Result<String?, TicketSessionError> {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return .success(nil) }
+        guard let target = GitHubLink.pasted(text) else {
+            return .failure(TicketSessionError("\u{201C}\(text)\u{201D} is not a GitHub pull request address."))
+        }
+        return .success(target.url)
     }
 
-    /// The session for this ticket and assistant, as a topic carrying the assistant and working in the assistant's own folder.
-    static func make(entry: AssistantEntry, ticket: String, folder: String, id: String = UUID().uuidString, now: Date) -> TopicAgent {
-        TopicAgent(id: id, name: name(ticket: ticket, role: entry.role.name), jiraKey: ticket, folder: folder, created: now, assistant: entry.key)
+    /// The ticket a pull request's title names, among the workspace's Jira projects; nil when it names none.
+    static func ticket(inTitle title: String?, projects: [String]) -> String? {
+        guard let title, !projects.isEmpty else { return nil }
+        return SessionLinks.references(in: title, projects: Set(projects.map { $0.uppercased() })).compactMap(\.key).first
     }
 
-    /// The newest session of this assistant for this ticket that is not archived.
-    static func existing(assistant: String, ticket: String, in topics: [TopicAgent]) -> TopicAgent? {
-        topics.filter { $0.assistant == assistant && $0.jiraKey?.caseInsensitiveCompare(ticket) == .orderedSame && !$0.archived }
-            .max { $0.created < $1.created }
+    static func name(subject: SessionSubject, role: String) -> String {
+        ActivityLogic.truncate("\(subject.label) \u{00B7} \(role)", to: nameLimit)
     }
 
-    /// Every session of any assistant for the ticket, newest first.
-    static func sessions(ticket: String, in topics: [TopicAgent]) -> [TopicAgent] {
-        topics.filter { $0.assistant != nil && $0.jiraKey?.caseInsensitiveCompare(ticket) == .orderedSame && !$0.archived }
-            .sorted { $0.created > $1.created }
+    /// The session for this subject and assistant, as a topic carrying the assistant and working in the assistant's own folder.
+    static func make(entry: AssistantEntry, subject: SessionSubject, folder: String, id: String = UUID().uuidString, now: Date) -> TopicAgent {
+        var topic = TopicAgent(id: id, name: name(subject: subject, role: entry.role.name), jiraKey: subject.ticket, folder: folder, created: now,
+                               assistant: entry.key)
+        topic.pullRequestURL = subject.pullRequest
+        return topic
+    }
+
+    /// Whether the topic is this assistant's session for the subject.
+    static func isSession(_ topic: TopicAgent, assistant: String?, subject: SessionSubject) -> Bool {
+        guard topic.assistant != nil, assistant == nil || topic.assistant == assistant else { return false }
+        switch subject {
+        case .ticket(let key): return topic.jiraKey?.caseInsensitiveCompare(key) == .orderedSame
+        case .pullRequest(let url): return topic.jiraKey == nil && topic.pullRequestURL == url
+        }
+    }
+
+    /// The newest session of this assistant for this subject that is not archived.
+    static func existing(assistant: String, subject: SessionSubject, in topics: [TopicAgent]) -> TopicAgent? {
+        topics.filter { isSession($0, assistant: assistant, subject: subject) && !$0.archived }.max { $0.created < $1.created }
+    }
+
+    /// Every session of any assistant for the subject, newest first, closed ones too when `archived` says so.
+    static func sessions(subject: SessionSubject, in topics: [TopicAgent], archived: Bool = false) -> [TopicAgent] {
+        topics.filter { isSession($0, assistant: nil, subject: subject) && (archived || !$0.archived) }.sorted { $0.created > $1.created }
     }
 
     /// Reuse without asking when the setting or the assistant's shortcut says so; a new session when the caller wants one or there is none.
@@ -100,14 +158,20 @@ enum TicketSessions {
 
     // MARK: Words
 
-    /// What the assistant is told about the ticket it works on, after its own instructions.
-    static func systemNote(ticket: String, name: String) -> String {
-        "This session is for the Jira ticket \(ticket)\u{2014}everything you are asked here is about it, and what you find stays in this conversation so the user can come back to it. "
-            + "Read the ticket first with jira_issue. When you are done and nobody is watching, report the outcome with send_to_main in one line that starts with \(ticket)."
+    /// What the assistant is told about what it works on, after its own instructions.
+    static func systemNote(subject: SessionSubject) -> String {
+        switch subject {
+        case .ticket(let key):
+            return "This session is for the Jira ticket \(key)\u{2014}everything you are asked here is about it, and what you find stays in this conversation so the user can come back to it. "
+                + "Read the ticket first with jira_issue. When you are done and nobody is watching, report the outcome with send_to_main in one line that starts with \(key)."
+        case .pullRequest(let url):
+            return "This session is for the pull request \(url), which names no ticket\u{2014}everything you are asked here is about it, and what you find stays in this conversation so the user can come back to it. "
+                + "When you are done and nobody is watching, report the outcome with send_to_main in one line that starts with \(AgentSessions.shortReference(url))."
+        }
     }
 
-    static func systemPrompt(base: String, ticket: String, name: String) -> String {
-        base + "\n\n" + systemNote(ticket: ticket, name: name)
+    static func systemPrompt(base: String, subject: SessionSubject) -> String {
+        base + "\n\n" + systemNote(subject: subject)
     }
 
     static func createdNote(name: String) -> String { "Created the session \u{201C}\(name)\u{201D} for this ticket." }
@@ -124,8 +188,8 @@ enum TicketSessions {
         }
     }
 
-    static func timeoutMessage(role: String, ticket: String, minutes: Int) -> String {
-        "Timed out after \(minutes) minute\(minutes == 1 ? "" : "s") waiting for the user to choose between reusing the \(role) session for \(ticket) and starting a new one. "
+    static func timeoutMessage(role: String, subject: String, minutes: Int) -> String {
+        "Timed out after \(minutes) minute\(minutes == 1 ? "" : "s") waiting for the user to choose between reusing the \(role) session for \(subject) and starting a new one. "
             + "Nothing was sent; ask again when they are back."
     }
 
@@ -185,8 +249,9 @@ enum TicketSessions {
         one call per ticket and never several tickets in one prompt. First look at agents_overview with ticket to see what exists. If the \
         assistant already has a session for that ticket, the user is asked whether to reuse it or start a new one, so the call can wait \
         for their answer: say "waiting for your answer on <KEY>" and carry on with the other tickets meanwhile (call them in parallel). \
-        new_session forces a new session without asking. Each session may report back with send_to_main; collect the one-line outcomes \
-        into one table (ticket, outcome, link) for the user.
+        new_session forces a new session without asking. When the work is about a pull request that names no ticket (nothing in its title, branch \
+        or linked Jira), pass pr_url with the assistant instead and it gets a session for that pull request the same way. Each session may report \
+        back with send_to_main; collect the one-line outcomes into one table (ticket or pull request, outcome, link) for the user.
         """
 }
 
@@ -214,20 +279,25 @@ enum SessionSlots {
     }
 }
 
-/// An existing session of the assistant for the ticket, and the question put to the user about it.
+/// An existing session of the assistant for the ticket or pull request, and the question put to the user about it.
 struct TicketAsk: Codable, Equatable, Identifiable {
     var id: String
     var workspace: String
     var assistant: String
     var assistantName: String
-    var ticket: String
+    var ticket: String?
+    var pullRequest: String?
     var existing: TicketSessions.Preview
     /// The prompt waiting to be sent.
     var text: String
     var created: Date
     var deadline: Date
+    /// What started it, shown in the session's timeline.
+    var origin: String?
 
-    var title: String { "A \(assistantName) session for \(ticket) exists" }
+    var subject: SessionSubject { ticket.map(SessionSubject.ticket) ?? pullRequest.map(SessionSubject.pullRequest) ?? .ticket("") }
+
+    var title: String { "A \(assistantName) session for \(subject.label) exists" }
 
     func body(now: Date) -> String {
         "\(existing.line(now: now))" + (existing.excerpt.isEmpty ? "" : " \u{2014} \(existing.excerpt)") + ". Reuse it or start a new one?"
@@ -246,63 +316,126 @@ enum TicketAsks {
 
     static func decode(_ data: Data?) -> [TicketAsk] { data.flatMap { AgentInbox.decode([TicketAsk].self, from: $0) } ?? [] }
 
-    /// The question about the ticket of this assistant, when it is already asked: a second send for the same ticket and role waits for the same answer.
-    static func pending(assistant: String, ticket: String, in asks: [TicketAsk]) -> TicketAsk? {
-        asks.first { $0.assistant == assistant && $0.ticket.caseInsensitiveCompare(ticket) == .orderedSame }
+    /// The question about the subject of this assistant, when it is already asked: a second send for the same subject and role is turned away.
+    static func pending(assistant: String, subject: SessionSubject, in asks: [TicketAsk]) -> TicketAsk? {
+        asks.first { ask in
+            guard ask.assistant == assistant else { return false }
+            switch (ask.subject, subject) {
+            case (.ticket(let a), .ticket(let b)): return a.caseInsensitiveCompare(b) == .orderedSame
+            case (.pullRequest(let a), .pullRequest(let b)): return a == b
+            default: return false
+            }
+        }
     }
 
     /// The asks still within their time.
     static func live(_ asks: [TicketAsk], now: Date) -> [TicketAsk] { asks.filter { !$0.expired(now: now) } }
 }
 
-/// The agents list by ticket: the sessions of one ticket under a row of their own.
+/// A pull request in a ticket's row: one chip for the pull request, with the agents and sessions about it.
+struct PullRequestChip: Identifiable, Equatable {
+    let url: String
+    var sessions: [AgentState]
+
+    var id: String { url }
+    var label: String { AgentSessions.shortReference(url) }
+}
+
+/// The agents list by ticket or pull request: the sessions about one subject under a row of their own. A ticket's pull requests show as
+/// chips on its row, and closed sessions stay under "Earlier".
 struct TicketGroup: Identifiable, Equatable {
-    let ticket: String
+    let subject: SessionSubject
+    /// Every agent about the subject, closed sessions too.
     var members: [AgentState]
 
-    var id: String { "ticket:" + ticket }
-    var needing: Int { members.filter { AgentOverview.need($0) < .working }.count }
-    var working: Int { members.filter { AgentOverview.need($0) == .working }.count }
+    var id: String { subject.key }
+    var ticket: String? { subject.ticket }
+    var live: [AgentState] { members.filter { $0.archived != true } }
+    var earlier: [AgentState] { members.filter { $0.archived == true } }
+    var needing: Int { live.filter { AgentOverview.need($0) < .working }.count }
+    var working: Int { live.filter { AgentOverview.need($0) == .working }.count }
     var latest: Date? { members.compactMap(\.updatedAt).max() }
-    /// The most urgent state of its members.
-    var need: AgentOverview.Need { members.map(AgentOverview.need).min() ?? .idle }
+    /// The most urgent state of its live members.
+    var need: AgentOverview.Need { live.map(AgentOverview.need).min() ?? .idle }
+
+    static func pullRequest(of state: AgentState) -> String? { state.prURL ?? state.sessionPR }
+
+    /// A ticket's pull requests, once each, in the order they come.
+    var chips: [PullRequestChip] {
+        guard subject.ticket != nil else { return [] }
+        var chips: [PullRequestChip] = []
+        for state in live {
+            guard let url = Self.pullRequest(of: state) else { continue }
+            if let index = chips.firstIndex(where: { $0.url == url }) { chips[index].sessions.append(state) } else { chips.append(PullRequestChip(url: url, sessions: [state])) }
+        }
+        return chips
+    }
+
+    /// The live agents shown as rows: all of them for a pull request, and for a ticket the ones that are not a pull request's.
+    var rows: [AgentState] { subject.ticket == nil ? live : live.filter { Self.pullRequest(of: $0) == nil } }
 }
 
 enum TicketRow: Identifiable, Equatable {
     case agent(AgentState)
-    case ticket(TicketGroup)
+    case group(TicketGroup)
 
     var id: String {
         switch self {
         case .agent(let state): state.key
-        case .ticket(let group): group.id
+        case .group(let group): group.id
         }
     }
 }
 
 enum TicketGrouping {
-    /// The ticket a session is about: a topic's own, or the one a pull request's title starts with.
-    static func ticket(of state: AgentState, projects: Set<String>) -> String? {
-        if state.isTopic { return state.jiraKey?.uppercased() }
-        guard state.prURL != nil, !projects.isEmpty else { return nil }
-        return SessionLinks.references(in: state.title, projects: projects).compactMap(\.key).first
+    /// What an agent is about: its ticket, else its pull request. A pull request that names a ticket in its title belongs to the ticket.
+    static func subject(of state: AgentState, projects: Set<String>, titles: [String: String] = [:]) -> SessionSubject? {
+        func named(_ url: String) -> SessionSubject {
+            let title = titles[url] ?? (state.prURL == url ? state.title : nil)
+            if let title, !projects.isEmpty, let key = SessionLinks.references(in: title, projects: projects).compactMap(\.key).first { return .ticket(key) }
+            return .pullRequest(url)
+        }
+        if state.isTopic {
+            if let key = state.jiraKey { return .ticket(key.uppercased()) }
+            return state.sessionPR.map(named)
+        }
+        return state.prURL.map(named)
     }
 
-    /// The agents with each ticket's sessions gathered under one row, at the place of the ticket's first session. A ticket gets a row
-    /// when an assistant has a session for it or when two sessions are about it; a lone pull request's agent stays as it is.
-    static func rows(_ agents: [AgentState], projects: Set<String>) -> [TicketRow] {
-        var byTicket: [String: [AgentState]] = [:]
-        for state in agents { if let key = ticket(of: state, projects: projects) { byTicket[key, default: []].append(state) } }
-        let grouped = byTicket.filter { _, members in members.count > 1 || members.contains { $0.roleKey != nil } }
-        var rows: [TicketRow] = [], placed = Set<String>()
+    /// The ticket a pull request's agent is about, for the places that only know tickets.
+    static func ticket(of state: AgentState, projects: Set<String>) -> String? {
+        subject(of: state, projects: projects)?.ticket
+    }
+
+    /// The agents with each subject's sessions gathered under one row, at the place of the subject's first agent. A ticket gets a row when an
+    /// assistant has a session for it or when two agents are about it, a pull request when an assistant has a session for it; a lone
+    /// pull request's agent stays as it is. Closed sessions only ever show inside a row.
+    static func rows(_ agents: [AgentState], projects: Set<String>, titles: [String: String] = [:]) -> [TicketRow] {
+        var bySubject: [SessionSubject: [AgentState]] = [:]
+        for state in agents { if let subject = subject(of: state, projects: projects, titles: titles) { bySubject[subject, default: []].append(state) } }
+        let grouped = bySubject.filter { subject, members in
+            members.contains { $0.roleKey != nil } || (subject.ticket != nil && members.count > 1)
+        }
+        var rows: [TicketRow] = [], placed = Set<SessionSubject>()
         for state in agents {
-            guard let key = ticket(of: state, projects: projects), let members = grouped[key] else { rows.append(.agent(state)); continue }
-            if placed.insert(key).inserted { rows.append(.ticket(TicketGroup(ticket: key, members: members))) }
+            guard let subject = subject(of: state, projects: projects, titles: titles), let members = grouped[subject] else {
+                if state.archived != true { rows.append(.agent(state)) }
+                continue
+            }
+            if placed.insert(subject).inserted { rows.append(.group(TicketGroup(subject: subject, members: members))) }
         }
         return rows
     }
 
-    /// What a session in a ticket's row is called: its role, or what kind of agent it is.
+    /// The group with this id among the agents, for the page of a ticket or pull request.
+    static func group(_ id: String, in agents: [AgentState], projects: Set<String>, titles: [String: String] = [:]) -> TicketGroup? {
+        for case .group(let group) in rows(agents, projects: projects, titles: titles) where group.id == id { return group }
+        guard let subject = SessionSubject(key: id) else { return nil }
+        let members = agents.filter { self.subject(of: $0, projects: projects, titles: titles) == subject }
+        return members.isEmpty ? nil : TicketGroup(subject: subject, members: members)
+    }
+
+    /// What a session in a row is called: its role, or what kind of agent it is.
     static func label(_ state: AgentState) -> String {
         if let role = state.role, state.roleKey != nil { return role }
         if state.isTopic { return "Ticket agent" }

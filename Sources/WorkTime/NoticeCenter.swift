@@ -101,7 +101,7 @@ final class NoticeCenter: ObservableObject {
         RoutineStore.shared.record(AskAnswer(title: notice.title, yes: yes, date: Date()), routine: ask.routine)
         guard yes else { return }
         Task {
-            let reply = await AgentInboxWatcher.send(ask.prompt, to: ask.agent, pullRequests: ask.pullRequests)
+            let reply = await AgentInboxWatcher.send(ask.prompt, to: ask.agent, pullRequests: ask.pullRequests, ticket: ask.ticket, pr: ask.pullRequest, origin: ask.origin)
             if reply.status == .rejected { Notifier.postAgentMessage(title: "Could not start: \(notice.title)", body: reply.message) }
         }
     }

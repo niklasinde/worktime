@@ -36,6 +36,10 @@ struct AgentState: Codable, Equatable {
     var roleKey: String?
     /// A prompt waits for a free slot: too many assistant sessions are working.
     var slotWait: Bool?
+    /// The pull request an assistant's session is about when no ticket is named.
+    var sessionPR: String?
+    /// A closed session: kept, shown under "Earlier" in its row, and left out of the overview Main reads.
+    var archived: Bool?
 
     var isTopic: Bool { TopicAgents.isKey(key) }
     var isAssistant: Bool { Assistants.isKey(key) }
@@ -49,6 +53,8 @@ struct AgentState: Codable, Equatable {
         if let assistant = topic.assistant {
             state.roleKey = assistant
             state.role = roleName ?? Assistants.parse(key: assistant)?.slug
+            state.sessionPR = topic.jiraKey == nil ? topic.pullRequestURL : nil
+            if topic.archived { state.archived = true }
             state.kind = "ticket_session"
         }
         return state
@@ -172,7 +178,7 @@ enum AgentOverview {
 
     /// The agents as Markdown; `active` leaves out the idle ones and Main itself, for the attention summary.
     static func markdown(_ file: File, now: Date, active: Bool = false, limit: Int = 30) -> String {
-        let agents = sorted(file.agents).filter { !active || (need($0) != .idle && !Workspaces.isMainKey($0.key)) }
+        let agents = sorted(file.agents).filter { $0.archived != true && (!active || (need($0) != .idle && !Workspaces.isMainKey($0.key))) }
         guard !agents.isEmpty else { return active ? "No agent needs you.\n" : "No agents yet.\n" }
         let header = "\(agents.count) agent\(agents.count == 1 ? "" : "s"), state written \(GitHubLogic.updatedText(file.written, now: now))\n"
         return header + agents.prefix(limit).map { line($0, now: now) }.joined()
@@ -190,9 +196,11 @@ enum AgentOverview {
         if let url = state.prURL { lines.append("  \(url) \u{00B7} agent: \(GitHubLink.agentLink(for: url))") }
         if state.isAssistant { lines.append("  assistant \(state.role ?? state.title) \u{00B7} key \(state.key)") }
         if state.isTopic {
-            let kind = state.roleKey != nil ? "\(state.role ?? "assistant") session for the ticket" : state.pullRequests != nil ? "pull request set"
+            let kind = state.roleKey != nil ? "\(state.role ?? "assistant") session for the \(state.sessionPR != nil ? "pull request" : "ticket")"
+                : state.pullRequests != nil ? "pull request set"
                 : state.jiraKey == nil ? "topic" : "ticket"
-            let links = [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }, state.pullRequests.map { "PRs " + $0.joined(separator: ", ") }]
+            let links = [state.jiraKey.map { "Jira \($0)" }, state.sessionPR.map { "PR \($0)" }, state.slackURL.map { "Slack \($0)" },
+                         state.pullRequests.map { "PRs " + $0.joined(separator: ", ") }]
             lines.append("  \(kind) \(state.roleKey != nil ? "key" : "agent") \(state.key)" + links.compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
         }
         if let folder = state.folder { lines.append("  folder: \(folder)") }
@@ -235,13 +243,23 @@ enum AgentTranscript {
         case toolResult(id: String, content: String, isError: Bool)
     }
 
-    static func lines(jsonl: String) -> [Line] {
-        var lines: [Line] = []
+    static func lines(jsonl: String) -> [Line] { datedLines(jsonl: jsonl).map(\.line) }
+
+    /// The time Claude Code wrote a line of a transcript, as `2026-11-17T12:34:56.789Z`.
+    static func date(of object: [String: Any]) -> Date? {
+        guard let text = object["timestamp"] as? String else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
+    static func datedLines(jsonl: String) -> [(date: Date?, line: Line)] {
+        var lines: [(date: Date?, line: Line)] = []
         for raw in jsonl.split(whereSeparator: \.isNewline) {
             guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   object["isSidechain"] as? Bool != true, object["isMeta"] as? Bool != true,
                   let message = object["message"] as? [String: Any] else { continue }
-            let cwd = object["cwd"] as? String ?? ""
+            let cwd = object["cwd"] as? String ?? "", when = date(of: object)
             let blocks: [[String: Any]]
             if let text = message["content"] as? String {
                 blocks = [["type": "text", "text": text]]
@@ -255,13 +273,13 @@ enum AgentTranscript {
                 case "text":
                     guard let text = (block["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
                           role == "assistant" || !text.hasPrefix("<") else { continue }
-                    lines.append(role == "user" ? .user(text) : .assistant(text))
+                    lines.append((when, role == "user" ? .user(text) : .assistant(text)))
                 case "tool_use" where role == "assistant":
-                    lines.append(.toolUse(id: block["id"] as? String ?? "", name: block["name"] as? String ?? "tool",
-                                          input: block["input"] as? [String: Any] ?? [:], cwd: cwd))
+                    lines.append((when, .toolUse(id: block["id"] as? String ?? "", name: block["name"] as? String ?? "tool",
+                                                 input: block["input"] as? [String: Any] ?? [:], cwd: cwd)))
                 case "tool_result" where role == "user":
-                    lines.append(.toolResult(id: block["tool_use_id"] as? String ?? "", content: resultText(block["content"]),
-                                             isError: block["is_error"] as? Bool ?? false))
+                    lines.append((when, .toolResult(id: block["tool_use_id"] as? String ?? "", content: resultText(block["content"]),
+                                                    isError: block["is_error"] as? Bool ?? false)))
                 default: break
                 }
             }
@@ -295,7 +313,9 @@ enum AgentTranscript {
     /// The transcript as the Agent shows it, for a session continued after a restart or picked from the session list.
     static func items(jsonl: String, cwd: String, resultLimit: Int = 10_000) -> [AgentItem] {
         var items: [AgentItem] = []
-        for line in lines(jsonl: jsonl) {
+        for (when, line) in datedLines(jsonl: jsonl) {
+            let before = items.count
+            defer { if let when { for index in before..<items.count { items[index].date = when } } }
             switch line {
             case .user(let text): items.append(AgentItem(id: "user-\(items.count)", kind: .user(text)))
             case .assistant(let text): AgentLogic.apply(.text(text), to: &items)
@@ -343,8 +363,12 @@ enum AgentInbox {
         var prs: [String]?
         /// For an assistant: the Jira ticket whose session of it gets the prompt, made when there is none.
         var ticket: String?
-        /// Start a new session for the ticket even when one exists, without asking.
+        /// Start a new session for the ticket or pull request even when one exists, without asking.
         var newSession: Bool?
+        /// For an assistant without a ticket: the pull request whose session of it gets the prompt, made when there is none.
+        var pr: String?
+        /// What started this, like `Slack channel message in #review-request`, shown in the session's timeline.
+        var origin: String?
     }
 
     struct Reply: Codable, Equatable {
@@ -376,9 +400,9 @@ enum AgentInbox {
 
     /// A request for an agent (a pull request url or a topic key) and some text, or why there can be none.
     static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString, prs: [String]? = nil, ticket: String? = nil,
-                        newSession: Bool? = nil) -> Result<Request, AgentInboxError> {
+                        newSession: Bool? = nil, pr: String? = nil, origin: String? = nil) -> Result<Request, AgentInboxError> {
         let request = Request(id: id, agent: agent.trimmingCharacters(in: .whitespaces), text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                              created: now, prs: prs, ticket: ticket, newSession: newSession)
+                              created: now, prs: prs, ticket: ticket, newSession: newSession, pr: pr, origin: origin)
         return problem(request, now: now).map { .failure($0) } ?? .success(request)
     }
 
@@ -391,6 +415,11 @@ enum AgentInbox {
             guard Assistants.isKey(request.agent) else { return AgentInboxError("ticket only applies when agent is an assistant, not \(request.agent).") }
             guard JiraLogic.issueKey(ticket) == ticket else { return AgentInboxError("\u{201C}\(ticket)\u{201D} is not a Jira ticket key like PROJ-123.") }
             if request.prs != nil { return AgentInboxError("ticket and pr_urls cannot be used together.") }
+        }
+        if let pr = request.pr {
+            guard Assistants.isKey(request.agent) else { return AgentInboxError("pr_url only applies to a session when agent is an assistant, not \(request.agent).") }
+            guard GitHubLink.pullRequest(at: pr)?.url == pr else { return AgentInboxError("\u{201C}\(pr)\u{201D} is not a GitHub pull request address.") }
+            if request.prs != nil { return AgentInboxError("pr_url and pr_urls cannot be used together.") }
         }
         if let prs = request.prs {
             switch PullRequestSets.linked(prs) {
@@ -412,11 +441,34 @@ enum AgentInbox {
         return busy || queued > 0 ? .queue : .start
     }
 
-    static func prompt(_ text: String) -> String { prefix + text }
+    static let originLimit = 80
+    private static let originPrefix = "From Main ("
+    private static let originClose = "): "
+
+    /// What Main hands over, marked as from Main and, when an event started it, with what the event was: `From Main (Review requested): \u{2026}`.
+    static func prompt(_ text: String, origin: String? = nil) -> String {
+        guard let origin = cleaned(origin) else { return prefix + text }
+        return originPrefix + origin + originClose + text
+    }
+
+    /// An origin on one line without the brackets that would end it early, cut to the limit.
+    static func cleaned(_ origin: String?) -> String? {
+        let words = (origin ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ").replacingOccurrences(of: "(", with: "[").replacingOccurrences(of: ")", with: "]")
+        guard !words.isEmpty else { return nil }
+        return words.count > originLimit ? String(words.prefix(originLimit - 1)) + "\u{2026}" : words
+    }
 
     /// The text of a prompt Main sent, or nil for one the user wrote.
     static func fromMain(_ text: String) -> String? {
-        text.hasPrefix(prefix) ? String(text.dropFirst(prefix.count)) : nil
+        if text.hasPrefix(prefix) { return String(text.dropFirst(prefix.count)) }
+        guard text.hasPrefix(originPrefix), let close = text.range(of: originClose), !text[..<close.lowerBound].contains(where: \.isNewline) else { return nil }
+        return String(text[close.upperBound...])
+    }
+
+    /// What started a prompt from Main, when it says.
+    static func origin(of text: String) -> String? {
+        guard text.hasPrefix(originPrefix), let close = text.range(of: originClose), !text[..<close.lowerBound].contains(where: \.isNewline) else { return nil }
+        return String(text[text.index(text.startIndex, offsetBy: originPrefix.count)..<close.lowerBound])
     }
 
     static func encode<T: Encodable>(_ value: T) -> Data {

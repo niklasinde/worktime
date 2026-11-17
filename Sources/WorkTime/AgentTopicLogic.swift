@@ -16,8 +16,10 @@ struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
     var importedSession: String?
     /// The pull requests this agent works on together; nil for the ordinary topics.
     var pullRequests: [LinkedPR]?
-    /// The assistant this agent is a session of, for the ticket it is linked to; nil for an agent of its own.
+    /// The assistant this agent is a session of, for the ticket or pull request it is about; nil for an agent of its own.
     var assistant: String?
+    /// The pull request an assistant's session is about when no ticket is named.
+    var pullRequestURL: String?
 
     var key: String { TopicAgents.prefix + id }
 
@@ -27,8 +29,14 @@ struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
 
     var slackLink: SlackThreadLink? { slackURL.flatMap(SlackLogic.threadLink) }
 
-    /// A session of an assistant for one ticket, as opposed to the ticket's own agent.
-    var isTicketSession: Bool { assistant != nil }
+    /// A session of an assistant for one ticket or pull request, as opposed to an agent of its own.
+    var isRoleSession: Bool { assistant != nil }
+
+    /// What an assistant's session is about: its ticket, else its pull request.
+    var subject: SessionSubject? {
+        guard assistant != nil else { return nil }
+        return jiraKey.map(SessionSubject.ticket) ?? pullRequestURL.map(SessionSubject.pullRequest)
+    }
 }
 
 enum TopicAgentError: Error, Equatable {

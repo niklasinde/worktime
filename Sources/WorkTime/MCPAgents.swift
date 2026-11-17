@@ -193,11 +193,14 @@ extension MCPServer {
                         + "own pane for anything it wants to run. Several pull requests that belong together go to one agent with pr_urls. "
                         + "For work on a Jira ticket give an assistant as agent and the ticket: the assistant gets a session of its own for that ticket "
                         + "(made when there is none), so everything about the ticket stays in one place; one call per ticket, never several tickets in one "
-                        + "prompt. When that assistant already has a session for the ticket, the user is asked whether to reuse it or start a new one and "
+                        + "prompt. For a pull request that names no ticket (nothing in its title, branch or linked Jira) give the assistant and pr_url "
+                        + "instead and it gets a session for that pull request. When that assistant already has a session for the ticket or pull request, "
+                        + "the user is asked whether to reuse it or start a new one and "
                         + "the call waits for the answer (up to the user's setting, 30 minutes by default; nothing is sent if it runs out); new_session "
                         + "starts a new one without asking. Returns the session id to read the outcome with agent_session later.",
                     properties: ["agent": agentProperty,
-                                 "pr_url": ["type": "string", "description": "A pull request's GitHub url; the same as agent."],
+                                 "pr_url": ["type": "string", "description": "A pull request's GitHub url; the same as agent. With an assistant as agent and no ticket: "
+                                     + "the pull request its session is for."],
                                  "pr_urls": ["type": "array", "items": ["type": "string"], "maxItems": PullRequestSets.limit,
                                              "description": "Two or more pull requests' GitHub urls for ONE agent that works on them together as a set "
                                                  + "(made when there is none, and the pull requests stay in it): a reviewer's cross-pull-request check, or a change that spans repositories."],
@@ -239,13 +242,20 @@ extension MCPServer {
                     case .failure(let error): throw MCPToolError(error.message)
                     }
                 }
+                var pr: String?
+                if ticket == nil, Assistants.isKey(target.key), let text = (args["pr_url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                    switch TicketSessions.pullRequest(text) {
+                    case .success(let url): pr = url
+                    case .failure(let error): throw MCPToolError(error.message)
+                    }
+                }
                 let request: AgentInbox.Request
                 switch AgentInbox.request(agent: target.key, text: args["text"] as? String ?? "", now: now(), ticket: ticket,
-                                          newSession: ticket == nil ? nil : args["new_session"] as? Bool) {
+                                          newSession: ticket == nil && pr == nil ? nil : args["new_session"] as? Bool, pr: pr) {
                 case .success(let made): request = made
                 case .failure(let error): throw MCPToolError(error.message)
                 }
-                let timeout = ticket == nil ? sources.replyTimeout : max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60)
+                let timeout = ticket == nil && pr == nil ? sources.replyTimeout : max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60)
                 let reply = try deliver(request, inbox: sources.inbox, timeout: timeout)
                 if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: target.title)) }
                 return AgentInbox.replyText(reply, title: target.title)

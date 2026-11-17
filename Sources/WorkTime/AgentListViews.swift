@@ -5,6 +5,8 @@ import SwiftUI
 struct AgentsSection<Row: View, TicketRow: View>: View {
     let workspace: Workspace
     let agents: [AgentState]
+    /// Pull requests' titles by address, for the sessions that name a ticket only there.
+    var titles: [String: String] = [:]
     let onNew: () -> Void
     @ViewBuilder let row: (AgentState) -> Row
     /// A ticket's sessions gathered under one row.
@@ -21,10 +23,10 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         if !isCollapsed {
             let chips = AgentListFilter.chips(counts: counts)
             if !chips.isEmpty { chipRow(chips, counts: counts, selected: filter) }
-            ForEach(TicketGrouping.rows(AgentListFilter.shown(agents, filter: filter), projects: projects)) { entry in
+            ForEach(TicketGrouping.rows(AgentListFilter.shown(agents, filter: filter), projects: projects, titles: titles)) { entry in
                 switch entry {
                 case .agent(let state): row(state)
-                case .ticket(let ticket): group(ticket)
+                case .group(let ticket): group(ticket)
                 }
             }
         }
@@ -36,7 +38,7 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
                     Text("Agents").font(.caption2.weight(.semibold))
-                    Text("\(agents.count)").font(.caption2).foregroundStyle(.tertiary)
+                    Text("\(agents.filter { $0.archived != true }.count)").font(.caption2).foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())

@@ -182,10 +182,25 @@ final class AgentModel: ObservableObject {
     }
 
     /// Whether this agent is a session of an assistant for a ticket.
-    var isTicketSession: Bool { topic?.assistant != nil }
+    var isRoleSession: Bool { topic?.assistant != nil }
 
     /// A prompt from Main waits for a free slot: too many assistant sessions are working.
     @Published private(set) var waitingForSlot = false
+
+    /// The place in the transcript the timeline asked to be shown; `serial` makes a second request for the same item count.
+    struct JumpRequest: Equatable {
+        let item: String
+        let serial: Int
+    }
+    @Published private(set) var jumpRequest: JumpRequest?
+    private var jumpCount = 0
+
+    func jump(to item: String) {
+        jumpCount += 1
+        jumpRequest = JumpRequest(item: item, serial: jumpCount)
+    }
+
+    func jumpHandled() { jumpRequest = nil }
 
     var historyKey: String { AgentSessions.key(agent: agentKey, isMain: isMain, folder: folder, workspace: workspace) }
 
@@ -422,7 +437,8 @@ final class AgentModel: ObservableObject {
     var relatedPinned: [SessionRef] {
         let own = prURL.flatMap(GitHubLink.pullRequest(at:)).map { [SessionRef($0)] } ?? []
         let ticket = topic?.jiraKey.map { [SessionRef.jira($0)] } ?? []
-        return ticket + own + (topic?.linked.map { SessionRef($0.target) } ?? [])
+        let sessionPR = topic?.pullRequestURL.flatMap(GitHubLink.pullRequest(at:)).map { [SessionRef($0)] } ?? []
+        return ticket + own + sessionPR + (topic?.linked.map { SessionRef($0.target) } ?? [])
     }
 
     var relatedProjects: Set<String> {
@@ -535,7 +551,7 @@ final class AgentModel: ObservableObject {
     func open(topic: TopicAgent) {
         guard self.topic?.id != topic.id || (items.isEmpty && !busy) else { return self.topic = topic }
         point(prURL: nil, topic: topic, assistant: nil, routine: nil, folder: topic.folder)
-        draft = sessionID == nil && !topic.isTicketSession ? TopicAgents.prompt(topic, workspace: promptWorkspace) : ""
+        draft = sessionID == nil && !topic.isRoleSession ? TopicAgents.prompt(topic, workspace: promptWorkspace) : ""
     }
 
     /// Points the agent at an assistant: its folder and the session it had before. A renamed role only updates the entry.
@@ -634,9 +650,8 @@ final class AgentModel: ObservableObject {
 
     private var systemPrompt: String? {
         if let assistant { return AssistantStore.shared.systemPrompt(assistant.role, workspace: assistant.workspace, folder: folder) }
-        if let topic, let ticket = topic.jiraKey, let entry = topic.assistant.flatMap(AssistantStore.shared.entry) {
-            return TicketSessions.systemPrompt(base: AssistantStore.shared.systemPrompt(entry.role, workspace: entry.workspace, folder: folder), ticket: ticket,
-                                               name: topic.name)
+        if let topic, let subject = topic.subject, let entry = topic.assistant.flatMap(AssistantStore.shared.entry) {
+            return TicketSessions.systemPrompt(base: AssistantStore.shared.systemPrompt(entry.role, workspace: entry.workspace, folder: folder), subject: subject)
         }
         if let routine {
             return Routines.systemPrompt(routine, base: actingAs.map { AssistantStore.shared.systemPrompt($0.role, workspace: $0.workspace, folder: folder) })
@@ -775,18 +790,18 @@ final class AgentModel: ObservableObject {
     }
 
     /// A prompt from Main: started now or after the current turn, or refused while a permission prompt waits.
-    func deliver(fromMain text: String) -> AgentInbox.Decision {
+    func deliver(fromMain text: String, origin: String? = nil) -> AgentInbox.Decision {
         let decision = AgentInbox.decide(busy: busy, waitingForPermission: waitingForPermission, queued: queued.count)
         switch decision {
         case .start:
             if !AssistantSlots.shared.hasRoom(for: self) {
-                queued.append(AgentInbox.prompt(text))
+                queued.append(AgentInbox.prompt(text, origin: origin))
                 waitingForSlot = true
                 AssistantSlots.shared.wait(self)
                 return .queue
             }
-            if !start(AgentInbox.prompt(text)) { return .reject(problem ?? AgentFolders.missingMessage(folder)) }
-        case .queue: queued.append(AgentInbox.prompt(text))
+            if !start(AgentInbox.prompt(text, origin: origin)) { return .reject(problem ?? AgentFolders.missingMessage(folder)) }
+        case .queue: queued.append(AgentInbox.prompt(text, origin: origin))
         case .reject: break
         }
         return decision
