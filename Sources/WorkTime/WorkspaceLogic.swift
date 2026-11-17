@@ -345,8 +345,9 @@ struct WorkspaceInstructionFiles: Sendable {
     }
 
     func prompt(for workspace: Workspace, others: [Workspace]) -> String {
-        WorkspaceInstructions.compose(scope: AgentLogic.mainSystemPrompt(workspace: workspace, others: others), main: read(workspace),
-                                      extras: extras(workspace))
+        let note = PromptTemplates.body(.mainReportNote, workspace: workspace.id, files: PromptFiles(folder: folder))
+        return WorkspaceInstructions.compose(scope: AgentLogic.mainSystemPrompt(workspace: workspace, others: others, reportNote: note), main: read(workspace),
+                                             extras: extras(workspace))
     }
 
     func isCustom(_ workspace: Workspace) -> Bool {

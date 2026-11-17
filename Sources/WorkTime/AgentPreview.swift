@@ -23,6 +23,7 @@ enum AgentPreview {
 
         app.activate(ignoringOtherApps: true)
         Task { @MainActor in
+            await prompts(to: output)
             await declutter(to: output)
             await workMap(to: output)
             await wide(to: output)
@@ -309,6 +310,22 @@ enum AgentPreview {
                        to: output.appendingPathComponent("settings-agent-\(name).png"))
         }
         store.removeAll()
+    }
+
+    /// Settings → Agent → Prompts, and the editor of the review template for several pull requests with its preview open.
+    @MainActor
+    private static func prompts(to output: URL) async {
+        let files = PromptFiles(folder: FileManager.default.temporaryDirectory.appendingPathComponent("worktime-prompt-preview", isDirectory: true))
+        try? FileManager.default.removeItem(at: files.folder)
+        files.seed()
+        files.write("Review {these_pull_requests} as one change, money first.\n\n{draft_format}\n\n{pr_list_with_checkouts}", .reviewSet, scope: .shared)
+        PromptFiles.current = files
+        await save(PromptTemplatesSettings().padding(24).frame(width: 640, alignment: .topLeading), size: NSSize(width: 640, height: 900), appearance: .aqua,
+                   to: output.appendingPathComponent("prompts-settings-light.png"))
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            await save(PromptEditor(template: .reviewSet, files: files, showsPreview: true), size: NSSize(width: 700, height: 760), appearance: appearance,
+                       to: output.appendingPathComponent("prompts-editor-\(name).png"))
+        }
     }
 
     /// A refused call tried twice with its prompt answered, a heredoc write, and a call waiting: one row each, the waiting one as a card.

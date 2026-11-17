@@ -241,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             JiraPageModel.shared.select(key)
         }
         TranscriptPullRequestMenu.shared.start()
+        PromptFiles.current.seed()
         AssistantStore.shared.start()
         RoutineStore.shared.start()
         AutomationSources.shared.start()

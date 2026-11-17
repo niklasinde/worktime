@@ -70,12 +70,9 @@ enum ReviewDrafts {
     static let commentBodyLimit = 2000
     static let tag = "[AI]"
 
-    /// What an agent that reviews a pull request is told about writing its draft so the app can offer to post it.
-    static let instructions = "Write the review you drafted as one block per pull request, exactly like this, so the user can post it with a click: "
-        + "```worktime-review\n{\"pr\": \"<the pull request url>\", \"sha\": \"<the head commit you reviewed>\", "
-        + "\"verdict\": \"approve, request_changes or comment\", \"summary\": \"<the review text>\", "
-        + "\"comments\": [{\"file\": \"<path>\", \"line\": <line in the new version of the file>, \"body\": \"<the comment>\"}]}\n```\n"
-        + "Get the sha with `gh pr view <url> --json headRefOid`. Start the summary and each comment with [AI]. You only draft: never post, approve or comment yourself."
+    /// What an agent that reviews a pull request is told about writing its draft so the app can offer to post it: the built-in text of the
+    /// Review draft format template, which a prompt takes from the user's own file for its workspace.
+    static let instructions = PromptBuiltIns.reviewDraftFormat.trimmingCharacters(in: .whitespacesAndNewlines)
 
     // MARK: Reading
 

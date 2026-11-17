@@ -467,7 +467,7 @@ final class AgentModel: ObservableObject {
     func open(topic: TopicAgent) {
         guard self.topic?.id != topic.id || (items.isEmpty && !busy) else { return self.topic = topic }
         point(prURL: nil, topic: topic, assistant: nil, routine: nil, folder: topic.folder)
-        draft = sessionID == nil ? TopicAgents.prompt(topic) : ""
+        draft = sessionID == nil ? TopicAgents.prompt(topic, workspace: promptWorkspace) : ""
     }
 
     /// Points the agent at an assistant: its folder and the session it had before. A renamed role only updates the entry.
@@ -558,8 +558,11 @@ final class AgentModel: ObservableObject {
         if let routine {
             return Routines.systemPrompt(routine, base: actingAs.map { AssistantStore.shared.systemPrompt($0.role, workspace: $0.workspace, folder: folder) })
         }
-        return workspace.flatMap { self.prURL == nil ? WorkspaceStore.shared.mainPrompt(for: $0) : nil } ?? topic.map(TopicAgents.systemPrompt)
+        return workspace.flatMap { self.prURL == nil ? WorkspaceStore.shared.mainPrompt(for: $0) : nil } ?? topic.map { TopicAgents.systemPrompt($0, workspace: promptWorkspace) }
     }
+
+    /// The workspace whose prompt templates this agent follows: its Main's, its assistant's or its routine's.
+    private var promptWorkspace: String? { workspace ?? assistant?.workspace ?? routine?.workspace }
 
     /// The current session of each pull request's and topic's agent, by its key.
     static var savedSessions: [String: String] {
@@ -733,7 +736,7 @@ final class AgentModel: ObservableObject {
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
-                            delegateFrom: delegateFrom, images: images))
+                            delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace)))
         return true
     }
 

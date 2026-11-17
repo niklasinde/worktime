@@ -121,7 +121,11 @@ enum AutomationAsks {
         let advice = recommendation(in: run.summary, yes: ask.yes, no: ask.no)
         let several = ask.agent.isEmpty ? event.pullRequests : nil
         var text = ask.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.isEmpty { text = several == nil ? defaultPrompt(for: event.kind) : defaultSetPrompt }
+        if text.isEmpty {
+            text = several == nil ? defaultPrompt(for: event.kind, workspace: routine.workspace) : setPrompt(workspace: routine.workspace)
+        } else {
+            text = PromptTemplates.render(text, ["draft_format": PromptTemplates.body(.reviewDraftFormat, workspace: routine.workspace)])
+        }
         text = Automations.prompt(text, event: event)
         text = text.replacingOccurrences(of: "{recommendation}", with: advice?.reason ?? "")
         text = text.replacingOccurrences(of: "{answer}", with: String(answer(run.summary).prefix(answerLimit)))
@@ -129,20 +133,16 @@ enum AutomationAsks {
                          pullRequests: several, event: event.id)
     }
 
-    /// What the first button sends to the one agent for several pull requests.
-    static let defaultSetPrompt = "Review these pull requests together as one change:\n{pr_urls}\nDraft one verdict per pull request and what must agree across them. "
-        + "You only draft: do not post, approve or comment. " + ReviewDrafts.instructions + "\nNotes from the first look:\n{answer}"
+    /// What the first button sends to the one agent for several pull requests, with `{pr_urls}` and `{answer}` still to fill in.
+    static func setPrompt(workspace: String? = nil, files: PromptFiles = .current) -> String {
+        PromptTemplates.render(.reviewSetAsk, workspace: workspace, files: files)
+    }
 
-    /// What the first button sends when the automation names nothing.
-    static func defaultPrompt(for kind: AutomationTrigger.Kind) -> String {
-        switch kind.source {
-        case .jira:
-            "Work on {ticket} ({ticket_title}): {url}. Read it with jira_issue, then say what you would change and how. Notes from the first look:\n{answer}"
-        case .github, .slack:
-            "Review {pr_url}. Read the diff and the code around it, then draft the review: a verdict (approve, request changes or needs the author's input), "
-                + "the problems that block it and the small ones. You only draft: do not post, approve or comment. " + ReviewDrafts.instructions
-                + "\nNotes from the first look:\n{answer}"
-        }
+    static var defaultSetPrompt: String { setPrompt() }
+
+    /// What the first button sends when the automation names nothing: a pull request is reviewed, a ticket started.
+    static func defaultPrompt(for kind: AutomationTrigger.Kind, workspace: String? = nil, files: PromptFiles = .current) -> String {
+        PromptTemplates.render(kind.source == .jira ? .jiraAsk : .reviewPRAsk, workspace: workspace, files: files)
     }
 
     /// Why the question cannot be saved, nil when it can.

@@ -142,9 +142,9 @@ enum TopicAgents {
     }
 
     /// The prompt waiting in a new topic agent's composer.
-    static func prompt(_ topic: TopicAgent) -> String {
+    static func prompt(_ topic: TopicAgent, workspace: String? = nil) -> String {
         let sources = [topic.jiraKey, topic.slackURL.map { "the Slack thread \($0)" }].compactMap { $0 }
-        guard !sources.isEmpty else { return topic.linked.isEmpty ? "" : PullRequestSets.prompt(topic.linked) }
+        guard !sources.isEmpty else { return topic.linked.isEmpty ? "" : PullRequestSets.prompt(topic.linked, workspace: workspace) }
         return "Look at \(sources.joined(separator: " and ")) and summarise what\u{2019}s needed from me."
     }
 
@@ -158,18 +158,18 @@ enum TopicAgents {
         ActivityLogic.truncate("Slack: " + ([place] + [author].compactMap { $0 }.filter { $0 != place }).joined(separator: " \u{00B7} "), to: 60)
     }
 
-    static func systemPrompt(_ topic: TopicAgent) -> String {
-        let base = baseSystemPrompt(topic)
+    static func systemPrompt(_ topic: TopicAgent, workspace: String? = nil) -> String {
+        let base = baseSystemPrompt(topic, workspace: workspace)
         guard topic.kind != .pullRequests, !topic.linked.isEmpty else { return base }
         return base + "\n\n" + PullRequestSets.linkedSection(topic.linked)
     }
 
-    private static func baseSystemPrompt(_ topic: TopicAgent) -> String {
+    private static func baseSystemPrompt(_ topic: TopicAgent, workspace: String? = nil) -> String {
         if topic.importedSession != nil {
             return "You are continuing a Claude Code session in WorkTime for \u{201C}\(topic.name)\u{201D}, in its original working folder "
                 + "\(topic.folder). Carry on where the conversation left off."
         }
-        if topic.kind == .pullRequests { return PullRequestSets.systemPrompt(topic) }
+        if topic.kind == .pullRequests { return PullRequestSets.systemPrompt(topic, workspace: workspace) }
         if let key = topic.jiraKey, topic.slackURL == nil { return JiraAgents.systemPrompt(ticket: key, name: topic.name, folder: topic.folder) }
         var links: [String] = []
         if let key = topic.jiraKey { links.append("Linked Jira ticket: \(key). Read it first with the worktime jira_issue tool.") }

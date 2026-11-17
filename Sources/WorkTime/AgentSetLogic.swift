@@ -116,25 +116,18 @@ enum PullRequestSets {
         }.joined(separator: "\n")
     }
 
-    /// The prompt waiting in a new set agent's composer.
-    static func prompt(_ prs: [LinkedPR]) -> String {
-        "Review these \(prs.count) pull requests as one change. For each, read it with github_pr and the diff, then draft a verdict "
-            + "(approve, request changes or needs the author's input) with the blocking problems and the small ones. Then check that they are "
-            + "consistent with each other: the contracts, migrations, permissions and tests that must agree across them. "
-            + "You only draft: do not post, approve or comment. " + ReviewDrafts.instructions + "\n\n" + lines(prs)
+    /// The prompt waiting in a new set agent's composer: the review template for one pull request or for several.
+    static func prompt(_ prs: [LinkedPR], workspace: String? = nil, files: PromptFiles = .current) -> String {
+        var values = PromptTemplates.pullRequestValues(urls: prs.map(\.url), lines: lines(prs))
+        values["pr_url"] = prs.first?.url ?? ""
+        return PromptTemplates.render(prs.count == 1 ? .reviewPR : .reviewSet, values, workspace: workspace, files: files)
     }
 
-    static func systemPrompt(_ topic: TopicAgent) -> String {
-        let prs = topic.linked
-        return """
-            You are working in WorkTime on \(prs.count) pull request\(prs.count == 1 ? "" : "s") that belong together, as \u{201C}\(topic.name)\u{201D}. \
-            Treat them as one change: look for what must agree across them, and say which pull request each finding belongs to.
-            The pull requests (the list can change while you work; this is the current one):
-            \(lines(prs))
-            Read each with the worktime github_pr tool and `gh pr diff`; open the files in the checkout listed for it when the diff is not enough, \
-            and the working folder is \(topic.folder). Draft one verdict per pull request, then the cross-pull-request findings, as text for the user.
-            You never post, approve, merge or comment on GitHub or anywhere else, and must never claim you did. The user posts the reviews themselves.
-            """
+    static func systemPrompt(_ topic: TopicAgent, workspace: String? = nil, files: PromptFiles = .current) -> String {
+        var values = PromptTemplates.pullRequestValues(urls: topic.linked.map(\.url), lines: lines(topic.linked))
+        values["topic_name"] = topic.name
+        values["folder"] = topic.folder
+        return PromptTemplates.render(.reviewSetSystem, values, workspace: workspace, files: files)
     }
 
     /// The pull requests added to a topic that has a ticket or thread of its own.

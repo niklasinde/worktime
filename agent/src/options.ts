@@ -7,11 +7,22 @@ import type { Mode } from "./permissions.js";
 
 export const tools = ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Agent"];
 
-export type PromptOptions = { cwd: string; sessionId?: string; forkSession?: boolean; appendSystemPrompt?: string; chrome?: boolean; allowedMcpTools?: string[]; delegateFrom?: string };
+/// The texts the app resolves from the user's template files for this prompt; a missing one falls back to the sidecar's own copy.
+export type Instructions = { actions?: string; review?: string; report?: string };
+
+export type PromptOptions = { cwd: string; sessionId?: string; forkSession?: boolean; appendSystemPrompt?: string; instructions?: Instructions; chrome?: boolean; allowedMcpTools?: string[]; delegateFrom?: string };
 
 /// The session options that come from the prompt; the sidecar adds its environment, MCP servers, hooks and permission callback.
 export function sessionOptions(input: PromptOptions, model: string, mode: Mode): Options {
-  const append = [userContext(process.env.HOME, input.cwd), actionInstructions, reviewInstructions, reportInstructions, input.appendSystemPrompt].filter(Boolean).join("\n\n");
+  const pick = (given: string | undefined, fallback: string) => (given && given.trim() ? given : fallback);
+  const { actions, review, report } = input.instructions ?? {};
+  const append = [
+    userContext(process.env.HOME, input.cwd),
+    pick(actions, actionInstructions),
+    pick(review, reviewInstructions),
+    pick(report, reportInstructions),
+    input.appendSystemPrompt,
+  ].filter(Boolean).join("\n\n");
   return {
     model,
     cwd: input.cwd,

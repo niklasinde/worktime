@@ -572,6 +572,21 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   and **Copy** show exactly what will run. Nothing runs until you click; a clicked row stays marked "Sent to…" across restarts. A
   block that is incomplete, has no prompt or is over 4000 characters stays plain code. Every agent is told about the format; routines
   are told not to use it. The prompts are told never to ask for an approval, merge, post or send.
+- **Prompt templates.** The prompts WorkTime writes for its agents are Markdown files you can edit, not code. Settings → Agent →
+  Prompts lists them: the review prompt for one pull request and for a set (`review-pr`, `review-set`), a set agent's instructions
+  (`review-set-system`), what the buttons of an automation's question send (`review-pr-ask`, `review-set-ask`, `jira-ask`), the review
+  draft format (`review-draft-format`, filled into the others as `{draft_format}`), what every agent is told (`agent-actions`,
+  `agent-review`, `agent-report`), what every Main is told about reports (`main-report-note`) and the notes added to a scheduled run, a
+  run started by an event and a run that asks first (`unattended-run`, `automation-run`, `automation-ask-run`). A file has a few lines of
+  front matter (what it is for and which `{placeholders}` it can use) and then the text. Shared files live in
+  `Workspaces/_shared/Prompts/` and are written on first launch, never overwritten after that; a file in `Workspaces/<id>/Prompts/`
+  wins for that workspace; with no file at all the built-in text applies. An empty file counts as none. The editor refuses a
+  placeholder the template does not offer, shows the text filled in with sample data, and resets to the built-in text (for a workspace,
+  by removing its file). Pull request wording follows the count (`{these_pull_requests}` is "this pull request" or "these 3 pull
+  requests", `{pull_requests}` is "pull request" or "pull requests"), `{pr_urls}` is a bullet list and `{draft_format}` is on lines of
+  its own. A change applies to the next prompt: the app resolves the three texts every agent gets and sends them with each prompt, so an
+  agent already running keeps what it was told. The review and next-step formats are read by the app: keep their fields. After an
+  update a file written by an older version is marked "newer built-in" until you reset it.
 - **Drafted reviews.** An agent that reviews a pull request writes its draft as a fenced `worktime-review` block: JSON with `pr`,
   `sha` (the head commit it reviewed), `verdict` (`approve`, `request_changes` or `comment`), `summary` and `comments` (`file`,
   `line`, `body`). The transcript shows it as a card, and when the turn ends with the agent out of sight a notification says "Review

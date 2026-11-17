@@ -25,6 +25,10 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/ActivityLinks.swift \
     Sources/WorkTime/ChromeProfileLogic.swift \
     Sources/WorkTime/AgentTypographyLogic.swift \
+    Sources/WorkTime/PromptTemplateLogic.swift \
+    Sources/WorkTime/PromptBuiltIns.swift \
+    Sources/WorkTime/PromptFiles.swift \
+    Sources/WorkTime/PromptSettingsLogic.swift \
     Sources/WorkTime/ProjectSetup.swift \
     Sources/WorkTime/ProjectSuggestionLogic.swift \
     Sources/WorkTime/ActivityStore.swift \
@@ -220,6 +224,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/MainWindowTests.swift \
     Tests/WorkTimeTests/SessionLinksTests.swift \
     Tests/WorkTimeTests/SessionRefLookupTests.swift \
+    Tests/WorkTimeTests/PromptTemplateTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

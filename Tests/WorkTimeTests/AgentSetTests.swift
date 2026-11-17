@@ -132,7 +132,7 @@ let agentSetTests: [(name: String, run: () throws -> Void)] = [
         let slack = SlackMessage(kind: .mention, teamID: "T1", channelID: "C1", place: "#reviews", author: "Anna", text: text, ts: "1800000000.000100",
                                  permalink: "https://acme.slack.com/archives/C1/p1800000000000100")
         let event = Automations.slackEvent(slack, link: nil)
-        check(event.pullRequests?.count == 3 && event.fields["pr_urls"] == [url(1), url(2), url(3)].joined(separator: "\n") && event.pullRequest == url(1), "\(event)")
+        check(event.pullRequests?.count == 3 && event.fields["pr_urls"] == PromptTemplates.bullets([url(1), url(2), url(3)]) && event.pullRequest == url(1), "\(event)")
         check(Automations.prompt("Review {pr_urls}", event: event).contains(url(3)), "placeholder")
         let ask = AutomationAsk(yes: "Review it", no: "Skip")
         let routine = Routine(id: "A1", name: "Reviews", prompt: "triage", workspace: "work", schedule: RoutineSchedule(kind: .daily), created: now,

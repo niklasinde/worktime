@@ -124,7 +124,8 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
 /// What the window sends the sidecar, one JSON object per line.
 enum AgentRequest {
     case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
-                chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [])
+                chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
+                instructions: [String: String]? = nil)
     /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
     case message(id: String, text: String, images: [AgentImage] = [])
     case cancelMessage(id: String)
@@ -141,7 +142,7 @@ enum AgentRequest {
     var line: String {
         var object: [String: Any]
         switch self {
-        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom, let images):
+        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom, let images, let instructions):
             object = ["type": "prompt", "text": text, "cwd": cwd, "permissionMode": mode.rawValue]
             if let allowedTools { object["allowedMcpTools"] = allowedTools }
             if let delegateFrom { object["delegateFrom"] = delegateFrom }
@@ -153,6 +154,7 @@ enum AgentRequest {
             }
             if let model { object["model"] = model }
             if let appendSystemPrompt { object["appendSystemPrompt"] = appendSystemPrompt }
+            if let instructions { object["instructions"] = instructions }
         case .message(let id, let text, let images):
             object = ["type": "message", "id": id, "text": text]
             if !images.isEmpty { object["images"] = images.map(\.json) }
@@ -678,8 +680,9 @@ enum AgentLogic {
         """
 
     /// Main's prompt for a workspace: what it is and sees, then the shared guidance.
-    static func mainSystemPrompt(workspace: Workspace, others: [Workspace]) -> String {
-        Workspaces.mainScope(workspace, others: others) + "\n" + mainBasePrompt
+    /// `reportNote` is what Main is told about reports from other agents, from its template.
+    static func mainSystemPrompt(workspace: Workspace, others: [Workspace], reportNote: String = AgentReports.mainNote) -> String {
+        Workspaces.mainScope(workspace, others: others) + "\n" + mainBasePrompt.replacingOccurrences(of: AgentReports.mainNote, with: reportNote)
     }
 
     // MARK: Models

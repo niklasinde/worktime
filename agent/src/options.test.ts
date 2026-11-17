@@ -40,3 +40,17 @@ test("every agent is told how to offer a next step as buttons", () => {
   assert.match(append, /Report from <name>/);
   assert.ok(append.endsWith("Be brief."));
 });
+
+test("the app's own instruction texts replace the built-in ones, and a blank one falls back", () => {
+  const options = sessionOptions(
+    { cwd: "/repo", instructions: { actions: "Offer steps my way.", review: "   ", report: "Report my way." } },
+    "m",
+    "default",
+  );
+  const append = (options.systemPrompt as { append: string }).append;
+  assert.match(append, /Offer steps my way\./);
+  assert.doesNotMatch(append, /Keep the sentence before the block short/);
+  assert.match(append, /worktime-review/);
+  assert.match(append, /Report my way\./);
+  assert.doesNotMatch(append, /Send one report per job/);
+});

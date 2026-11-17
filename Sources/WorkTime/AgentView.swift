@@ -1141,6 +1141,7 @@ struct AgentSettingsSection: View {
             }
         }
         QuickChatSettings()
+        PromptTemplatesSettings()
         SettingsSection("Automations", footer: "Automations run an agent when something happens in Slack, GitHub or Jira. Off, none runs and none searches. "
                         + "Turned on again they start from what is there, so nothing that happened meanwhile runs.") {
             SettingsRow("Run automations") { Toggle("Run automations", isOn: $automationsOn).labelsHidden() }

@@ -207,7 +207,7 @@ enum Automations {
                       "slack_link": link?.absoluteString ?? ""]
         if let mentioned { fields["pr_url"] = mentioned.url }
         let several = PullRequestSets.urls(in: message.text)
-        if let several { fields["pr_urls"] = several.joined(separator: "\n") }
+        if let several { fields["pr_urls"] = PromptTemplates.bullets(several) }
         if let ticket = ActivityLogic.ticket(in: message.text) { fields["ticket"] = ticket }
         return AutomationEvent(id: "\(kind.idPrefix):" + message.id, kind: kind, title: String(line.prefix(titleLimit)), place: message.place,
                                text: line, fields: fields, pullRequest: mentioned?.url, pullRequests: several, link: link?.absoluteString, date: message.date)
@@ -317,12 +317,10 @@ enum Automations {
     }
 
     static func systemNote(_ routine: Routine) -> String {
-        var note = "This run was started by an event (\(routine.trigger.map(label) ?? "an event")). Nothing you write is posted or sent: your answer is a draft shown to the user. "
-            + "Never approve, merge, close or comment on a pull request, or comment on, move or assign a ticket, or send a message; the user decides."
+        var note = PromptTemplates.render(.automationRun, ["event": routine.trigger.map(label) ?? "an event"], workspace: routine.workspace)
         if let ask = routine.followUp?.ask {
-            note += " The user is asked next, with the buttons \u{201C}\(ask.yes)\u{201D} and \u{201C}\(ask.no)\u{201D} on a notification: do not tell them to open anything or to answer in a chat. "
-                + "Give your findings in a few short lines, then end with one line: Recommendation: \(ask.yes.lowercased()) or Recommendation: \(ask.no.lowercased()), "
-                + "a dash and the reason in one sentence."
+            note += " " + PromptTemplates.render(.automationAskRun, ["yes": ask.yes, "no": ask.no, "yes_lower": ask.yes.lowercased(),
+                                                                   "no_lower": ask.no.lowercased()], workspace: routine.workspace)
         }
         return note
     }
