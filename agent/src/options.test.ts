@@ -28,3 +28,11 @@ test("agents can start subagents, with the user's agent definitions available", 
 test("partial messages are on, so the reply streams", () => {
   assert.equal(sessionOptions({ cwd: "/repo" }, "m", "default").includePartialMessages, true);
 });
+
+test("every agent is told how to offer a next step as buttons", () => {
+  const options = sessionOptions({ cwd: "/repo", appendSystemPrompt: "Be brief." }, "m", "default");
+  const append = (options.systemPrompt as { append: string }).append;
+  assert.match(append, /```worktime-action\ntitle:/);
+  assert.match(append, /prompt: \|/);
+  assert.ok(append.endsWith("Be brief."));
+});

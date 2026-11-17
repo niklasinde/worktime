@@ -42,10 +42,15 @@ enum AssistantPreview {
             .toolUse(id: "2", tool: "Bash", summary: "git switch -c NI/ACME-123", detail: "git switch -c NI/ACME-123"),
             .text("I read ACME-123 and the repository\u{2019}s CLAUDE.md. `VAT_ENABLED` is only set locally, so CI skips the test (tests/test_vat.py:12). "
                   + "I will default it to true in `conftest.py`, run `pytest tests/test_vat.py`, and ask before I push."),
+            .text(actionReply),
             .result(sessionID: "preview-developer", isError: false, text: "", turns: 3, model: "claude-opus-5-5", mode: .ask),
         ]
         events.forEach { AgentLogic.apply($0, to: &items) }
-        store.load(developer).preview(items, seen: false)
+        let made = store.load(developer)
+        made.preview(items, seen: false)
+        if let sent = AgentActions.segments(actionReply).compactMap({ segment -> AgentAction? in if case .action(let action) = segment { action } else { nil } }).last {
+            AgentActionStore.shared.record(AgentActionOutcome(assistant: "assistant:work:reviewer", name: "Reviewer", date: Date()), agent: made.historyKey, action: sent.id)
+        }
         let size = NSSize(width: 1180, height: 760)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         hub.selected = developer.key
@@ -55,6 +60,27 @@ enum AssistantPreview {
         hub.selected = "main:work"
         store.stopAll()
     }
+
+    private static let actionReply = """
+        The test passes with that default. A second pair of eyes would help before I push:
+
+        ```worktime-action
+        title: Review the VAT default change in orbit.api
+        assistant: Reviewer
+        prompt: |
+          Review the change on branch NI/ACME-123 in acme-com/orbit.api: `VAT_ENABLED` now defaults to true in conftest.py.
+          Check the test still fails without it, and report one verdict with the files and lines you looked at.
+        ```
+
+        Or I can write the regression test first:
+
+        ```worktime-action
+        title: Write the regression test for the VAT default
+        assistant: Reviewer
+        prompt: |
+          Draft a test in tests/test_vat.py that fails when VAT_ENABLED is unset. Show it, do not commit.
+        ```
+        """
 
     @MainActor
     private static func save<Content: View>(_ view: Content, size: NSSize, appearance: NSAppearance.Name, to url: URL) async {

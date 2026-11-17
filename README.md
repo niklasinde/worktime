@@ -565,6 +565,13 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   (listed in Settings > Agent as "Main (Work) may message Reviewer"); other agents, other workspaces and unclear names still ask,
   and only a Main can use such a rule. Bash commands writing with `>` or `>>`, `mkdir`, `cp`, `mv`, `rm`, `touch` and `tee`
   run without asking when everything they write is in the agent's own scratchpad (`/tmp/claude-<uid>/…/scratchpad`).
+- **Actions in replies.** When an agent offers a next step it writes it as a fenced `worktime-action` block (`title:`, optional
+  `assistant:` by role name, and `prompt: |` with the complete instructions) and the transcript shows a row with **Do it here** (the
+  prompt becomes your next message to that agent, queued while it works) and **Ask Reviewer** or **Ask an assistant…** (the same
+  delivery as `send_to_agent`, and your click is the approval; the assistant's own permissions still apply). **Show instructions**
+  and **Copy** show exactly what will run. Nothing runs until you click; a clicked row stays marked "Sent to…" across restarts. A
+  block that is incomplete, has no prompt or is over 4000 characters stays plain code. Every agent is told about the format; routines
+  are told not to use it. The prompts are told never to ask for an approval, merge, post or send.
 - **Notifications.** Any agent, and Claude Code sessions with the plugin, can call `notify(title, body?, link?, urgency?, at?)`:
   the running app posts a macOS notification (now, or at `at`: ISO 8601 or `HH:mm`, up to 30 days ahead) and keeps it under
   From agents / Scheduled in the notch bar's Reminders list until opened or dismissed. A click opens the link (a pull request

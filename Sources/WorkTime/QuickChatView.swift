@@ -144,6 +144,7 @@ private struct QuickChatContent: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             .frame(height: min(max(contentHeight, 40), expanded ? Self.expandedHeight : Self.collapsedHeight))
+            .environment(\.agentActions, model.actionContext)
             .onChange(of: model.items) { proxy.scrollTo("end", anchor: .bottom) }
             .onAppear { proxy.scrollTo("end", anchor: .bottom) }
         }

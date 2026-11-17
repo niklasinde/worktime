@@ -581,25 +581,32 @@ final class AgentModel: ObservableObject {
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty, restoring == nil else { return }
-        if busy { return sendWhileWorking(text, images: images) }
-        if start(text, images: images) {
+        if send(text, images: images) {
             draft = ""
             images = []
             imageNote = nil
         }
     }
 
+    /// Starts a turn, or while one runs adds the message to it.
+    private func send(_ text: String, images: [AgentImage] = []) -> Bool {
+        busy ? sendWhileWorking(text, images: images) : start(text, images: images)
+    }
+
+    /// A prompt the user chose by clicking an action in a reply, which leaves what they are typing alone.
+    func send(prompt text: String) -> Bool {
+        restoring == nil && send(text)
+    }
+
     /// A message for the turn that is running: it waits above the prompt, and can be taken back, until the agent is about to call
     /// the model again and then continues the same turn.
-    private func sendWhileWorking(_ text: String, images: [AgentImage]) {
-        guard let client, client.isRunning else { return }
+    private func sendWhileWorking(_ text: String, images: [AgentImage]) -> Bool {
+        guard let client, client.isRunning else { return false }
         let prompt = AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images)
         let send = AgentPendingSend(id: UUID().uuidString, text: text, prompt: prompt, images: images)
         pending.append(send)
         client.send(.message(id: send.id, text: prompt, images: images))
-        draft = ""
-        self.images = []
-        imageNote = nil
+        return true
     }
 
     func cancelPending(_ send: AgentPendingSend) {
@@ -639,6 +646,36 @@ final class AgentModel: ObservableObject {
     func catchUp() {
         guard !busy else { return }
         _ = start(AgentLogic.catchUpPrompt)
+    }
+
+    /// The assistants an action in this agent's replies can go to: the usable ones of its workspace, not this agent itself.
+    private var actionAssistants: [AssistantEntry] {
+        let store = AssistantStore.shared
+        let own = workspace ?? assistant?.workspace
+        return (own.map(store.entries) ?? store.all).filter { $0.role.isUsable && $0.key != assistant?.key }
+    }
+
+    var actionContext: AgentActionContext {
+        AgentActionContext(agent: historyKey, assistants: actionAssistants) { [weak self] action, target in
+            await self?.run(action, on: target) ?? "This agent is closed."
+        }
+    }
+
+    /// Sends what an action says, to this agent or through the same path as Main's send_to_agent to an assistant; the click is the
+    /// approval. Returns why it could not be sent.
+    private func run(_ action: AgentAction, on target: AgentActionTarget) async -> String? {
+        var outcome = AgentActionOutcome(assistant: nil, name: nil, date: Date())
+        switch target {
+        case .here:
+            guard send(prompt: action.prompt) else { return problem ?? "This agent cannot take a message right now." }
+        case .assistant(let entry):
+            let reply = await AgentInboxWatcher.send(action.prompt, to: entry.key)
+            if reply.status == .rejected { return reply.message }
+            outcome.assistant = entry.key
+            outcome.name = entry.role.name
+        }
+        AgentActionStore.shared.record(outcome, agent: historyKey, action: action.id)
+        return nil
     }
 
     /// A prompt from Main: started now or after the current turn, or refused while a permission prompt waits.

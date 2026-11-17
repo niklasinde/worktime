@@ -714,6 +714,7 @@ struct AgentPanel: View {
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .transcriptTypography()
+            .environment(\.agentActions, model.actionContext)
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.containerSize.height >= $0.contentSize.height - 40 } action: { _, bottom in
                 atBottom = bottom
                 if bottom { newBelow = false }
@@ -829,7 +830,7 @@ struct AgentItemRow: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.purple.opacity(0.12)))
-                    .help("Sent by the Main agent, approved by you there")
+                    .help("Sent by another agent, approved by you there or by clicking an action")
                 } else {
                     VStack(alignment: .trailing, spacing: 6) {
                         if !item.images.isEmpty {
@@ -848,7 +849,7 @@ struct AgentItemRow: View {
             }
             .transcriptPullRequests(in: text)
         case .text(let text):
-            AnswerText(text: AgentLogic.linkifiedCodeReferences(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) })
+            AgentReply(text: text) { AgentLogic.linkifiedCodeReferences($0, cwd: folder) { FileManager.default.fileExists(atPath: $0) } }
                 .transcriptPullRequests(in: text)
         case .tool(let name, let summary, let detail, let result, let isError, let auto, let rule):
             AgentToolRow(name: name, summary: summary, detail: detail, result: result, isError: isError, auto: auto, rule: rule)
