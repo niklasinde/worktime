@@ -251,7 +251,9 @@ enum TicketSessions {
         for their answer: say "waiting for your answer on <KEY>" and carry on with the other tickets meanwhile (call them in parallel). \
         new_session forces a new session without asking. When the work is about a pull request that names no ticket (nothing in its title, branch \
         or linked Jira), pass pr_url with the assistant instead and it gets a session for that pull request the same way. Each session may report \
-        back with send_to_main; collect the one-line outcomes into one table (ticket or pull request, outcome, link) for the user.
+        back with send_to_main; collect the one-line outcomes into one table (ticket or pull request, outcome, link) for the user. For verify, \
+        review or develop requests always use agent plus ticket, never pr_url alone (that talks to the pull request's own agent); if a send is \
+        refused, read the error and retry with the form it suggests instead of asking the user.
         """
 }
 

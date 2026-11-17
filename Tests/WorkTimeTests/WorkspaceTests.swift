@@ -135,6 +135,23 @@ let workspaceTests: [(name: String, run: () throws -> Void)] = [
         check(Workspaces.delegationProblem(target: "work", scope: own, workspaces: all)?.contains("Work workspace") == true, "another's is refused")
         check(Workspaces.delegationProblem(target: "work", scope: WorkspaceScope(id: "personal", named: true), workspaces: all) == nil, "named")
         check(Workspaces.delegationProblem(target: "work", scope: .all, workspaces: all) == nil, "outside a Main")
+        let shared = all + [Workspace(id: "devs", name: "Developers", symbol: "hammer", color: "red", roots: [], githubOwners: ["acme-com"],
+                                      jiraProjects: ["PROJ"], slack: nil, extraFiles: [])]
+        let devs = WorkspaceScope(id: "devs")
+        let claimed = Workspaces.claimants(owner: "Acme-Com", folder: nil, in: shared)
+        check(claimed == ["work", "devs"], "overlapping owners: \(claimed)")
+        check(Workspaces.claimants(owner: "example", folder: nil, in: shared).isEmpty, "unrelated owner")
+        check(Workspaces.delegationProblem(target: "work", scope: devs, workspaces: shared, claimedBy: claimed) == nil, "claimed by the caller too")
+        let refused = Workspaces.delegationProblem(target: "work", scope: devs, workspaces: shared, claimedBy: [])
+        check(refused?.contains("Work workspace") == true && refused?.contains("agent set to the assistant's role") == true
+              && refused?.contains("ticket") == true && refused?.contains("Do not stop or ask the user") == true, "\(refused ?? "")")
+        let reachable = Workspaces.delegationProblem(target: "work", scope: WorkspaceScope(id: "personal"), workspaces: shared, claimedBy: claimed) ?? ""
+        check(reachable.contains("reachable from Work, Developers"), reachable)
+        let tool = MCPServer.agentTools(.failure(MCPToolError("no db"))).first { $0.name == "send_to_agent" }!
+        let description = tool.listing["description"] as? String ?? ""
+        check(description.contains("pr_url alone") && description.contains("agent (the assistant's role name)") && description.contains("one call per ticket")
+              || description.contains("One call per ticket"), description)
+        check(AgentLogic.mainBasePrompt.contains("instead of asking the user"), "Main is told to retry")
         let prompt = AgentLogic.mainSystemPrompt(workspace: personal, others: [work])
         check(prompt.contains("Main for the Personal workspace") && prompt.contains("~/git/inde") && prompt.contains("niklasinde")
               && prompt.contains("no Jira") && prompt.contains("Slack is not part of it") && prompt.contains("(Work)"), prompt)

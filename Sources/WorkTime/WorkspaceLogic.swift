@@ -216,11 +216,25 @@ enum Workspaces {
         }
     }
 
-    /// Why a prompt for an agent in `target` is refused: the calling Main's scope was not named and is another workspace.
-    static func delegationProblem(target: String?, scope: WorkspaceScope, workspaces: [Workspace]) -> String? {
-        guard let own = scope.id, !scope.named, own != (target ?? defaultID) else { return nil }
-        let name = workspace(target, in: workspaces)?.name ?? target ?? defaultID
-        return "That agent belongs to the \(name) workspace, not yours. Pass workspace: \u{201C}\(target ?? defaultID)\u{201D} only if the user named it."
+    /// The workspaces that claim a pull request's repository: by its GitHub owner, or by a root holding the agent's folder.
+    static func claimants(owner: String?, folder: String?, in workspaces: [Workspace], home: String = NSHomeDirectory()) -> [String] {
+        workspaces.filter { workspace in
+            if let owner = owner?.lowercased(), workspace.githubOwners.contains(where: { $0.lowercased() == owner }) { return true }
+            return workspace.roots.map { expand($0, home: home) }.contains { root in folder.map { $0 == root || $0.hasPrefix(root + "/") } ?? false }
+        }.map(\.id)
+    }
+
+    /// Why a prompt for an agent in `target` is refused: the calling Main's scope was not named, is another workspace and
+    /// does not claim the agent's repository either (`claimedBy` lists the workspaces that do).
+    static func delegationProblem(target: String?, scope: WorkspaceScope, workspaces: [Workspace], claimedBy: [String] = []) -> String? {
+        guard let own = scope.id, !scope.named, own != (target ?? defaultID), !claimedBy.contains(own) else { return nil }
+        let owners = ([target ?? defaultID] + claimedBy).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        let names = owners.map { workspace($0, in: workspaces)?.name ?? $0 }
+        return "That agent belongs to the \(names[0]) workspace, not yours"
+            + (names.count > 1 ? " (it is reachable from \(names.joined(separator: ", ")))" : "") + ". "
+            + "Do not stop or ask the user. To have an assistant work on a ticket or pull request (verify, review, develop), call send_to_agent again "
+            + "with agent set to the assistant's role (like Verifier, Reviewer or Developer) and ticket (or pr_url as the subject when there is no ticket); "
+            + "that needs no workspace argument. Pass workspace: \u{201C}\(owners[0])\u{201D} only to message that agent itself, and only if the user named it."
     }
 
     // MARK: Migration

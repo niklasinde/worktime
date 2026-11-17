@@ -67,8 +67,13 @@ extension MCPServer {
 
         func checkDelegation(_ target: AgentTarget, args: [String: Any], agents: [AgentState]) throws {
             let scope = try workspaces.scope(args)
+            let all = workspaces.file().workspaces
+            let claimedBy = GitHubLink.pullRequest(at: target.key).map {
+                Workspaces.claimants(owner: $0.repo.split(separator: "/").first.map(String.init),
+                                     folder: agents.first { $0.key == target.key }?.folder, in: all)
+            } ?? []
             if let problem = Workspaces.delegationProblem(target: workspace(of: target, in: agents), scope: scope,
-                                                         workspaces: workspaces.file().workspaces) {
+                                                         workspaces: all, claimedBy: claimedBy) {
                 throw MCPToolError(problem)
             }
         }
@@ -187,25 +192,27 @@ extension MCPServer {
                 return cut(FilterLogic.header(FilterLogic.applied(["section": only]) + filter.applied) + sections.joined(separator: "\n"), at: outputLimit)
             },
             MCPTool(name: "send_to_agent",
-                    description: "Sends a prompt to an agent in WorkTime, marked as from Main: a pull request's agent, a topic agent "
-                        + "(a support case or other topic, by its key or name) or one of the workspace's assistants (by role name, like Developer). It starts when the agent is idle "
-                        + "and queues while it works; it is refused while the agent waits for a permission. The agent asks the user in its "
-                        + "own pane for anything it wants to run. Several pull requests that belong together go to one agent with pr_urls. "
-                        + "For work on a Jira ticket give an assistant as agent and the ticket: the assistant gets a session of its own for that ticket "
-                        + "(made when there is none), so everything about the ticket stays in one place; one call per ticket, never several tickets in one "
-                        + "prompt. For a pull request that names no ticket (nothing in its title, branch or linked Jira) give the assistant and pr_url "
-                        + "instead and it gets a session for that pull request. When that assistant already has a session for the ticket or pull request, "
+                    description: "Sends a prompt to an agent in WorkTime, marked as from Main. Two modes, never mix them up. "
+                        + "(1) To have an assistant (Verifier, Reviewer, Developer...) work on a Jira ticket or a pull request: pass agent (the assistant's role name) "
+                        + "plus ticket, or plus pr_url as the subject when the pull request names no ticket. The assistant gets a session of its own for that ticket "
+                        + "or pull request (made when there is none). One call per ticket, never several tickets in one prompt or batch. This is the form for "
+                        + "\u{201C}verify / review / develop X\u{201D} and needs no workspace argument. "
+                        + "(2) To talk to a pull request's own agent, or a topic agent (a support case, by its key or name): pass pr_url alone (or agent with the topic key). "
+                        + "Several pull requests that belong together go to one agent with pr_urls. "
+                        + "It starts when the agent is idle and queues while it works; it is refused while the agent waits for a permission. The agent asks the user in its "
+                        + "own pane for anything it wants to run. When an assistant already has a session for the ticket or pull request, "
                         + "the user is asked whether to reuse it or start a new one and "
                         + "the call waits for the answer (up to the user's setting, 30 minutes by default; nothing is sent if it runs out); new_session "
-                        + "starts a new one without asking. Returns the session id to read the outcome with agent_session later.",
+                        + "starts a new one without asking. If a call is refused, read the error and retry with the form it suggests. "
+                        + "Returns the session id to read the outcome with agent_session later.",
                     properties: ["agent": agentProperty,
-                                 "pr_url": ["type": "string", "description": "A pull request's GitHub url; the same as agent. With an assistant as agent and no ticket: "
-                                     + "the pull request its session is for."],
+                                 "pr_url": ["type": "string", "description": "Alone: talks to that pull request's own agent. With an assistant as agent and no ticket: "
+                                     + "the pull request the assistant's session is for (not the pull request's own agent)."],
                                  "pr_urls": ["type": "array", "items": ["type": "string"], "maxItems": PullRequestSets.limit,
                                              "description": "Two or more pull requests' GitHub urls for ONE agent that works on them together as a set "
                                                  + "(made when there is none, and the pull requests stay in it): a reviewer's cross-pull-request check, or a change that spans repositories."],
-                                 "ticket": ["type": "string", "description": "A Jira ticket key like PROJ-123, with an assistant as agent: its session for this ticket "
-                                     + "gets the prompt. Must be in the workspace's Jira projects."],
+                                 "ticket": ["type": "string", "description": "A Jira ticket key like PROJ-123, always together with agent set to an assistant's role (like Verifier): "
+                                     + "its session for this ticket gets the prompt. One ticket per call. Must be in the workspace's Jira projects."],
                                  "new_session": ["type": "boolean", "description": "With ticket: start a new session even when the assistant has one for the "
                                      + "ticket, without asking the user. False when left out."],
                                  "workspace": workspaceProperty,
