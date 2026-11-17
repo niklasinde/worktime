@@ -7,13 +7,13 @@ final class AppWindow: NSObject, NSWindowDelegate {
 
     private let make: () -> NSWindow
     private let onClose: () -> Void
-    private let opensFullScreen: () -> Bool
+    private let opensMaximised: () -> Bool
     private var window: NSWindow?
 
-    init(opensFullScreen: @escaping () -> Bool = { false }, onClose: @escaping () -> Void = {}, make: @escaping () -> NSWindow) {
+    init(opensMaximised: @escaping () -> Bool = { false }, onClose: @escaping () -> Void = {}, make: @escaping () -> NSWindow) {
         self.make = make
         self.onClose = onClose
-        self.opensFullScreen = opensFullScreen
+        self.opensMaximised = opensMaximised
     }
 
     func show() {
@@ -26,13 +26,13 @@ final class AppWindow: NSObject, NSWindowDelegate {
             self.window = window
         }
         Self.open.insert(ObjectIdentifier(self))
-        let enterFullScreen = window.map {
-            MainWindowFullScreen.shouldEnter(enabled: opensFullScreen(), wasVisible: $0.isVisible, isMiniaturized: $0.isMiniaturized,
-                                             isFullScreen: $0.styleMask.contains(.fullScreen))
-        } ?? false
+        if let window, MainWindowMaximised.shouldMaximise(enabled: opensMaximised(), wasVisible: window.isVisible, isMiniaturized: window.isMiniaturized,
+                                                          isFullScreen: window.styleMask.contains(.fullScreen)),
+           let frame = MainWindowMaximised.target(mouse: NSEvent.mouseLocation, screens: NSScreen.screens.map { ($0.frame, $0.visibleFrame) }) {
+            window.setFrame(frame, display: false)
+        }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        if enterFullScreen { window?.toggleFullScreen(nil) }
     }
 
     func close() {

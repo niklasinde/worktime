@@ -13,7 +13,7 @@ struct GeneralSettingsView: View {
     @AppStorage(AppAppearance.storageKey) private var appearance = AppAppearance.system
     @AppStorage(SidebarLogic.hiddenKey) private var sidebarHidden = false
     @AppStorage(SidebarLogic.showChatKey) private var showChat = true
-    @AppStorage(MainWindowFullScreen.key) private var fullScreen = true
+    @AppStorage(MainWindowMaximised.key) private var maximised = true
     @AppStorage(AudioRetention.developerModeKey) private var developerMode = false
     @ObservedObject private var upgrade = AppUpgrade.shared
 
@@ -39,8 +39,8 @@ struct GeneralSettingsView: View {
                     toggle("Show Chat", isOn: $showChat)
                 }
                 Divider().padding(.leading, 14)
-                SettingsRow("Open in full screen", detail: "The main window opens in full screen; the notch bar and quick chat still work over it") {
-                    toggle("Open in full screen", isOn: $fullScreen)
+                SettingsRow("Open maximised", detail: "The main window opens at the full width and height of the screen, below the menu bar") {
+                    toggle("Open maximised", isOn: $maximised)
                 }
             }
             SettingsSection("Developer", footer: "A new recording\u{2019}s audio is deleted from this Mac for good once its transcript "
