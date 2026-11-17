@@ -178,16 +178,16 @@ enum GitHubLogic {
     }
 
     /// The watched pull requests by number, one alias each, with the same fields as the open searches.
-    static func watchedQuery(_ targets: [GitHubLink.Target]) -> String {
+    static func watchedQuery(_ targets: [GitHubLink.Target], discussion: Bool = true) -> String {
         let pulls = targets.enumerated().map { index, target in
             let (owner, name) = repoName(target.repo)
-            return "w\(index): repository(owner: \"\(owner)\", name: \"\(name)\") { pullRequest(number: \(target.number)) { \(fields(discussion: true)) } }"
+            return "w\(index): repository(owner: \"\(owner)\", name: \"\(name)\") { pullRequest(number: \(target.number)) { \(fields(discussion: discussion)) } }"
         }
         return "query {\n  rateLimit { cost remaining }\n  viewer { login }\n" + pulls.joined(separator: "\n") + "\n}"
     }
 
-    static func watchedArguments(_ targets: [GitHubLink.Target]) -> [String] {
-        ["api", "graphql", "-f", "query=\(watchedQuery(targets))"]
+    static func watchedArguments(_ targets: [GitHubLink.Target], discussion: Bool = true) -> [String] {
+        ["api", "graphql", "-f", "query=\(watchedQuery(targets, discussion: discussion))"]
     }
 
     static func arguments(for search: Search) -> [String] {

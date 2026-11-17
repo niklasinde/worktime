@@ -82,6 +82,15 @@ enum GitHubClient {
         return try? GitHubLogic.parseWatched(output.stdout)
     }
 
+    /// The pull requests behind some addresses in one query, without the review discussion: enough for a title, a state and the checks.
+    /// Nil when it fails; an address that cannot be read is missing from the answer.
+    nonisolated static func fetchLookup(cli: URL?, urls: [String]) -> [GitHubPR]? {
+        let targets = urls.compactMap(GitHubLink.pullRequest(at:))
+        guard !targets.isEmpty else { return [] }
+        guard let cli, let output = run(cli, GitHubLogic.watchedArguments(targets, discussion: false)) else { return nil }
+        return try? GitHubLogic.parseWatched(output.stdout)
+    }
+
     /// One pull request in full, with the response it was parsed from so it can be cached.
     nonisolated static func fetchDetail(cli: URL?, repo: String, number: Int) -> Result<(detail: GitHubPRDetail, json: Data), GitHubError> {
         guard let cli, let output = run(cli, GitHubLogic.detailArguments(repo: repo, number: number)) else { return .failure(.cliMissing) }

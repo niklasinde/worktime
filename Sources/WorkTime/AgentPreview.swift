@@ -150,7 +150,11 @@ enum AgentPreview {
     static let sampleMentions: [AgentItem] = [
         AgentItem(id: "m1", kind: .user("Fix ACME-8332: the export drops the last row. The release note goes in orbit.api")),
         AgentItem(id: "m2", kind: .tool(name: "Bash", summary: "gh pr view 42", detail: "gh pr view https://github.com/acme-com/orbit.api/pull/42",
-                                        result: "ACME-8332 Keep the last row in exports", isError: false, auto: true)),
+                                        result: "# acme-com/orbit.api#42 Keep the last row in exports\nhttps://github.com/acme-com/orbit.api/pull/42\n\n- State: open, by sam\n",
+                                        isError: false, auto: true)),
+        AgentItem(id: "m5", kind: .tool(name: "mcp__worktime__jira_search", summary: "ACME-8340", detail: "",
+                                        result: "2 issues\n- ACME-8340 Add a row count to the export \u{00B7} In Progress \u{00B7} High\n- ACME-8301 Trim the export header \u{00B7} Done \u{00B7} Low\n",
+                                        isError: false, auto: true)),
         AgentItem(id: "m3", kind: .text("The admin side is acme-com/orbit.web#17, which depends on ACME-8340 and https://github.com/acme-com/orbit.api/pull/40.")),
         AgentItem(id: "m4", kind: .text("Branch NI/ACME-8332-last-row also touches ACME-8301, ACME-8302 and ACME-8303.")),
     ]

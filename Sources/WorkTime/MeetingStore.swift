@@ -22,6 +22,8 @@ enum AppPaths {
     static var agentState: URL { support.appendingPathComponent(AgentOverview.fileName) }
     /// Prompts the MCP server hands the app for a pull request's agent.
     static var agentInbox: URL { support.appendingPathComponent("agent-inbox", isDirectory: true) }
+    /// The titles and states of the tickets and pull requests the Related list looked up.
+    static var sessionRefTitles: URL { support.appendingPathComponent("session-ref-titles.json") }
     /// Notifications agents asked for, written by the app and read by the MCP server.
     static var notices: URL { support.appendingPathComponent(NoticeLogic.fileName) }
     /// The reminders WorkTime keeps, with the source each came from.

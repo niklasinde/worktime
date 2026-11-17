@@ -31,6 +31,9 @@ struct SessionLinks: Equatable, Sendable {
     private static let batchSize = 10_000
 
     private(set) var recency: [SessionRef: Int] = [:]
+    /// What tools said about a ticket or pull request, and titles found in running text: shown until the app has the real ones.
+    private(set) var titles: [SessionRef: SessionRefInfo] = [:]
+    private(set) var hints: [SessionRef: String] = [:]
     private var scanned: [String: Int] = [:]
     private var counter = 0
 
@@ -46,6 +49,25 @@ struct SessionLinks: Equatable, Sendable {
             var seen = Set<SessionRef>()
             let refs = texts.flatMap { Self.references(in: $0, projects: projects) }.filter { seen.insert($0).inserted }
             changed = note(refs) || changed
+            changed = learn(from: item, texts: texts, projects: projects) || changed
+        }
+        return changed
+    }
+
+    /// The titles an item gives: what a tool answered about the tickets and pull requests it named, and titles in any text.
+    private mutating func learn(from item: AgentItem, texts: [String], projects: Set<String>) -> Bool {
+        var changed = false
+        if case .tool(_, let summary, let detail, let result?, _, _, _) = item.kind {
+            for (ref, info) in SessionTitles.structured(call: summary + "\n" + detail, result: result, projects: projects) {
+                let merged = titles[ref]?.overlaid(by: info) ?? info
+                if titles[ref] != merged { titles[ref] = merged; changed = true }
+            }
+        }
+        for text in texts {
+            for (ref, title) in SessionTitles.hints(in: text, projects: projects) where hints[ref] == nil {
+                hints[ref] = title
+                changed = true
+            }
         }
         return changed
     }
