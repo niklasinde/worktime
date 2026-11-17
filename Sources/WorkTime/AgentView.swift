@@ -104,7 +104,7 @@ struct AgentList: View {
                             assistantSection(group, now: now)
                             RoutineSection(workspace: group.workspace, hub: hub)
                             RoutineSection(workspace: group.workspace, hub: hub, automations: true)
-                            ForEach(group.agents, id: \.key) { rowButton($0, now: now) }
+                            AgentsSection(workspace: group.workspace, agents: group.agents, onNew: { creating = true }) { rowButton($0, now: now) }
                         }
                     }
                 }
