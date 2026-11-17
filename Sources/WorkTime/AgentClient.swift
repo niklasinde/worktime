@@ -194,7 +194,17 @@ final class AgentModel: ObservableObject {
     /// The key a notification carries to find this agent again: the one the Agent page selects it by.
     var attentionID: String { isMain ? Workspaces.mainKey(workspace ?? Workspaces.defaultID) : agentKey ?? historyKey }
 
-    private var isInFront: Bool { visiblePanes > 0 && NSApp.isActive }
+    /// The quick chat panel shows this agent: it takes the keyboard without making WorkTime the active app.
+    private var quickShown = false
+
+    func setQuickShown(_ shown: Bool) {
+        guard quickShown != shown else { return }
+        quickShown = shown
+        setVisible(shown)
+        if shown { withdrawAttention() }
+    }
+
+    private var isInFront: Bool { visiblePanes > 0 && (NSApp.isActive || quickShown) }
 
     private func sendRules(_ rules: [AgentRule], to target: AgentClient? = nil) {
         (target ?? client)?.send(.rules(AgentRules.sent(rules, unattended: routine != nil)))

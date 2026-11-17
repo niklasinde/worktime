@@ -52,6 +52,7 @@ enum AgentPreview {
             model.preview([AgentItem(id: "user-0", kind: .user(AgentInbox.prompt("Add the missing downgrade to the migration and push.")))]
                           + Array(sample().dropFirst().prefix(4)))
             await save(model, appearance: .aqua, to: output.appendingPathComponent("agent-from-main-light.png"))
+            await quickChat(to: output)
             await sessions(to: output)
             await topics(to: output)
             await rules(to: output)
@@ -60,6 +61,26 @@ enum AgentPreview {
         }
         app.run()
         exit(0)
+    }
+
+    /// The quick chat panel: empty, with a turn under way, answered, and asking for approval, in light and dark.
+    @MainActor
+    private static func quickChat(to output: URL) async {
+        let hub = AgentHub.shared
+        guard let id = hub.mains.keys.sorted().first, let main = hub.mains[id] else { return }
+        QuickChatPanel.shared.preview(workspace: id)
+        let turn = sample()
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            for (state, items, busy) in [("empty", [], false), ("working", Array(turn.prefix(5)), true), ("answered", Array(turn.prefix(turn.count - 2)), false),
+                                         ("approval", Array(turn.suffix(2)), false)] as [(String, [AgentItem], Bool)] {
+                main.preview(items, busy: busy)
+                await save(QuickChatView(panel: .shared).padding(24), size: NSSize(width: 740, height: 640), appearance: appearance,
+                           to: output.appendingPathComponent("quickchat-\(state)-\(name).png"))
+            }
+        }
+        main.preview([])
+        await save(QuickChatSettings().padding(24).frame(width: 640).background(.background), size: NSSize(width: 640, height: 420), appearance: .aqua,
+                   to: output.appendingPathComponent("quickchat-settings-light.png"))
     }
 
     private static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path

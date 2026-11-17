@@ -100,6 +100,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/MCPTopics.swift \
     Sources/WorkTime/AgentTopicLogic.swift \
     Sources/WorkTime/AgentSetLogic.swift \
+    Sources/WorkTime/QuickChatLogic.swift \
     Sources/WorkTime/ClaudeImportLogic.swift \
     Sources/WorkTime/WorkspaceLogic.swift \
     Sources/WorkTime/AssistantLogic.swift \
@@ -197,6 +198,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/AutomationAskTests.swift \
     Tests/WorkTimeTests/AgentAttentionTests.swift \
     Tests/WorkTimeTests/AgentSetTests.swift \
+    Tests/WorkTimeTests/QuickChatTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

@@ -808,7 +808,7 @@ struct AgentPanel: View {
     }
 }
 
-private struct AgentItemRow: View {
+struct AgentItemRow: View {
     let item: AgentItem
     let folder: String
     let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
@@ -880,7 +880,7 @@ private struct AgentItemRow: View {
     }
 }
 
-private struct AgentToolGroup: View {
+struct AgentToolGroup: View {
     let label: String
     let items: [AgentItem]
     let row: (AgentItem) -> AgentItemRow
@@ -1090,6 +1090,7 @@ struct AgentSettingsSection: View {
                         + "Allow once, Deny and Reply work from the notification. Routines never ask.") {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
         }
+        QuickChatSettings()
         SettingsSection("Automations", footer: "Automations run an agent when something happens in Slack, GitHub or Jira. Off, none runs and none searches. "
                         + "Turned on again they start from what is there, so nothing that happened meanwhile runs.") {
             SettingsRow("Run automations") { Toggle("Run automations", isOn: $automationsOn).labelsHidden() }
@@ -1287,7 +1288,7 @@ private struct AgentThumbnail: View {
 }
 
 /// The messages sent while the agent works that have not reached it yet, each of which can still be taken back.
-private struct AgentPendingList: View {
+struct AgentPendingList: View {
     @ObservedObject var model: AgentModel
     @Environment(\.transcriptTypography) private var typography
 
@@ -1310,7 +1311,7 @@ private struct AgentPendingList: View {
 }
 
 /// The pictures waiting to be sent with the next message, each removable, and why one was refused.
-private struct AgentImageChips: View {
+struct AgentImageChips: View {
     @ObservedObject var model: AgentModel
 
     var body: some View {

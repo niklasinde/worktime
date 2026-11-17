@@ -14,6 +14,8 @@ final class GlobalHotKey {
     private let id: UInt32
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
+    /// What registering said: `noErr`, or `eventHotKeyExistsErr` when another app already holds the shortcut.
+    private(set) var status: OSStatus = noErr
 
     init(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
         self.action = action
@@ -30,7 +32,7 @@ final class GlobalHotKey {
             MainActor.assumeIsolated { hotKey.action() }
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler)
-        RegisterEventHotKey(keyCode, modifiers, EventHotKeyID(signature: OSType(0x4D52_4543), id: id),
+        status = RegisterEventHotKey(keyCode, modifiers, EventHotKeyID(signature: OSType(0x4D52_4543), id: id),
                             GetApplicationEventTarget(), 0, &hotKey)
     }
 

@@ -250,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MeetingBriefModel.shared.startRecording = { [weak self] in if self?.recorder.isRecording == false { self?.toggleRecording() } }
         MeetingBriefModel.shared.start(recorder: recorder, store: store)
         AskPanel.shared.start()
+        QuickChatPanel.shared.start()
         OnboardingWindow.shared.recorder = recorder
         OnboardingWindow.shared.tracker = tracker
         SettingsModel.shared.speakers.store = store

@@ -100,6 +100,12 @@ shows elapsed time. Stop Recording reveals the file in Finder.
 is needed); the menu shows it next to Start/Stop Recording. Stopping with the shortcut does not reveal the file in
 Finder; the recording is transcribed and summarised as usual.
 
+⌃Space opens the quick chat: a floating panel above any app (a second Carbon hot key) for a short conversation with Main. Return sends,
+Esc or the shortcut closes it, and the reply streams under the prompt with its approvals (Allow once, Deny) in place; messages sent while
+Main works reach it at its next step, and Stop interrupts. Open in WorkTime continues on the Main page, and Back returns. Settings → Agent →
+Quick chat switches it off, records another shortcut and picks whether it shows on every Space. ⌃Space is also macOS's shortcut for the
+previous input source: Settings says when the system's list holds the chosen keys, and when another app has taken them.
+
 Pause Recording (menu or the window's toolbar) stops writing until Resume Recording: the menu, toolbar and sidebar show
 "Paused 00:12:34", the timer stands still and the file simply continues where it left off, without the paused gap.
 Quitting while paused saves the recording like Stop.
