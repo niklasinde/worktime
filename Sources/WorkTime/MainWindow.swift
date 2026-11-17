@@ -14,7 +14,7 @@ final class MainWindow {
         library = RecordingLibrary(store: store)
         activity = ActivityModel(store: store, tracker: tracker)
         let view = MainView(recorder: recorder, processor: processor, library: library, activity: activity, playback: playback)
-        window = AppWindow(onClose: { [playback] in playback.pause() }) { Self.makeWindow(view) }
+        window = AppWindow(opensFullScreen: { MainWindowFullScreen.enabled() }, onClose: { [playback] in playback.pause() }) { Self.makeWindow(view) }
         GitHubModel.shared.showInWindow = { [weak self] target in
             self?.showGitHub()
             GitHubModel.shared.open(target)
@@ -60,6 +60,7 @@ final class MainWindow {
         window.titleVisibility = .hidden
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(NSSize(width: 980, height: 660))
+        window.collectionBehavior.insert(.fullScreenPrimary)
         return window
     }
 }

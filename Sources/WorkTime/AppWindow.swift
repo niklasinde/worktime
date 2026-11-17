@@ -7,11 +7,13 @@ final class AppWindow: NSObject, NSWindowDelegate {
 
     private let make: () -> NSWindow
     private let onClose: () -> Void
+    private let opensFullScreen: () -> Bool
     private var window: NSWindow?
 
-    init(onClose: @escaping () -> Void = {}, make: @escaping () -> NSWindow) {
+    init(opensFullScreen: @escaping () -> Bool = { false }, onClose: @escaping () -> Void = {}, make: @escaping () -> NSWindow) {
         self.make = make
         self.onClose = onClose
+        self.opensFullScreen = opensFullScreen
     }
 
     func show() {
@@ -24,8 +26,13 @@ final class AppWindow: NSObject, NSWindowDelegate {
             self.window = window
         }
         Self.open.insert(ObjectIdentifier(self))
+        let enterFullScreen = window.map {
+            MainWindowFullScreen.shouldEnter(enabled: opensFullScreen(), wasVisible: $0.isVisible, isMiniaturized: $0.isMiniaturized,
+                                             isFullScreen: $0.styleMask.contains(.fullScreen))
+        } ?? false
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if enterFullScreen { window?.toggleFullScreen(nil) }
     }
 
     func close() {
