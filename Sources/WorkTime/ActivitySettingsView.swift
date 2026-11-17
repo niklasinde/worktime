@@ -69,6 +69,8 @@ struct ActivitySettingsView: View {
     @AppStorage(ActivitySettings.classifyKey) private var classify = true
     @AppStorage(ActivitySettings.idleKey) private var idleSeconds = 120.0
     @AppStorage(ActivitySettings.retentionKey) private var retentionDays = 90
+    @AppStorage(ActivitySettings.chromeProfileKey) private var chromeProfile = ""
+    @State private var chromeProfiles: [ChromeProfile] = []
     @State private var confirmingDeleteAll = false
     @State private var offeringPromptDeletion = false
     @State private var confirmingClearPrompts = false
@@ -119,6 +121,18 @@ struct ActivitySettingsView: View {
                     }
                     .labelsHidden().fixedSize()
                 }
+                Divider().padding(.leading, 14)
+                SettingsRow("Chrome profile", detail: chromeProfileDetail) {
+                    Picker("Chrome profile", selection: $chromeProfile) {
+                        Text("All profiles").tag("")
+                        ForEach(chromeProfiles) { Text($0.label).tag($0.name) }
+                        if !chromeProfile.isEmpty, !chromeProfiles.contains(where: { $0.name == chromeProfile }) {
+                            Text("\(chromeProfile) (not found)").tag(chromeProfile)
+                        }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                .onAppear { chromeProfiles = ChromeProfiles.load() }
             }
             ResumeSettingsSection()
             SettingsSection("Stored activity", footer: nil) {
@@ -237,6 +251,13 @@ struct ActivitySettingsView: View {
 
     private func clearPrompts() {
         clearedPrompts = projects.clearPrompts(tracker)
+    }
+
+    private var chromeProfileDetail: String {
+        chromeProfile.isEmpty
+            ? "Track every Chrome profile."
+            : "Only \(chromeProfile) is tracked. Chrome shows the profile in its window title, which needs Accessibility; "
+                + "windows whose profile can\u{2019}t be told, and Incognito and Guest windows, are not tracked."
     }
 
     private func toggleRow(_ title: String, _ value: Binding<Bool>) -> some View {

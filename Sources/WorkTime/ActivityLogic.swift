@@ -222,6 +222,7 @@ struct ActivitySettings: Equatable {
     static let promptsKey = "activityStorePrompts"
     static let idleKey = "activityIdleSeconds"
     static let retentionKey = "activityRetentionDays"
+    static let chromeProfileKey = "activityChromeProfile"
     /// The blocked apps; the key predates the allowlist.
     static let excludedKey = "activityExcludedApps"
     static let allowedAppsKey = "activityAllowedApps"
@@ -249,7 +250,7 @@ struct ActivitySettings: Equatable {
 
     static let defaults: [String: Any] = [
         enabledKey: false, pausedKey: false, titlesKey: true, urlsKey: true, gitKey: true, claudeKey: true, promptsKey: false,
-        idleKey: 120, retentionKey: 90, excludedKey: defaultExcluded, typingKey: false, classifyKey: true,
+        idleKey: 120, retentionKey: 90, chromeProfileKey: "", excludedKey: defaultExcluded, typingKey: false, classifyKey: true,
         excludedCategoriesKey: [String](), removeBlockedKey: false, allowedAppsKey: [String](), blockedSitesKey: [String](),
         allowedSitesKey: [String](), appModeKey: ListMode.allExceptBlocked.rawValue, siteModeKey: ListMode.allExceptBlocked.rawValue,
         workAppsKey: [String](), workSitesKey: [String](), nonWorkAppsKey: [String](), nonWorkSitesKey: [String](),
@@ -284,6 +285,8 @@ struct ActivitySettings: Equatable {
     var storePrompts = false
     var idleSeconds: TimeInterval = 120
     var retentionDays = 90
+    /// The one Chrome profile to track, by name; empty tracks them all.
+    var chromeProfile = ""
     var blockedApps = defaultExcluded
     var allowedApps: [String] = []
     var blockedSites: [String] = []
@@ -312,6 +315,7 @@ struct ActivitySettings: Equatable {
         storePrompts = defaults.bool(forKey: Self.promptsKey)
         idleSeconds = defaults.double(forKey: Self.idleKey)
         retentionDays = defaults.integer(forKey: Self.retentionKey)
+        chromeProfile = defaults.string(forKey: Self.chromeProfileKey) ?? ""
         blockedApps = defaults.stringArray(forKey: Self.excludedKey) ?? Self.defaultExcluded
         allowedApps = defaults.stringArray(forKey: Self.allowedAppsKey) ?? []
         blockedSites = defaults.stringArray(forKey: Self.blockedSitesKey) ?? []

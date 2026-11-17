@@ -17,6 +17,8 @@ final class ActivityTracker: ObservableObject {
     private var away = false
     private var repositories: [URL] = []
     private var repositoriesScanned = Date.distantPast
+    private var chromeProfilesCache: [ChromeProfile] = []
+    private var chromeProfilesLoaded = Date.distantPast
     private var branches = BranchIndex()
     private static let backfilledKey = "activityLinksBackfilled"
     private static let guessesCheckedKey = "projectGuessesChecked"
@@ -195,6 +197,10 @@ final class ActivityTracker: ObservableObject {
         guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid() else { return ingest(.idle(at: now)) }
         var sample = ActivitySample(time: now, appBundle: app.bundleIdentifier, appName: app.localizedName)
         sample.windowTitle = Self.focusedWindowTitle(of: app.processIdentifier)
+        if app.bundleIdentifier == ChromeProfiles.bundle, !settings.chromeProfile.isEmpty,
+           !ChromeProfiles.allows(title: sample.windowTitle, chosen: settings.chromeProfile, profiles: chromeProfiles(now)) {
+            return flush()
+        }
         if settings.urls || settings.needsHost, let bundle = app.bundleIdentifier, Browsers.supports(bundle) {
             sample.url = ActivityLogic.cleanURL(Browsers.frontURL(of: bundle))
         }
@@ -250,6 +256,14 @@ final class ActivityTracker: ObservableObject {
 
     private func idleSeconds() -> TimeInterval {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+
+    private func chromeProfiles(_ now: Date) -> [ChromeProfile] {
+        if now.timeIntervalSince(chromeProfilesLoaded) > ChromeProfiles.refreshInterval {
+            chromeProfilesCache = ChromeProfiles.load()
+            chromeProfilesLoaded = now
+        }
+        return chromeProfilesCache
     }
 
     private func repositories(_ now: Date) -> [URL] {
