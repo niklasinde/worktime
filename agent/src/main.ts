@@ -9,6 +9,7 @@ import { TextStream } from "./stream.js";
 import { userMessage, type PromptImage } from "./images.js";
 import { PromptQueue } from "./promptqueue.js";
 import { RoleWaits } from "./rolewait.js";
+import { usageFrom } from "./usage.js";
 import { delegateTool, hasDelegateRules, isSessionAllowable, matchDelegate, parseRules, sessionKey, suggestRules, type Rule } from "./rules.js";
 
 type Input =
@@ -209,6 +210,7 @@ function forward(message: any, model: string) {
       send({
         type: "result", sessionId: message.session_id, isError: message.is_error === true || message.subtype !== "success",
         text: message.result ?? (message.errors ?? []).join("\n"), turns: message.num_turns, model, permissionMode: mode,
+        usage: usageFrom(message),
       });
       break;
   }

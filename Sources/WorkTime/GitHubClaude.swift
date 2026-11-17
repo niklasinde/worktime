@@ -340,6 +340,8 @@ enum GitHubClaude {
             let text: String
             let isError: Bool
             var cost: Double?
+            /// What the call used, as the CLI's result line reports it.
+            var usage: UsageTotals?
         }
 
         private(set) var text = ""
@@ -356,7 +358,7 @@ enum GitHubClaude {
             case "assistant": message(object["message"] as? [String: Any] ?? [:])
             case "result":
                 result = Result(text: object["result"] as? String ?? "", isError: object["is_error"] as? Bool ?? false,
-                                cost: object["total_cost_usd"] as? Double)
+                                cost: object["total_cost_usd"] as? Double, usage: UsageTotals.parse(object))
             default: break
             }
         }

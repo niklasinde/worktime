@@ -572,6 +572,19 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   and **Copy** show exactly what will run. Nothing runs until you click; a clicked row stays marked "Sent to…" across restarts. A
   block that is incomplete, has no prompt or is over 4000 characters stays plain code. Every agent is told about the format; routines
   are told not to use it. The prompts are told never to ask for an approval, merge, post or send.
+- **Usage.** Every call to Claude is counted: each turn of an agent, routine and automation, a pull request summary, a meeting summary
+  and a routine analysis. The agent sidecar forwards the result message's `modelUsage` (tokens and cost per model, subagents and
+  compaction included) and the app keeps one JSON line per call in `usage.jsonl` next to the other app data, for 180 days, without any
+  prompt or answer. Claude Code counts cumulatively across the turns of a session, so a turn is the difference from the total before it,
+  measured against what the app last saw for that session; the first turn of an older session the app never measured only sets the
+  starting point and is not charged to anything. Costs are Claude Code's estimate at API prices, not a bill; calls through an API key
+  report tokens only. A finished turn ends with "Done · 3 turns · Sonnet 5.5 · 41k tokens · $0.18" (tokens leave out cache
+  reads), the session list shows a session's cost, and a routine or automation row ends with its last run's cost. Settings → Usage shows
+  the plan's 5-hour and weekly limits (the Agent SDK's experimental `/usage` call, read by `agent/dist/plan.js`; it may break in a later
+  release), totals for today, 7 or 30 days, a chart by day, breakdowns by workspace, agent, routine, automation and model, the most
+  expensive calls (Open shows the agent) and a hint when Opus keeps doing short jobs. Settings → Agent → Usage sets the currency (euros
+  need a rate you enter), a warning for one run over a limit and a once-a-day warning when the day's total passes a budget, both off by
+  default and in dollars. Debug builds: `WorkTime --render-usage <folder>` renders the page with made-up calls.
 - **Prompt templates.** The prompts WorkTime writes for its agents are Markdown files you can edit, not code. Settings → Agent →
   Prompts lists them: the review prompt for one pull request and for a set (`review-pr`, `review-set`), a set agent's instructions
   (`review-set-system`), what the buttons of an automation's question send (`review-pr-ask`, `review-set-ask`, `jira-ask`), the review

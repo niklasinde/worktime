@@ -139,6 +139,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/MCPBrief.swift \
     Sources/WorkTime/InCallStore.swift \
     Sources/WorkTime/RoutineLogic.swift \
+    Sources/WorkTime/UsageLogic.swift \
     Sources/WorkTime/RoutineScriptLogic.swift \
     Sources/WorkTime/RoutineDeterminismLogic.swift \
     Sources/WorkTime/RoutineScriptFiles.swift \
@@ -230,6 +231,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/SessionRefLookupTests.swift \
     Tests/WorkTimeTests/PromptTemplateTests.swift \
     Tests/WorkTimeTests/RoleToolTests.swift \
+    Tests/WorkTimeTests/UsageTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

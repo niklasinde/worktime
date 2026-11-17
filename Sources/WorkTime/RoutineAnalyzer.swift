@@ -21,6 +21,7 @@ enum RoutineAnalyzer {
         let box = CLIResult()
         let outcome = await ClaudeProcess().run(cli: cli, arguments: arguments(prompt: prompt), directory: FileManager.default.temporaryDirectory,
                                                 environment: ClaudePluginModel.environment(for: cli), timeout: timeout) { box.consume($0) }
+        UsageReport.note(call: box.stream.result?.usage, kind: .analysis)
         if outcome.cancelled { throw CancellationError() }
         if outcome.timedOut { throw Failure(message: GitHubClaude.Failure.timedOut.message) }
         guard let result = box.stream.result, !result.isError, !result.text.isEmpty else {

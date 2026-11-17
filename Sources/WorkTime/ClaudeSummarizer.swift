@@ -130,6 +130,7 @@ enum ClaudeSummarizer {
             for try await event in ClaudeAPIClient().reply(key: key, model: model, system: system,
                                                            messages: [ClaudeAPIMessage(role: .user, text: prompt)], options: options) {
                 if case .text(let piece) = event { text += piece }
+                if case .finished(let usage?) = event { UsageReport.note(tokens: usage.inputTokens, output: usage.outputTokens, model: model, kind: .summary) }
             }
         } catch let error as ClaudeAPIError {
             throw Failure.failed(error.message)
@@ -144,6 +145,7 @@ enum ClaudeSummarizer {
                                                 environment: ClaudePluginModel.environment(for: cli), timeout: timeout) { box.consume($0) }
         if outcome.cancelled { throw CancellationError() }
         let stream = box.stream
+        UsageReport.note(call: stream.result?.usage, kind: .summary)
         if outcome.timedOut { throw Failure.failed(GitHubClaude.Failure.timedOut.message) }
         guard let result = stream.result, !result.isError, !result.text.isEmpty else {
             throw Failure.failed(GitHubClaude.failure(stream.result?.text ?? outcome.stderr).message)

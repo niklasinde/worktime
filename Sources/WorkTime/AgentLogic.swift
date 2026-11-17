@@ -10,7 +10,8 @@ enum AgentEvent: Equatable {
     case toolUse(id: String, tool: String, summary: String, detail: String)
     case toolResult(id: String, content: String, isError: Bool, auto: Bool, rule: String? = nil)
     case permissionRequest(id: String, tool: String, summary: String, detail: String, offer: [AgentRule] = [], toolUse: String? = nil)
-    case result(sessionID: String?, isError: Bool, text: String, turns: Int?, model: String?, mode: AgentPermissionMode? = nil)
+    /// `usage` is what Claude Code reported for the session so far; the agent replaces it with the turn's own share before it reaches the transcript.
+    case result(sessionID: String?, isError: Bool, text: String, turns: Int?, model: String?, mode: AgentPermissionMode? = nil, usage: UsageTotals? = nil)
     case error(String)
     case signIn
     case missingFolder(String)
@@ -53,7 +54,8 @@ enum AgentEvent: Equatable {
         case "result":
             return .result(sessionID: object["sessionId"] as? String, isError: object["isError"] as? Bool ?? false, text: string("text"),
                            turns: object["turns"] as? Int, model: object["model"] as? String,
-                           mode: (object["permissionMode"] as? String).flatMap(AgentPermissionMode.init(rawValue:)))
+                           mode: (object["permissionMode"] as? String).flatMap(AgentPermissionMode.init(rawValue:)),
+                           usage: (object["usage"] as? [String: Any]).flatMap(UsageTotals.parse))
         case "error" where object["missingFolder"] is String: return .missingFolder(string("missingFolder"))
         case "error": return object["auth"] as? Bool == true || AgentLogic.needsSignIn(string("message")) ? .signIn : .error(string("message"))
         case "idle": return .idle
@@ -299,14 +301,14 @@ enum AgentLogic {
         case .permissionRequest(let id, let tool, let summary, let detail, let offer, let toolUse):
             items.append(AgentItem(id: "permission-\(id)-\(items.count)",
                                    kind: .permission(tool: tool, summary: summary, detail: detail, offer: offer, allowed: nil), call: toolUse))
-        case .result(let sessionID, let isError, let text, let turns, let model, let mode):
+        case .result(let sessionID, let isError, let text, let turns, let model, let mode, let usage):
             settleStreaming(in: &items)
             if isError, needsSignIn(text) {
                 appendSignIn(to: &items)
             } else if isError {
                 items.append(AgentItem(id: "error-\(items.count)", kind: .error(text.isEmpty ? "The agent stopped with an error." : text)))
             } else {
-                items.append(AgentItem(id: "status-\(items.count)", kind: .status(resultLine(turns: turns, model: model, mode: mode))))
+                items.append(AgentItem(id: "status-\(items.count)", kind: .status(resultLine(turns: turns, model: model, mode: mode, usage: usage))))
             }
             return sessionID
         case .error(let message):
@@ -344,10 +346,13 @@ enum AgentLogic {
         return parts.count == 3 && parts[0] == "permission" ? String(parts[1]) : nil
     }
 
-    static func resultLine(turns: Int?, model: String? = nil, mode: AgentPermissionMode? = nil) -> String {
+    static func resultLine(turns: Int?, model: String? = nil, mode: AgentPermissionMode? = nil, usage: UsageTotals? = nil,
+                           display: UsageDisplay? = nil) -> String {
         let model = model.map(modelName)
         let mode = mode.flatMap { $0 == .ask ? nil : $0.status }
-        return (["Done", turns.map { "\($0) turn\($0 == 1 ? "" : "s")" }, mode, model] as [String?]).compactMap { $0 }.joined(separator: " \u{00B7} ")
+        let used = usage.map { UsageFormat.footer($0, display: display ?? .current()) } ?? []
+        return (["Done", turns.map { "\($0) turn\($0 == 1 ? "" : "s")" }, mode, model] as [String?] + used.map { Optional($0) })
+            .compactMap { $0 }.joined(separator: " \u{00B7} ")
     }
 
     // MARK: Sign-in

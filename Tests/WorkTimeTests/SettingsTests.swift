@@ -7,7 +7,7 @@ let settingsTests: [(name: String, run: () throws -> Void)] = [
     ("Settings lists General first, then the feature pages", {
         let titles = SettingsTab.allCases.map(\.title)
         check(titles == ["General", "Meetings", "Activity", "Privacy", "Projects", "Top notch bar", "GitHub", "Jira", "Slack",
-                         "Models", "Agent", "iPhone"], "order \(titles)")
+                         "Models", "Agent", "Usage", "iPhone"], "order \(titles)")
         check(Set(SettingsTab.allCases.map(\.symbol)).count == SettingsTab.allCases.count, "every page has its own symbol")
     }),
 

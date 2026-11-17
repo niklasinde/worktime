@@ -151,6 +151,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
+    /// A run or a day went over the usage limit the user set; the same identifier replaces an earlier alert.
+    static func postUsageAlert(title: String, body: String, identifier: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
     /// An agent reported to Main while the user was elsewhere; a click opens that Main.
     static func postReport(title: String, body: String, agent: String) {
         let content = UNMutableNotificationContent()

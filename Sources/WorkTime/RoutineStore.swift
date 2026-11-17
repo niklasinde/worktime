@@ -395,6 +395,10 @@ final class RoutineStore: ObservableObject {
         let info = routine(key).flatMap { runModes.removeValue(forKey: $0.id) }
         if run.mode == nil, let info { run.mode = info.mode }
         if run.mode == .hybrid, let plan = routine(key)?.determinism { run.savedTokens = plan.savedTokens }
+        if let routine = routine(key), let spent = UsageStore.shared.spent(key: routine.id, since: run.started) {
+            run.cost = spent.cost
+            run.tokens = spent.tokens
+        }
         update(key) { $0.lastRun = run }
         guard let routine = routine(key) else { return }
         if let info, run.status == .done, info.mode == .hybrid || info.sampled {

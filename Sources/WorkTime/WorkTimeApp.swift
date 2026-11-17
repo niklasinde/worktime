@@ -40,6 +40,9 @@ enum Main {
         if let output = AssistantPreview.outputFolder(CommandLine.arguments) {
             MainActor.assumeIsolated { AssistantPreview.run(to: output) }
         }
+        if let output = UsagePreview.outputFolder(CommandLine.arguments) {
+            MainActor.assumeIsolated { UsagePreview.run(to: output) }
+        }
         if let output = UpgradePreview.outputFolder(CommandLine.arguments) {
             MainActor.assumeIsolated { UpgradePreview.run(to: output) }
         }
@@ -243,6 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TranscriptPullRequestMenu.shared.start()
         PromptFiles.current.seed()
         AssistantStore.shared.start()
+        UsageStore.connectReports()
         RoutineStore.shared.start()
         AutomationSources.shared.start()
         AgentStateWriter.shared.start()

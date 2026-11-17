@@ -13,6 +13,7 @@ enum SettingsTab: String, CaseIterable {
     case slack = "Slack"
     case models = "Models"
     case agent = "Agent"
+    case usage = "Usage"
     case iphone = "iPhone"
 
     static let storageKey = "settingsTab"
@@ -32,6 +33,7 @@ enum SettingsTab: String, CaseIterable {
         case .slack: return "number"
         case .models: return "cpu.fill"
         case .agent: return "sparkles"
+        case .usage: return "chart.xyaxis.line"
         case .iphone: return "iphone"
         }
     }

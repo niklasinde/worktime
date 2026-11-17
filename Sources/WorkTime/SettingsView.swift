@@ -296,6 +296,7 @@ extension SettingsTab {
         case .slack: return .purple
         case .models: return .indigo
         case .agent: return .pink
+        case .usage: return .mint
         case .iphone: return .green
         }
     }
@@ -410,6 +411,7 @@ struct SettingsView: View {
             .id(SettingsAnchor.slack)
         case .models: ModelOverview(models: models, whisper: whisper, speakers: speakers, tracker: tracker, show: show)
         case .agent: AgentSettingsSection(store: .shared)
+        case .usage: UsagePage(store: .shared, plan: .shared)
         case .iphone: PhoneSettingsSection(model: .shared)
         }
     }

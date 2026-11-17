@@ -203,6 +203,25 @@ final class AgentModel: ObservableObject {
             ?? (isMain ? "Main" : (folder as NSString).lastPathComponent)
     }
 
+    /// Whether the prompt now running started a session rather than continued one, so what Claude Code counts for it is all this turn's own.
+    private var turnStartsSession = true
+
+    /// Who a call is charged to on the usage page.
+    private var usageSource: (kind: UsageKind, key: String?, name: String, workspace: String?) {
+        if let routine { return (routine.trigger == nil ? .routine : .automation, routine.id, routine.name, routine.workspace) }
+        if let assistant { return (.assistant, assistant.key, assistant.role.name, assistant.workspace) }
+        if let topic { return (topic.linked.isEmpty ? .topic : .set, topic.key, topic.name, nil) }
+        if let prURL { return (.pullRequest, prURL, AgentOverview.prTitle(prURL), nil) }
+        return (.main, attentionID, attentionTitle, workspace)
+    }
+
+    /// Keeps what a finished turn used in the usage log and returns the turn's own share for its line in the transcript.
+    private func recordUsage(_ reported: UsageTotals, session: String?, failed: Bool) -> UsageTotals {
+        let source = usageSource
+        return UsageStore.shared.record(turn: reported, session: session ?? sessionID, startsFresh: turnStartsSession, kind: source.kind, key: source.key,
+                                        name: source.name, workspace: source.workspace, failed: failed)
+    }
+
     /// The key a notification carries to find this agent again: the one the Agent page selects it by.
     var attentionID: String { isMain ? Workspaces.mainKey(workspace ?? Workspaces.defaultID) : agentKey ?? historyKey }
 
@@ -770,6 +789,7 @@ final class AgentModel: ObservableObject {
         busy = true
         let system = systemPrompt, allowedTools = actingAs.map { Assistants.allowedTools($0.role) }, delegateFrom = isMain ? workspace : nil
         lastModel = model
+        turnStartsSession = sessionID == nil
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
@@ -992,6 +1012,10 @@ final class AgentModel: ObservableObject {
             event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [role] + offer.filter { $0.kind != .role }, toolUse: toolUse)
         }
         if case .roleTimeout(let id) = event { return roleWaitEnded(id) }
+        if case .result(let session, let isError, let text, let turns, let model, let mode, let reported?) = event {
+            let share = recordUsage(reported, session: session, failed: isError)
+            event = .result(sessionID: session, isError: isError, text: text, turns: turns, model: model, mode: mode, usage: share)
+        }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
         if case .sessionAllowed(let keys) = event { return sessionAllowed = keys }
         if case .delivered(let id) = event { return AgentPending.deliver(id, queue: &pending, items: &items) }

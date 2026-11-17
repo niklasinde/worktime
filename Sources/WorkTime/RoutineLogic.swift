@@ -69,6 +69,9 @@ struct RoutineRun: Codable, Equatable, Sendable {
     /// How the run was done and what that is estimated to have saved, when a script did part of it.
     var mode: RunMode?
     var savedTokens: Int?
+    /// What the run's agent used, as Claude Code estimated it; nil when it ran as a script or reported no cost.
+    var cost: Double?
+    var tokens: Int?
 }
 
 /// A saved prompt that runs on a schedule in an agent of its own, a fresh session each time, optionally as one of a
@@ -217,17 +220,18 @@ enum Routines {
         return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))" + asked + tool + recompile
     }
 
-    static func lastRunText(_ run: RoutineRun?, now: Date) -> String {
+    static func lastRunText(_ run: RoutineRun?, now: Date, display: UsageDisplay? = nil) -> String {
         guard let run else { return "not run yet" }
         let when = GitHubLogic.updatedText(run.finished ?? run.started, now: now)
         var how = ""
         if let mode = run.mode, mode != .ai {
             how = " \u{00B7} \(mode.label)" + (run.savedTokens.map { $0 > 0 ? ", ~\(Determinism.savedText($0)) tokens saved" : "" } ?? "")
         }
+        let cost = run.cost.map { " \u{00B7} " + (display ?? .current()).money($0) } ?? ""
         switch run.status {
         case .running: return "running"
-        case .done: return (run.denied > 0 ? "ran \(when), \(run.denied) refused" : "ran \(when)") + how
-        case .failed: return "failed \(when)"
+        case .done: return (run.denied > 0 ? "ran \(when), \(run.denied) refused" : "ran \(when)") + how + cost
+        case .failed: return "failed \(when)" + cost
         case .interrupted: return "stopped \(when)"
         }
     }

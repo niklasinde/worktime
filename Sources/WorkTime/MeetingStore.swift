@@ -46,6 +46,8 @@ enum AppPaths {
     static var attachments: URL { support.appendingPathComponent("Attachments", isDirectory: true) }
     /// The tickets the Jira page listed last, so it opens at once.
     static var jiraTickets: URL { support.appendingPathComponent("jira-tickets.json") }
+    /// What each call to Claude used, one JSON line per call, kept for half a year.
+    static var usageLog: URL { support.appendingPathComponent("usage.jsonl") }
 
     /// The workspaces and the folders holding each one's MAIN.md.
     static var workspaceFile: URL { support.appendingPathComponent("workspaces.json") }

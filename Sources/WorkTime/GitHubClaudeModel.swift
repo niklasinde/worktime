@@ -196,6 +196,9 @@ final class GitHubClaudeModel: ObservableObject {
             Task { @MainActor in self.progress(url, snapshot) }
         }
         let stream = box.stream
+        if let usage = stream.result?.usage {
+            UsageStore.shared.record(call: usage, session: stream.sessionID, kind: .review, key: url, name: AgentOverview.prTitle(url))
+        }
         if outcome.cancelled { return .cancelled }
         if outcome.timedOut { return .failed(.timedOut) }
         let session = stream.sessionID.map {

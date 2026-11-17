@@ -535,7 +535,8 @@ struct AgentSessionList: View {
     }
 
     private func detail(_ entry: AgentSessionEntry, now: Date) -> String {
-        ([GitHubLogic.updatedText(entry.lastUsed, now: now)] + [entry.model.map(AgentLogic.modelName)].compactMap { $0 })
+        let cost = UsageStore.shared.cost(session: entry.id).map { UsageDisplay.current().money($0) }
+        return ([GitHubLogic.updatedText(entry.lastUsed, now: now)] + [entry.model.map(AgentLogic.modelName), cost].compactMap { $0 })
             .joined(separator: " \u{00B7} ")
     }
 
@@ -1165,6 +1166,7 @@ struct AgentSettingsSection: View {
             }
         }
         QuickChatSettings()
+        UsageSettings()
         PromptTemplatesSettings()
         SettingsSection("Automations", footer: "Automations run an agent when something happens in Slack, GitHub or Jira. Off, none runs and none searches. "
                         + "Turned on again they start from what is there, so nothing that happened meanwhile runs.") {
