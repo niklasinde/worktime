@@ -4,8 +4,9 @@ import Foundation
 /// the running app (it owns the file and the schedule) through the agent inbox. The automation tools are the same runs started by an event.
 extension MCPServer {
     static func routineTools(sources: NoticeSources = NoticeSources(), now: @escaping () -> Date = Date.init) -> [MCPTool] {
-        func send(_ action: RoutineRequest.Action, draft: RoutineDraft? = nil, patch: RoutinePatch? = nil, routine: String? = nil, enabled: Bool? = nil) throws -> String {
-            let request = RoutineRequest(id: UUID().uuidString, action: action, draft: draft, patch: patch, routine: routine, enabled: enabled, source: sources.source(), created: now())
+        func send(_ action: RoutineRequest.Action, draft: RoutineDraft? = nil, patch: RoutinePatch? = nil, routine: String? = nil, enabled: Bool? = nil, compile: RoutineCompile? = nil) throws -> String {
+            let request = RoutineRequest(id: UUID().uuidString, action: action, draft: draft, patch: patch, routine: routine, enabled: enabled, compile: compile,
+                                         source: sources.source(), created: now())
             return try sources.ask(AgentInbox.encode(request), id: request.id, name: RoutineRequests.requestName(request.id), what: "the routine").message
         }
         func routineID(_ args: [String: Any]) throws -> String {
@@ -97,6 +98,25 @@ extension MCPServer {
                     description: "Deletes one of the user's WorkTime automations, by the id create_automation or automations gave. The user is asked to approve.",
                     properties: ["id": ["type": "string"]], required: ["id"], readOnly: false) { args in
                 try send(.delete, routine: try routineID(args))
+            },
+            MCPTool(name: "analyze_routine",
+                    description: "Looks at the last run of one of the user's WorkTime routines or automations, by id, for the parts a script could do instead of the model "
+                        + "(fixed fetches, filters, formatting). The answer is the analysis to carry out and how to answer it with compile_routine. Read only.",
+                    properties: ["id": ["type": "string"]], required: ["id"]) { args in
+                try send(.analyze, routine: try routineID(args))
+            },
+            MCPTool(name: "compile_routine",
+                    description: "Makes one of the user's WorkTime routines or automations run partly or wholly as a script, by the id routines gave, after analyze_routine. "
+                        + "The script is JSON data that can only call read-only tools: {\"steps\": [{\"id\", \"tool\", \"args\", \"keep\", \"drop\", \"limit\", \"expect\"}], \"output\": \"text with {step id}\"}. "
+                        + "A script mode's output is the run's answer; a hybrid's goes where the shorter prompt says {data}. A script that fails, or comes back empty, "
+                        + "makes the agent do that run. The user is asked to approve every compile, and sees the script.",
+                    properties: ["id": ["type": "string"],
+                                 "mode": ["type": "string", "enum": ["script", "hybrid"], "description": "script: the whole run is deterministic; hybrid: a script gathers the data and the prompt does the rest."],
+                                 "script": ["type": "string", "description": "The script as JSON text."],
+                                 "prompt": ["type": "string", "description": "For a hybrid: the shorter prompt, with {data} where the script's output goes."]],
+                    required: ["id", "mode", "script"], readOnly: false) { args in
+                guard let mode = FilterLogic.text(args, "mode"), let script = FilterLogic.text(args, "script") else { throw MCPToolError("mode and script are required.") }
+                return try send(.compile, routine: try routineID(args), compile: RoutineCompile(mode: mode, script: script, prompt: FilterLogic.text(args, "prompt")))
             },
             MCPTool(name: "routines",
                     description: "The user's WorkTime routines: id, name, schedule, whether on, workspace, assistant and how the last run went.",

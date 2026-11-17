@@ -61,9 +61,16 @@ struct RoutinePatch: Codable, Equatable, Sendable {
     var automation: AutomationPatch?
 }
 
+/// What `compile_routine` asks for: the script as JSON text, whether it is all of the run or the first part, and for a hybrid the shorter prompt.
+struct RoutineCompile: Codable, Equatable, Sendable {
+    var mode: String
+    var script: String
+    var prompt: String?
+}
+
 /// What the `--mcp` process hands the app through the agent inbox for the routine tools; the app answers with a `NoticeReply`.
 struct RoutineRequest: Codable, Equatable {
-    enum Action: String, Codable { case create, update, list, listAutomations, setEnabled, delete }
+    enum Action: String, Codable { case create, update, list, listAutomations, setEnabled, delete, analyze, compile }
 
     var id: String
     var action: Action
@@ -71,6 +78,7 @@ struct RoutineRequest: Codable, Equatable {
     var patch: RoutinePatch?
     var routine: String?
     var enabled: Bool?
+    var compile: RoutineCompile?
     var source: NoticeSource
     var created: Date
 }
@@ -218,6 +226,8 @@ enum RoutineRequests {
                 return reply(true, "Updated \"\(changed.name)\", \(when(changed).lowercased()), \(changed.enabled ? "on" : "off"); id \(changed.id).",
                              id: changed.id, change: .save(changed))
             }
+        case .analyze, .compile:
+            return reply(false, "The app answers this one itself.")
         case .setEnabled, .delete:
             guard let found = find(request.routine, in: routines) else { return reply(false, "No routine with id \(request.routine ?? "").") }
             if request.action == .delete { return reply(true, "Deleted \"\(found.name)\".", id: found.id, change: .delete(key: found.key)) }

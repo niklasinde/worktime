@@ -11,6 +11,7 @@ struct RoutineSection: View {
     @AppStorage(Routines.automationsCollapsedKey) private var collapsedAutomations = ""
     @State private var editing: RoutineEdit?
     @State private var deleting: Routine?
+    @State private var determining: DeterminismTarget?
 
     private var collapsedWorkspaces: Binding<String> { automations ? $collapsedAutomations : $collapsedRoutines }
     private var collapsedIDs: Set<String> { Set(collapsedWorkspaces.wrappedValue.split(separator: ",").map(String.init)) }
@@ -31,6 +32,7 @@ struct RoutineSection: View {
                 editing = nil
                 if let saved { hub.selected = saved.key }
             } }
+            .sheet(item: $determining) { target in DeterminismSheet(routineKey: target.id) { determining = nil } }
             .confirmationDialog("Delete \u{201C}\(deleting?.name ?? "")\u{201D}?", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }) {
                 Button("Delete \(noun)", role: .destructive) { if let deleting { store.delete(deleting.key) } }
             } message: {
@@ -107,6 +109,16 @@ struct RoutineSection: View {
         }
         Button(routine.enabled ? "Turn Off" : "Turn On") { store.setEnabled(!routine.enabled, for: routine.key) }
         Button("Edit\u{2026}") { editing = RoutineEdit(routine: routine, isNew: false) }
+        if routine.determinism != nil {
+            Button("Edit Script\u{2026}") { determining = DeterminismTarget(id: routine.key) }
+            Button("Recompile\u{2026}") {
+                store.analyze(routine.key)
+                determining = DeterminismTarget(id: routine.key)
+            }
+            Button("Revert to AI") { store.revertToAI(routine.key) }
+        } else {
+            Button(store.pendingProposal(routine.key) == nil ? "Make Deterministic\u{2026}" : "Review Proposal\u{2026}") { determining = DeterminismTarget(id: routine.key) }
+        }
         Divider()
         Button("Delete\u{2026}", role: .destructive) { deleting = routine }
     }

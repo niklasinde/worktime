@@ -26,7 +26,7 @@ Pick the tool:
 
 The server can also act, and each of these asks the user first or is limited to WorkTime's own data: `notify` and `add_reminder`
 (a reminder with a link to its source), `routines` with `create_routine`, `update_routine`, `set_routine_enabled` and
-`delete_routine` (prompts that run on a schedule), `automations` with `create_automation`, `update_automation` and
+`delete_routine` (prompts that run on a schedule; `analyze_routine` and `compile_routine` turn the fixed parts of a routine's run into a read-only script), `automations` with `create_automation`, `update_automation` and
 `delete_automation` (prompts that run when something happens in Slack, GitHub or Jira: a message, a review request, failing checks, an assigned ticket, a status change), and `assistants` with `create_assistant`, `update_assistant` and
 `delete_assistant` (role agents under a workspace's Main). Look with `routines` or `assistants` before adding one, and change an
 existing one instead of making a second. Only do this when the user asks for it.

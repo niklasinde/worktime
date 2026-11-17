@@ -34,6 +34,8 @@ enum AppPaths {
     static var topicAgents: URL { support.appendingPathComponent("topic-agents.json") }
     /// The routines that run agents on a schedule.
     static var routines: URL { support.appendingPathComponent("routines.json") }
+    /// Each routine's scripts, one folder per routine.
+    static var routineScripts: URL { support.appendingPathComponent("Routines", isDirectory: true) }
     /// The events the automations have seen, so a restart does not run one twice.
     static var automationState: URL { support.appendingPathComponent("automation-state.json") }
     /// Each topic agent's own working folder.

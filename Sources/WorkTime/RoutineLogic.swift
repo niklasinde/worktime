@@ -66,6 +66,9 @@ struct RoutineRun: Codable, Equatable, Sendable {
     var summary: String?
     /// How many calls that needed approval were refused, as nobody is there to give it.
     var denied = 0
+    /// How the run was done and what that is estimated to have saved, when a script did part of it.
+    var mode: RunMode?
+    var savedTokens: Int?
 }
 
 /// A saved prompt that runs on a schedule in an agent of its own, a fresh session each time, optionally as one of a
@@ -87,6 +90,9 @@ struct Routine: Codable, Equatable, Identifiable, Sendable {
     /// An automation: started by an event instead of the schedule, which is then unused.
     var trigger: AutomationTrigger?
     var followUp: AutomationFollowUp?
+    /// The script that does part of the run without the model, and when the runs were last looked at for one.
+    var determinism: DeterministicPlan?
+    var analyzed: Date?
 
     var key: String { Routines.prefix + id }
     var isAutomation: Bool { trigger != nil }
@@ -204,15 +210,20 @@ enum Routines {
     static func detail(_ routine: Routine, now: Date) -> String {
         let when = routine.trigger.map(Automations.label) ?? routine.schedule.label()
         guard routine.enabled else { return "\(when) \u{00B7} off" }
-        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))"
+        let recompile = routine.determinism?.needsRecompile == true ? " \u{00B7} script needs recompiling" : ""
+        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))" + recompile
     }
 
     static func lastRunText(_ run: RoutineRun?, now: Date) -> String {
         guard let run else { return "not run yet" }
         let when = GitHubLogic.updatedText(run.finished ?? run.started, now: now)
+        var how = ""
+        if let mode = run.mode, mode != .ai {
+            how = " \u{00B7} \(mode.label)" + (run.savedTokens.map { $0 > 0 ? ", ~\(Determinism.savedText($0)) tokens saved" : "" } ?? "")
+        }
         switch run.status {
         case .running: return "running"
-        case .done: return run.denied > 0 ? "ran \(when), \(run.denied) refused" : "ran \(when)"
+        case .done: return (run.denied > 0 ? "ran \(when), \(run.denied) refused" : "ran \(when)") + how
         case .failed: return "failed \(when)"
         case .interrupted: return "stopped \(when)"
         }

@@ -1000,6 +1000,8 @@ struct AgentSettingsSection: View {
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
     @AppStorage(Automations.enabledKey) private var automationsOn = true
     @State private var confirming: String?
+    @AppStorage(Determinism.autoAnalyzeKey) private var autoAnalyze = true
+    @AppStorage(Determinism.fullRunEveryKey) private var fullRunEvery = Determinism.defaultFullRunEvery
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -1028,6 +1030,15 @@ struct AgentSettingsSection: View {
         SettingsSection("Automations", footer: "Automations run an agent when something happens in Slack, GitHub or Jira. Off, none runs and none searches. "
                         + "Turned on again they start from what is there, so nothing that happened meanwhile runs.") {
             SettingsRow("Run automations") { Toggle("Run automations", isOn: $automationsOn).labelsHidden() }
+        }
+        SettingsSection("Routines", footer: "A routine can run partly or wholly as a script of read-only calls instead of the model. A script that fails makes the agent do the run, "
+                        + "and now and then the agent runs in full so the script can be checked against it.") {
+            SettingsRow("Look for a script after a run", detail: "The agent looks at a routine's first successful run for parts a script could do, once, and proposes it. You decide.") {
+                Toggle("Look for a script after a run", isOn: $autoAnalyze).labelsHidden()
+            }
+            SettingsRow("Run the agent in full every", detail: "How often a routine with a script is run by the agent anyway. 0 for never.") {
+                Stepper(value: $fullRunEvery, in: 0...100) { Text(fullRunEvery == 0 ? "never" : "\(fullRunEvery) runs") }.fixedSize()
+            }
         }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
                         + "allowed when each part that is not read-only starts with one of these. Claude in Chrome\u{2019}s actions are allowed one tool at a time (a click, typing and the like one computer action at a time). Tools that ask by default are listed below; Main\u{2019}s send to agent asks unless you allowed it to message that agent.") {

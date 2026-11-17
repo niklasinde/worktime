@@ -157,7 +157,7 @@ enum ClaudeSummarizer {
     }
 }
 
-private final class CLIResult: @unchecked Sendable {
+final class CLIResult: @unchecked Sendable {
     private let lock = NSLock()
     private var current = GitHubClaude.Stream()
 

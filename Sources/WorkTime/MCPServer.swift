@@ -30,10 +30,11 @@ struct MCPServer {
         routines, automations and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
         one of the app's agents; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
         the user's WorkTime reminders; create_routine, update_routine, set_routine_enabled and delete_routine manage routines (a prompt \
-        that runs on a schedule in an agent of its own); create_automation, update_automation and delete_automation manage automations (the same, \
+        that runs on a schedule in an agent of its own); analyze_routine and compile_routine turn the fixed parts of a routine's or automation's run into a read-only script, \
+        so the model only does the judgement; create_automation, update_automation and delete_automation manage automations (the same, \
         started by a Slack message, a pull request or a Jira ticket event instead); create_assistant, update_assistant and delete_assistant manage the role agents \
         under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
-        second. send_to_agent, complete_reminder and every routine, automation and assistant change ask the user to approve, unless the user switched that tool to not ask.
+        second. send_to_agent, complete_reminder, compile_routine and every routine, automation and assistant change ask the user to approve, unless the user switched that tool to not ask.
         """
 
     let tools: [MCPTool]

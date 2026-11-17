@@ -652,6 +652,8 @@ enum AgentLogic {
         A routine is a prompt that runs on a schedule in an agent of its own (only while WorkTime is open). When the user asks for something \
         to happen regularly, call routines first, then create_routine (name, prompt, schedule, and an assistant when one fits), or \
         update_routine, set_routine_enabled and delete_routine for one that exists. The prompt must stand alone: a run cannot ask questions.
+        When a routine's or automation's run mostly fetches and formats data, analyze_routine looks at its last run and compile_routine turns the fixed parts into a \
+        read-only script, so the model only does the judgement; the user approves the script, and a script that fails makes the agent do that run.
         An automation is the same kind of run started by an event instead of a schedule: a Slack message (a mention, a channel, a keyword, a reply in a \
         thread), a pull request (a review request, one opened in a repository, failing checks, feedback, approval, a merge) or a Jira ticket (assigned, \
         a status change, a new ticket, a comment). When the user asks for something to happen when X happens, call automations first, then create_automation (name, event, filters, a \

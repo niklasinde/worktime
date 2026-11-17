@@ -566,7 +566,16 @@ menu bar menu or the **Agent** row in the main window's sidebar.
 - **Routines.** `create_routine(name, prompt, schedule, minutes?, time?, weekday?, workspace?, assistant?, folder?, model?, run_missed?)`
   adds a routine (a prompt that runs on a schedule in an agent of its own, only while the app is open) to the asking agent's
   workspace, or the one named; an existing one with the same name, prompt and schedule is returned instead. `routines` lists them
-  and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)` and `delete_routine(id)` ask.
+  and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)`, `delete_routine(id)` and `compile_routine` ask.
+- **Deterministic runs.** A routine or automation can run partly or wholly as a script instead of the model. After its first successful run
+  (and from the row's **Make Deterministic…**) the agent looks at the run and proposes a script: JSON data of read-only tool calls
+  (`jira_search`, `github_prs`, `slack_search`, …) with line filters and an output template, so it can never post, approve, merge or send.
+  A *script* proposal makes the script's output the run's answer; a *hybrid* one gathers the data with the script and runs a shorter
+  prompt, where it says `{data}`, only for the judgement part. Nothing is saved until you click Save; the script, which you can edit, lives in
+  `Routines/<id>/script.v<N>.json` (versions are kept) and **Revert to AI** goes back. A script that fails, an `expect` pattern it no
+  longer matches or a result where every step came back empty makes the agent do that run and flags the routine as needing a recompile,
+  and every Nth run (Settings → Agent → Routines, 10 by default, 0 for never) the agent runs in full to check the script still agrees. The
+  routine's second line says how the last run was done and what it saved. `analyze_routine(id)` (read only) and `compile_routine(id, mode, script, prompt?)` (asks) do the same from an agent.
 - **Automations.** A routine started by an event instead of a schedule (the sidebar's Automations section, next to Routines).
   `create_automation(name, event, place?, contains?, status?, from_status?, jql?, pattern?, needs_pull_request?, prompt?, notify?, remind?,
   workspace?, assistant?, folder?, model?)` with `event` one of: Slack `slack_message` (a mention or direct message waiting on the user),
