@@ -1,51 +1,58 @@
 import Foundation
 
-/// What starts an automation: an event the app already follows, narrowed by what its place and its text contain.
+/// What starts an automation: an event the app follows, narrowed by what its place and its text contain.
 struct AutomationTrigger: Codable, Equatable, Sendable {
-    enum Kind: String, Codable, CaseIterable, Identifiable, Sendable {
-        case slackMessage = "slack_message"
-        case reviewRequested = "review_requested"
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .slackMessage: "A Slack message"
-            case .reviewRequested: "A review is requested from me"
-            }
-        }
-
-        var placeTitle: String { self == .slackMessage ? "Channel or person" : "Repository" }
-        var textTitle: String { self == .slackMessage ? "Message contains" : "Title contains" }
-
-        /// The placeholders a prompt can use for this kind of event.
-        var fields: [String] {
-            switch self {
-            case .slackMessage: ["slack_text", "slack_place", "slack_author", "slack_link", "pr_url", "ticket"]
-            case .reviewRequested: ["pr_url", "pr_title", "pr_repo", "pr_number", "pr_author", "ticket"]
-            }
-        }
-
-        var defaultPrompt: String {
-            switch self {
-            case .slackMessage:
-                "A message in {slack_place} from {slack_author}: {slack_text}\n{slack_link}\n\n"
-                    + "If it asks for a review of a pull request, review {pr_url}: read the diff and the code around it and draft a review. "
-                    + "Otherwise say in two lines what it asks and what I should do."
-            case .reviewRequested:
-                "Review {pr_url} ({pr_title}, by {pr_author}). Read the diff and the code around it, then draft the review: "
-                    + "a verdict (approve, request changes or needs the author's input), the problems that block it and the small ones."
-            }
-        }
-    }
-
     var kind: Kind
-    /// Slack: the channel or the person; GitHub: the repository. Any of several, separated by commas.
+    /// The channel or person, the repository or the Jira project. Any of several, separated by commas.
     var place = ""
-    /// The message text or the pull request title. Any of several, separated by commas.
+    /// The message text, the pull request title, the ticket summary or the comment. Any of several, separated by commas.
     var text = ""
     /// Slack only: the message has to mention a pull request.
     var needsPullRequest = false
+    /// Jira status changes: the status it moves to and the one it moves from. Any of several, separated by commas.
+    var status = ""
+    var fromStatus = ""
+    /// Jira: a query the ticket has to match too.
+    var jql = ""
+    /// A regular expression the text has to match.
+    var pattern = ""
+
+    func value(_ input: Input) -> String {
+        switch input {
+        case .place: place
+        case .text: text
+        case .status: status
+        case .fromStatus: fromStatus
+        case .jql: jql
+        case .pattern: pattern
+        }
+    }
+
+    mutating func set(_ input: Input, _ value: String) {
+        switch input {
+        case .place: place = value
+        case .text: text = value
+        case .status: status = value
+        case .fromStatus: fromStatus = value
+        case .jql: jql = value
+        case .pattern: pattern = value
+        }
+    }
+}
+
+extension AutomationTrigger {
+    /// Reads the triggers saved before they could be narrowed further.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        place = try container.decodeIfPresent(String.self, forKey: .place) ?? ""
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        needsPullRequest = try container.decodeIfPresent(Bool.self, forKey: .needsPullRequest) ?? false
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? ""
+        fromStatus = try container.decodeIfPresent(String.self, forKey: .fromStatus) ?? ""
+        jql = try container.decodeIfPresent(String.self, forKey: .jql) ?? ""
+        pattern = try container.decodeIfPresent(String.self, forKey: .pattern) ?? ""
+    }
 }
 
 /// What happens after an automation's run: a notification, and a reminder about the thing it ran for.
@@ -69,16 +76,25 @@ struct AutomationEvent: Codable, Equatable, Sendable {
 }
 
 /// What the app remembers between runs: the events each automation has seen, so a restart fires none twice, which ones were
-/// already there when it was turned on, when it last ran, and the latest event it matched (for testing it).
+/// already there when it was turned on, when it last ran, the latest event it matched (for testing it) and the ones queued.
 struct AutomationState: Codable, Equatable, Sendable {
     var seen: [String: [String]] = [:]
     var baselined: Set<String> = []
     var fired: [String: [Date]] = [:]
     var last: [String: AutomationEvent] = [:]
+    /// The events waiting for the run an automation is in the middle of, kept so a restart does not lose them.
+    var queued: [String: [AutomationEvent]] = [:]
 
     mutating func rebaseline(_ id: String) {
         baselined.remove(id)
         seen[id] = nil
+        queued[id] = nil
+    }
+
+    mutating func rebaselineAll() {
+        baselined = []
+        seen = [:]
+        queued = [:]
     }
 
     func pruned(keeping routines: [Routine]) -> AutomationState {
@@ -88,7 +104,20 @@ struct AutomationState: Codable, Equatable, Sendable {
         copy.baselined = baselined.intersection(ids)
         copy.fired = fired.filter { ids.contains($0.key) }
         copy.last = last.filter { ids.contains($0.key) }
+        copy.queued = queued.filter { ids.contains($0.key) }
         return copy
+    }
+}
+
+extension AutomationState {
+    /// Reads the state saved before events could be queued.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        seen = try container.decode([String: [String]].self, forKey: .seen)
+        baselined = try container.decode(Set<String>.self, forKey: .baselined)
+        fired = try container.decode([String: [Date]].self, forKey: .fired)
+        last = try container.decode([String: AutomationEvent].self, forKey: .last)
+        queued = try container.decodeIfPresent([String: [AutomationEvent]].self, forKey: .queued) ?? [:]
     }
 }
 
@@ -97,55 +126,89 @@ enum Automations {
     static let runsPerHour = 6
     static let queueLimit = 20
     static let titleLimit = 90
+    /// A status change, a comment or a reply older than this is not an event: the app was off, or it is history.
+    static let recentWindow: TimeInterval = 2 * 86_400
+    static let enabledKey = "automationsEnabled"
+
+    /// The switch for all automations, on until turned off in Settings.
+    static var enabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
 
     // MARK: Triggers
 
     static func problem(_ trigger: AutomationTrigger) -> String? {
-        if trigger.kind == .slackMessage, words(trigger.place).isEmpty, words(trigger.text).isEmpty, !trigger.needsPullRequest {
+        let kind = trigger.kind
+        if kind == .slackMessage, words(trigger.place).isEmpty, words(trigger.text).isEmpty, !trigger.needsPullRequest {
             return "Say which Slack messages: a channel or person, some text in the message, or that it mentions a pull request. Otherwise every mention and direct message starts a run."
         }
+        if let input = kind.required, words(trigger.value(input)).isEmpty {
+            return "Say \(kind.title(of: input).lowercased()): \(kind.title.lowercased()) needs it."
+        }
+        if kind == .jiraNew, words(trigger.place).isEmpty, trigger.jql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Say which project or JQL: otherwise every new ticket in Jira starts a run."
+        }
+        if !trigger.pattern.isEmpty, regex(trigger.pattern) == nil { return "The regex is not valid." }
+        if kind.source != .slack, trigger.needsPullRequest { return "Only Slack triggers can need a pull request." }
         return nil
     }
 
     static func matches(_ trigger: AutomationTrigger, _ event: AutomationEvent) -> Bool {
         guard trigger.kind == event.kind else { return false }
-        func contains(_ filter: String, _ text: String) -> Bool {
-            let options = words(filter)
-            return options.isEmpty || options.contains { text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
-        }
         if trigger.needsPullRequest, event.pullRequest == nil { return false }
+        if !trigger.pattern.isEmpty {
+            guard let regex = regex(trigger.pattern), regex.firstMatch(in: event.text, range: NSRange(event.text.startIndex..., in: event.text)) != nil else { return false }
+        }
         return contains(trigger.place, event.place) && contains(trigger.text, event.text)
+            && contains(trigger.status, event.fields["status"] ?? "") && contains(trigger.fromStatus, event.fields["from_status"] ?? "")
     }
 
-    private static func words(_ text: String) -> [String] {
+    /// The text has one of the comma-separated options, ignoring case and accents; any text has none asked for.
+    static func contains(_ filter: String, _ text: String) -> Bool {
+        let options = words(filter)
+        return options.isEmpty || options.contains { text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+    }
+
+    static func regex(_ pattern: String) -> NSRegularExpression? {
+        try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }
+
+    static func words(_ text: String) -> [String] {
         text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     static func label(_ trigger: AutomationTrigger) -> String {
-        var text = trigger.kind == .slackMessage ? "Slack message" : "Review requested"
-        if !words(trigger.place).isEmpty { text += " in " + words(trigger.place).joined(separator: " or ") }
-        if !words(trigger.text).isEmpty { text += " with \u{201C}\(words(trigger.text).joined(separator: "\u{201D} or \u{201C}"))\u{201D}" }
+        var text = trigger.kind.shortTitle
+        func options(_ input: AutomationTrigger.Input) -> String { words(trigger.value(input)).joined(separator: " or ") }
+        if !options(.place).isEmpty { text += " in " + options(.place) }
+        if !options(.fromStatus).isEmpty { text += " from " + options(.fromStatus) }
+        if !options(.status).isEmpty { text += " to " + options(.status) }
+        if !options(.text).isEmpty { text += " with \u{201C}\(words(trigger.text).joined(separator: "\u{201D} or \u{201C}"))\u{201D}" }
+        if !trigger.pattern.isEmpty { text += " matching /\(trigger.pattern)/" }
+        if !trigger.jql.isEmpty { text += " matching a JQL query" }
         if trigger.needsPullRequest { text += " linking a pull request" }
         return text
     }
 
     // MARK: Events
 
-    static func slackEvent(_ message: SlackMessage, link: URL?) -> AutomationEvent {
+    static func slackEvent(_ message: SlackMessage, link: URL?, kind: AutomationTrigger.Kind = .slackMessage) -> AutomationEvent {
         let mentioned = GitHubLink.mentions(in: message.text).first
         var fields = ["slack_text": message.text, "slack_place": message.place, "slack_author": message.author ?? message.place,
                       "slack_link": link?.absoluteString ?? ""]
         if let mentioned { fields["pr_url"] = mentioned.url }
         if let ticket = ActivityLogic.ticket(in: message.text) { fields["ticket"] = ticket }
-        return AutomationEvent(id: "slack:" + message.id, kind: .slackMessage, title: String(message.text.prefix(titleLimit)), place: message.place,
+        return AutomationEvent(id: "\(kind.idPrefix):" + message.id, kind: kind, title: String(message.text.prefix(titleLimit)), place: message.place,
                                text: message.text, fields: fields, pullRequest: mentioned?.url, link: link?.absoluteString, date: message.date)
     }
 
-    static func pullRequestEvent(_ pr: GitHubPR) -> AutomationEvent {
+    /// A pull request as an event. `suffix` tells apart the events one pull request makes, such as each review or each push.
+    static func pullRequestEvent(_ pr: GitHubPR, kind: AutomationTrigger.Kind = .reviewRequested, suffix: String? = nil,
+                                 extra: [String: String] = [:], date: Date? = nil) -> AutomationEvent {
         var fields = ["pr_url": pr.url, "pr_title": pr.title, "pr_repo": pr.repo, "pr_number": String(pr.number), "pr_author": pr.author ?? "someone"]
         if let ticket = pr.ticket ?? ActivityLogic.ticket(in: pr.title) { fields["ticket"] = ticket }
-        return AutomationEvent(id: "review:" + pr.url, kind: .reviewRequested, title: "\(GitHubLogic.repoName(pr.repo).name) #\(pr.number) \(pr.title)",
-                               place: pr.repo, text: pr.title, fields: fields, pullRequest: pr.url, link: pr.url, date: pr.updated)
+        fields.merge(extra) { $1 }
+        return AutomationEvent(id: "\(kind.idPrefix):" + pr.url + (suffix.map { ":" + $0 } ?? ""), kind: kind,
+                               title: "\(GitHubLogic.repoName(pr.repo).name) #\(pr.number) \(pr.title)", place: pr.repo, text: pr.title, fields: fields,
+                               pullRequest: pr.url, link: pr.url, date: date ?? pr.updated)
     }
 
     /// The prompt with the event's fields in the place of its placeholders; one that is not there is left empty.
@@ -201,15 +264,47 @@ enum Automations {
 
     /// The reminder to make for an event, with where it came from; nil when the event names nothing to come back to.
     static func reminder(for event: AutomationEvent) -> (title: String, source: ReminderSource)? {
-        if let url = event.pullRequest, let target = GitHubLink.pullRequest(at: url) {
-            return ("Decide on \(GitHubLogic.repoName(target.repo).name) #\(target.number): \(event.text)", .pullRequest(target))
+        let ticket = event.fields["ticket"] ?? ""
+        switch event.kind.source {
+        case .jira:
+            guard !ticket.isEmpty else { return nil }
+            let verb: String
+            switch event.kind {
+            case .jiraAssigned: verb = "Start"
+            case .jiraStatus: verb = "Check"
+            case .jiraNew: verb = "Triage"
+            default: verb = "Answer the comment on"
+            }
+            return ("\(verb) \(ticket): \(event.fields["ticket_title"] ?? event.title)", .jira(key: ticket, summary: event.fields["ticket_title"]))
+        case .github:
+            guard let url = event.pullRequest, let target = GitHubLink.pullRequest(at: url) else { return nil }
+            let name = "\(GitHubLogic.repoName(target.repo).name) #\(target.number)"
+            let verb: String
+            switch event.kind {
+            case .ciFailed: verb = "Fix the checks on"
+            case .prFeedback: verb = "Answer the review on"
+            case .prApproved: verb = "Merge"
+            case .prMerged: verb = "Follow up on"
+            case .prMentioned: verb = "Answer the mention on"
+            default: verb = "Decide on"
+            }
+            return ("\(verb) \(name): \(event.text)", .pullRequest(target))
+        default:
+            if let url = event.pullRequest, let target = GitHubLink.pullRequest(at: url) {
+                return ("Decide on \(GitHubLogic.repoName(target.repo).name) #\(target.number): \(event.text)", .pullRequest(target))
+            }
+            guard let link = event.link.flatMap(URL.init(string:)) else { return nil }
+            return ("Answer \(event.place): \(event.text)", .slack(link: link, place: event.place))
         }
-        guard let link = event.link.flatMap(URL.init(string:)) else { return nil }
-        return ("Answer \(event.place): \(event.text)", .slack(link: link, place: event.place))
+    }
+
+    /// Where a notification about the event leads: the pull request or the ticket, else the automation's own agent (nil).
+    static func noticeLink(for event: AutomationEvent) -> String? {
+        event.pullRequest ?? (event.kind.source == .jira ? event.link : nil)
     }
 
     static func systemNote(_ routine: Routine) -> String {
         "This run was started by an event (\(routine.trigger.map(label) ?? "an event")). Nothing you write is posted or sent: your answer is a draft shown to the user. "
-            + "Never approve, merge, close or comment on a pull request, or send a message; the user decides."
+            + "Never approve, merge, close or comment on a pull request, or comment on, move or assign a ticket, or send a message; the user decides."
     }
 }

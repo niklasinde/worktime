@@ -997,6 +997,7 @@ struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
+    @AppStorage(Automations.enabledKey) private var automationsOn = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -1018,6 +1019,10 @@ struct AgentSettingsSection: View {
         SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "
                         + "Allow once, Deny and Reply work from the notification. Routines never ask.") {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
+        }
+        SettingsSection("Automations", footer: "Automations run an agent when something happens in Slack, GitHub or Jira. Off, none runs and none searches. "
+                        + "Turned on again they start from what is there, so nothing that happened meanwhile runs.") {
+            SettingsRow("Run automations") { Toggle("Run automations", isOn: $automationsOn).labelsHidden() }
         }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
                         + "allowed when each part that is not read-only starts with one of these. Claude in Chrome\u{2019}s actions are allowed one tool at a time (a click, typing and the like one computer action at a time), and send to agent is always asked, unless you allowed Main to message that agent.") {

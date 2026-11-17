@@ -15,9 +15,9 @@ final class RoutineStore: ObservableObject {
     private var timer: Timer?
     private var watching: [String: AnyCancellable] = [:]
     private var automationState: AutomationState
-    /// The event each running automation was started for, and the ones waiting for it to finish.
+    private var automationsWereOn = Automations.enabled
+    /// The event each running automation was started for; the ones waiting for it to finish are in the state, so a restart keeps them.
     private var starting: [String: AutomationEvent] = [:]
-    private var waiting: [String: [AutomationEvent]] = [:]
 
     init(file: URL = AppPaths.routines, stateFile: URL = AppPaths.automationState) {
         self.file = file
@@ -28,6 +28,7 @@ final class RoutineStore: ObservableObject {
 
     func start() {
         save()
+        resumeQueued()
         tick()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
@@ -87,7 +88,6 @@ final class RoutineStore: ObservableObject {
         AgentModel.savedSessions[key] = nil
         _ = AgentSessionStore.update(key) { _ in [] }
         routines.removeAll { $0.id == routine.id }
-        waiting[routine.id] = nil
         automationState = automationState.pruned(keeping: routines)
         if AgentHub.shared.selected == key { AgentHub.shared.selected = AgentHub.shared.currentMainKey }
         save()
@@ -137,9 +137,22 @@ final class RoutineStore: ObservableObject {
 
     // MARK: Events
 
-    /// The events of one kind the app can see now, once their source has loaded: starts the automations they trigger.
-    func ingest(kind: AutomationTrigger.Kind, events: [AutomationEvent]) {
-        let plan = Automations.plan(kind: kind, events: events, routines: routines, state: automationState, now: Date())
+    /// Whether automations are on. Turning them back on starts from what is there again, so nothing that happened meanwhile runs.
+    func automationsEnabled() -> Bool {
+        let on = Automations.enabled
+        guard on != automationsWereOn else { return on }
+        automationsWereOn = on
+        if on { automationState.rebaselineAll() } else { automationState.queued = [:] }
+        saveState()
+        return on
+    }
+
+    /// The events of one kind the app can see now, once their source has loaded: starts the automations they trigger. With `only` the
+    /// events are for that automation alone: its own search found them.
+    func ingest(kind: AutomationTrigger.Kind, events: [AutomationEvent], only routine: String? = nil) {
+        guard automationsEnabled() else { return }
+        let scope = routine.map { id in routines.filter { $0.id == id } } ?? routines
+        let plan = Automations.plan(kind: kind, events: events, routines: scope, state: automationState, now: Date())
         guard plan.state != automationState else { return }
         automationState = plan.state
         saveState()
@@ -149,8 +162,19 @@ final class RoutineStore: ObservableObject {
     /// Runs the automation for the event now, or after the run it is in the middle of; a long queue drops the newest.
     func fire(_ routine: Routine, event: AutomationEvent) {
         guard isRunning(routine) || models[routine.key]?.busy == true else { return run(routine, event: event) }
-        guard waiting[routine.id, default: []].count < Automations.queueLimit else { return }
-        waiting[routine.id, default: []].append(event)
+        guard automationState.queued[routine.id, default: []].count < Automations.queueLimit else { return }
+        automationState.queued[routine.id, default: []].append(event)
+        saveState()
+    }
+
+    /// Starts the events that were waiting when the app quit.
+    private func resumeQueued() {
+        let pending = automationState.queued
+        automationState.queued = [:]
+        if automationsEnabled() {
+            for routine in routines where routine.enabled { pending[routine.id]?.forEach { fire(routine, event: $0) } }
+        }
+        saveState()
     }
 
     /// The latest event the automation matched, for trying it out.
@@ -204,8 +228,9 @@ final class RoutineStore: ObservableObject {
            let reminder = Automations.reminder(for: event) {
             TodoModel.shared.remind(title: reminder.title, source: reminder.source, preset: .noDate)
         }
-        if let next = waiting[routine.id]?.first {
-            waiting[routine.id]?.removeFirst()
+        if automationsEnabled(), let next = automationState.queued[routine.id]?.first {
+            automationState.queued[routine.id]?.removeFirst()
+            saveState()
             self.run(routine, event: next)
         }
     }
@@ -214,8 +239,10 @@ final class RoutineStore: ObservableObject {
         if event != nil, routine.followUp?.notify == false { return }
         let text = event.map { Automations.notification(for: routine, event: $0, run: run) } ?? Routines.notification(for: routine, run: run)
         let now = Date()
-        let source = NoticeSource(agent: routine.key, workspace: routine.workspace)
-        let notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: event?.pullRequest ?? routine.key, source: source, created: now)
+        var source = NoticeSource(agent: routine.key, workspace: routine.workspace)
+        if event?.kind.offersReview == true { source.reviewing = true }
+        let notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: event.flatMap(Automations.noticeLink) ?? routine.key,
+                                 source: source, created: now)
         _ = NoticeCenter.shared.handle(NoticeRequest(id: notice.id, action: .notify, notice: notice, cancel: nil, source: source, created: now))
     }
 

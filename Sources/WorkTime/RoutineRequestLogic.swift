@@ -20,6 +20,10 @@ struct AutomationPatch: Codable, Equatable, Sendable {
     var place: String?
     var text: String?
     var needsPullRequest: Bool?
+    var status: String?
+    var fromStatus: String?
+    var jql: String?
+    var pattern: String?
     var notify: Bool?
     var remind: Bool?
 
@@ -29,6 +33,10 @@ struct AutomationPatch: Codable, Equatable, Sendable {
         if let place { trigger.place = place }
         if let text { trigger.text = text }
         if let needsPullRequest { trigger.needsPullRequest = needsPullRequest }
+        if let status { trigger.status = status }
+        if let fromStatus { trigger.fromStatus = fromStatus }
+        if let jql { trigger.jql = jql }
+        if let pattern { trigger.pattern = pattern }
         if let notify { followUp.notify = notify }
         if let remind { followUp.remind = remind }
         return (trigger, followUp)
@@ -117,7 +125,9 @@ enum RoutineRequests {
             throw MCPToolError("event is required: one of \(triggerKinds.joined(separator: ", ")).")
         }
         let trigger = AutomationTrigger(kind: kind, place: FilterLogic.text(args, "place") ?? "", text: FilterLogic.text(args, "contains") ?? "",
-                                        needsPullRequest: try FilterLogic.flag(args, "needs_pull_request") ?? false)
+                                        needsPullRequest: try FilterLogic.flag(args, "needs_pull_request") ?? false, status: FilterLogic.text(args, "status") ?? "",
+                                        fromStatus: FilterLogic.text(args, "from_status") ?? "", jql: FilterLogic.text(args, "jql") ?? "",
+                                        pattern: FilterLogic.text(args, "pattern") ?? "")
         return RoutineDraft(name: name, prompt: FilterLogic.text(args, "prompt") ?? kind.defaultPrompt, schedule: RoutineSchedule(kind: .daily),
                             workspace: FilterLogic.text(args, "workspace"), assistant: FilterLogic.text(args, "assistant"),
                             folder: FilterLogic.text(args, "folder"), model: FilterLogic.text(args, "model"), trigger: trigger,
@@ -131,6 +141,8 @@ enum RoutineRequests {
         patch.automation = AutomationPatch(kind: try FilterLogic.choice(args, "event", allowed: triggerKinds).flatMap(AutomationTrigger.Kind.init(rawValue:)),
                                            place: stringOrEmpty(args, "place"), text: stringOrEmpty(args, "contains"),
                                            needsPullRequest: try FilterLogic.flag(args, "needs_pull_request"),
+                                           status: stringOrEmpty(args, "status"), fromStatus: stringOrEmpty(args, "from_status"),
+                                           jql: stringOrEmpty(args, "jql"), pattern: stringOrEmpty(args, "pattern"),
                                            notify: try FilterLogic.flag(args, "notify"), remind: try FilterLogic.flag(args, "remind"))
         return patch
     }

@@ -10,6 +10,8 @@ struct NoticeSource: Codable, Equatable, Hashable, Sendable {
     var cwd: String?
     /// What the app shows for it, filled in when the app takes the notification.
     var title: String?
+    /// Set by an automation whose event is someone else's pull request waiting for a decision.
+    var reviewing: Bool?
 
     var identity: String { agent ?? session.map { "session:" + $0 } ?? cwd.map { "cwd:" + $0 } ?? "unknown" }
 
@@ -180,10 +182,10 @@ enum NoticeLogic {
         return nil
     }
 
-    /// A notification from an automation's run about a pull request: it offers to approve or request changes, which only open the
-    /// page's own confirmation.
+    /// A notification from an automation's run about a pull request waiting for a decision: it offers to approve or request changes,
+    /// which only open the page's own confirmation.
     static func isReview(_ notice: AgentNotice) -> Bool {
-        guard let agent = notice.source.agent, Routines.isKey(agent), let link = notice.link else { return false }
+        guard notice.source.reviewing == true, let agent = notice.source.agent, Routines.isKey(agent), let link = notice.link else { return false }
         if case .pullRequest? = self.link(link) { return true }
         return false
     }

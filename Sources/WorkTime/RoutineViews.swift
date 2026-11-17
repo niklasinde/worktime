@@ -222,22 +222,28 @@ struct RoutineEditorSheet: View {
     private var triggerFields: some View {
         VStack(alignment: .leading, spacing: 6) {
             Picker("Event", selection: kindBinding) {
-                ForEach(AutomationTrigger.Kind.allCases) { Text($0.title).tag($0) }
+                ForEach(AutomationTrigger.Source.allCases) { source in
+                    Section(source.title) {
+                        ForEach(AutomationTrigger.Kind.allCases.filter { $0.source == source }) { Text($0.title).tag($0) }
+                    }
+                }
             }
             .labelsHidden()
             .fixedSize()
-            TextField(trigger.wrappedValue.kind.placeTitle, text: trigger.place, prompt: Text(trigger.wrappedValue.kind.placeTitle + " (any; commas for several)"))
-                .textFieldStyle(.roundedBorder)
-            TextField(trigger.wrappedValue.kind.textTitle, text: trigger.text, prompt: Text(trigger.wrappedValue.kind.textTitle + " (any; commas for several)"))
-                .textFieldStyle(.roundedBorder)
+            ForEach(trigger.wrappedValue.kind.inputs, id: \.self) { input in
+                let title = trigger.wrappedValue.kind.title(of: input)
+                let required = trigger.wrappedValue.kind.required == input
+                TextField(title, text: Binding { trigger.wrappedValue.value(input) } set: { trigger.wrappedValue.set(input, $0) },
+                          prompt: Text(title + (input == .jql || input == .pattern ? "" : required ? " (commas for several)" : " (any; commas for several)")))
+                    .textFieldStyle(.roundedBorder)
+            }
             if trigger.wrappedValue.kind == .slackMessage {
                 Toggle("Mentions a pull request", isOn: trigger.needsPullRequest)
             }
             Text("Placeholders in the prompt: " + trigger.wrappedValue.kind.fields.map { "{\($0)}" }.joined(separator: " "))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if trigger.wrappedValue.kind == .slackMessage {
-                Text("Sees the mentions and direct messages waiting on you, while the notch bar shows Slack.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let note = trigger.wrappedValue.kind.note {
+                Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -246,9 +252,9 @@ struct RoutineEditorSheet: View {
     private var followUpFields: some View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle("Notify me with the answer", isOn: followUp.notify)
-            Toggle("Remind me to decide", isOn: followUp.remind)
-                .help("A reminder linked to the pull request or the message, made when the run finishes")
-            if routine.trigger?.kind == .reviewRequested || routine.trigger?.needsPullRequest == true {
+            Toggle("Remind me to follow up", isOn: followUp.remind)
+                .help("A reminder linked to the pull request, the ticket or the message, made when the run finishes")
+            if routine.trigger?.kind.offersReview == true || routine.trigger?.needsPullRequest == true {
                 Text("The notification can open the pull request with Approve or Request changes, which you still confirm on the page.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }

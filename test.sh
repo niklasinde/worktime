@@ -119,6 +119,10 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/InCallStore.swift \
     Sources/WorkTime/RoutineLogic.swift \
     Sources/WorkTime/AutomationLogic.swift \
+    Sources/WorkTime/AutomationKind.swift \
+    Sources/WorkTime/AutomationGitHub.swift \
+    Sources/WorkTime/AutomationJira.swift \
+    Sources/WorkTime/AutomationSlack.swift \
     Tests/WorkTimeTests/Tests.swift \
     Tests/WorkTimeTests/StoreTests.swift \
     Tests/WorkTimeTests/AudioRetentionTests.swift \

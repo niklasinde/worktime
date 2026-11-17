@@ -38,13 +38,17 @@ struct JiraClient: Sendable {
     }
 
     private func search(body: [String: Any]) async throws -> JiraSearch {
-        let data: Data
-        do {
-            data = try await send(path: JiraLogic.searchPath, body: body)
-        } catch JiraError.notFound {
-            data = try await send(path: JiraLogic.legacySearchPath, body: body)
-        }
+        let data = try await searchData(body: body)
         do { return try JiraLogic.parseSearch(data) } catch { throw JiraError.failed("unexpected response") }
+    }
+
+    /// A search's answer as it came, through the current endpoint or the older one where it is missing.
+    func searchData(body: [String: Any]) async throws -> Data {
+        do {
+            return try await send(path: JiraLogic.searchPath, body: body)
+        } catch JiraError.notFound {
+            return try await send(path: JiraLogic.legacySearchPath, body: body)
+        }
     }
 
     func send(path: String, body: [String: Any]? = nil) async throws -> Data {

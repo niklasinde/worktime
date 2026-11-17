@@ -15,14 +15,20 @@ extension MCPServer {
         func automationProperties(creating: Bool) -> [String: [String: Any]] {
             ["name": ["type": "string", "maxLength": Routines.nameLimit, "description": "Short, shown in the sidebar and the notification."],
              "event": ["type": "string", "enum": RoutineRequests.triggerKinds,
-                       "description": "slack_message: a mention or direct message waiting on the user (while the notch bar shows Slack). review_requested: a pull request asks for the user's review."],
-             "place": ["type": "string", "description": "Slack: the channel or person; GitHub: the repository. Any of several, separated by commas. Empty for any."],
-             "contains": ["type": "string", "description": "Text the message or pull request title contains; any of several, separated by commas."],
-             "needs_pull_request": ["type": "boolean", "description": "Slack only: the message has to mention a pull request."],
+                       "description": AutomationTrigger.Kind.allCases.map { "\($0.rawValue): \($0.title.prefix(1).lowercased() + $0.title.dropFirst())" }.joined(separator: "; ")
+                           + ". Slack and Jira events other than slack_message and jira_assigned are searched every few minutes, only while an automation of the kind is on."],
+             "place": ["type": "string", "description": "Slack: the channel (required for slack_channel) or person; GitHub: the repository (required for pr_opened and pr_updated, owner/name or a name the app lists); "
+                         + "Jira: the project key. Any of several, separated by commas. Empty for any."],
+             "contains": ["type": "string", "description": "Text the message, pull request title, ticket summary or comment contains; any of several, separated by commas. Required for slack_keyword."],
+             "status": ["type": "string", "description": "jira_status: the status the ticket moves to; any of several, separated by commas."],
+             "from_status": ["type": "string", "description": "jira_status: the status the ticket moves from; any of several, separated by commas."],
+             "jql": ["type": "string", "description": "jira_assigned, jira_status and jira_new: a JQL query the ticket has to match too. jira_new needs a place or this."],
+             "pattern": ["type": "string", "description": "slack_channel and slack_keyword: a regular expression the message has to match."],
+             "needs_pull_request": ["type": "boolean", "description": "slack_message only: the message has to mention a pull request."],
              "prompt": ["type": "string", "description": "What to do for each event. Placeholders: " + AutomationTrigger.Kind.allCases.map { "\($0.rawValue) \u{2192} " + $0.fields.map { "{\($0)}" }.joined(separator: " ") }.joined(separator: "; ")
                          + (creating ? ". A sensible default for the event when left out." : ".")],
              "notify": ["type": "boolean", "description": "Notify the user with the answer; on by default."],
-             "remind": ["type": "boolean", "description": "Make a reminder, linked to the pull request or message, to decide; off by default."],
+             "remind": ["type": "boolean", "description": "Make a reminder, linked to the pull request, ticket or message, to follow up; off by default."],
              "workspace": ["type": "string"],
              "assistant": ["type": "string", "description": "Run as this assistant (its key), like a reviewer: its instructions, tools and permissions."],
              "folder": ["type": "string", "description": "Absolute folder to work in."],
@@ -71,16 +77,16 @@ extension MCPServer {
             },
             MCPTool(name: "create_automation",
                     description: "Creates an automation in WorkTime: a prompt that runs in an agent of its own, a fresh session each time, whenever an event happens "
-                        + "(a Slack message waiting on the user, or a pull request asking for their review), with nobody at the keyboard (a call that needs approval "
+                        + "(a Slack message, a pull request or a Jira ticket: see event), with nobody at the keyboard (a call that needs approval "
                         + "is refused). It runs only while WorkTime is open, once per event, at most \(Automations.runsPerHour) times an hour. When it finishes the "
-                        + "user can be notified (a pull request's notification offers Approve and Request changes, which the user confirms on the page) and "
+                        + "user can be notified (the notification about someone else's pull request offers Approve and Request changes, which the user confirms on the page) and "
                         + "reminded to decide. The run's answer is a draft; it never approves or posts. The user is asked to approve every creation.",
                     properties: automationProperties(creating: true), required: ["name", "event"], readOnly: false) { args in
                 try send(.create, draft: try RoutineRequests.automationDraft(args))
             },
             MCPTool(name: "update_automation",
                     description: "Changes one of the user's WorkTime automations, by the id create_automation or automations gave: only the fields you pass change. "
-                        + "An empty place, contains, assistant, folder or model clears it. The user is asked to approve every change.",
+                        + "An empty place, contains, status, from_status, jql, pattern, assistant, folder or model clears it. The user is asked to approve every change.",
                     properties: automationProperties(creating: false).merging(["id": ["type": "string"]]) { first, _ in first }, required: ["id"], readOnly: false) { args in
                 try send(.update, patch: try RoutineRequests.automationPatch(args), routine: try routineID(args))
             },
