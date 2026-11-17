@@ -9,6 +9,7 @@ struct AssistantDraft: Codable, Equatable, Sendable {
     var model: String?
     var permissionMode: String?
     var tools: [String]?
+    var chrome: Bool?
     var folder: String?
     var workspace: String?
 }
@@ -50,6 +51,7 @@ enum AssistantRequests {
                               instructions: (args["instructions"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
                               icon: FilterLogic.text(args, "icon"), model: try FilterLogic.choice(args, "model", allowed: Assistants.models),
                               permissionMode: try FilterLogic.choice(args, "permission_mode", allowed: Assistants.modes), tools: tools,
+                              chrome: args["chrome"] as? Bool,
                               folder: (args["folder"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), workspace: FilterLogic.text(args, "workspace"))
     }
 
@@ -118,6 +120,7 @@ enum AssistantRequests {
         if let icon = draft.icon { role.icon = icon }
         if let model = draft.model { role.model = model }
         if let mode = draft.permissionMode { role.permissionMode = mode }
+        if let chrome = draft.chrome { role.chrome = chrome }
         if let tools = draft.tools {
             if let unknown = tools.first(where: { !$0.hasPrefix("mcp__") && !known.contains($0) }) {
                 return .failure(NoticeError("No tool \(unknown). Known: \(known.sorted().joined(separator: ", "))."))
@@ -146,6 +149,7 @@ enum AssistantRequests {
         let role = entry.role
         var parts = ["- key \(entry.key)", role.name, role.summary, "model \(role.model)", "permissions \(role.permissionMode)",
                      "tools " + (role.tools.isEmpty ? "none beyond the default" : role.tools.joined(separator: ", "))]
+        if role.chrome { parts.append("Chrome on") }
         if let folder = role.folder { parts.append("folder \(folder)") }
         if !role.isUsable { parts.append("broken: " + (role.problems.first?.text ?? "")) }
         return parts.joined(separator: " \u{00B7} ")

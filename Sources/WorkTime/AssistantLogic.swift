@@ -18,6 +18,8 @@ struct AssistantRole: Equatable, Identifiable, Sendable {
     var tools: [String] = []
     /// The ids of the workspace's spaces this assistant is meant for; its sessions start in them.
     var spaces: [String] = []
+    /// Whether its sessions start with the Claude in Chrome tools on; the user can still switch them off in a session.
+    var chrome = false
     var folder: String?
     /// How many of its sessions may work at once; nil leaves it to the setting for all assistants.
     var concurrency: Int?
@@ -69,7 +71,7 @@ enum Assistants {
     static let mcpPrefix = "mcp__worktime__"
     static let storedModelsKey = "agentAssistantModels"
     static let collapsedKey = "agentAssistantsCollapsed"
-    static let fields = ["name", "icon", "description", "model", "permissionMode", "tools", "spaces", "folder", "concurrency"]
+    static let fields = ["name", "icon", "description", "model", "permissionMode", "tools", "spaces", "chrome", "folder", "concurrency"]
     static let concurrencyLimit = 10
     /// The worktime tools an assistant may call whatever its `tools` say: reading what was tracked and said.
     static let defaultTools = ["activity_context", "recent_meetings", "search_meetings", "get_meeting", "resume_context"]
@@ -167,6 +169,12 @@ enum Assistants {
                 if let count = Int(value), (1...concurrencyLimit).contains(count) { role.concurrency = count } else {
                     problem(number, "concurrency must be a whole number from 1 to \(concurrencyLimit).")
                 }
+            case "chrome":
+                switch value.lowercased() {
+                case "true": role.chrome = true
+                case "false": role.chrome = false
+                default: problem(number, "chrome must be true or false.")
+                }
             case "spaces": role.spaces = (items ?? []).reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
             default: role.tools = items ?? []
             }
@@ -241,6 +249,7 @@ enum Assistants {
                      "model: " + role.model, "permissionMode: " + role.permissionMode,
                      "tools: [" + role.tools.map(quoted).joined(separator: ", ") + "]"]
         if !role.spaces.isEmpty { lines.append("spaces: [" + role.spaces.map(quoted).joined(separator: ", ") + "]") }
+        if role.chrome { lines.append("chrome: true") }
         if let folder = role.folder { lines.append("folder: " + quoted(folder)) }
         if let concurrency = role.concurrency { lines.append("concurrency: \(concurrency)") }
         return (lines + ["---", "", role.body]).joined(separator: "\n") + "\n"
@@ -253,6 +262,21 @@ enum Assistants {
         let close = lines.indices.dropFirst().first { lines[$0].trimmingCharacters(in: .whitespaces) == "---" } ?? lines.count
         let line = "name: " + quoted(name)
         if let at = lines[1..<close].firstIndex(where: { $0.hasPrefix("name:") }) { lines[at] = line } else { lines.insert(line, at: 1) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// `text` with its `chrome:` line set to `on`, added to the front matter or dropped when off; other lines are left as they are.
+    static func settingChrome(_ on: Bool, in text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return text }
+        let close = lines.indices.dropFirst().first { lines[$0].trimmingCharacters(in: .whitespaces) == "---" } ?? lines.count
+        let at = lines[1..<close].firstIndex { $0.hasPrefix("chrome:") }
+        switch (at, on) {
+        case (let at?, true): lines[at] = "chrome: true"
+        case (let at?, false): lines.remove(at: at)
+        case (nil, true): lines.insert("chrome: true", at: close)
+        case (nil, false): break
+        }
         return lines.joined(separator: "\n")
     }
 

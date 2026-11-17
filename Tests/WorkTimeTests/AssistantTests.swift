@@ -365,6 +365,47 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         check(!handle(.delete, "nobody").reply.ok, "delete unknown")
     }),
 
+    ("chrome: the role file's key parses, round-trips and survives rewrites", {
+        let made = AssistantRole(slug: "verifier", name: "Verifier", summary: "Checks.", chrome: true, body: "Go.")
+        let text = Assistants.serialise(made)
+        check(text.contains("\nchrome: true\n") && Assistants.parse(slug: "verifier", text: text) == made, text)
+        check(!Assistants.serialise(AssistantRole(slug: "p", name: "P", summary: "x")).contains("chrome"), "not written when off")
+        check(!Assistants.parse(slug: "v", text: text.replacingOccurrences(of: "chrome: true", with: "chrome: false")).chrome, "false")
+        check(!Assistants.parse(slug: "v", text: text.replacingOccurrences(of: "chrome: true", with: "chrome: yes")).isUsable, "a word is no bool")
+        check(Assistants.parse(slug: "v", text: text.replacingOccurrences(of: "chrome: true", with: "chrome: true\nchrome: false")).problems.count == 1, "given twice")
+        check(Assistants.parse(slug: "v", text: Assistants.renamed(text, to: "Checker")).chrome, "renamed keeps it")
+        check(RoleTools.adding("jira_issue", to: text).map { Assistants.parse(slug: "v", text: $0).chrome } == true, "adding a tool keeps it")
+        let on = Assistants.settingChrome(true, in: Assistants.serialise(AssistantRole(slug: "p", name: "P", summary: "x", body: "b")))
+        check(Assistants.parse(slug: "p", text: on).chrome, "the editor switch adds it")
+        check(Assistants.settingChrome(true, in: on) == on, "twice is once")
+        let off = Assistants.settingChrome(false, in: on)
+        check(!Assistants.parse(slug: "p", text: off).chrome && !off.contains("chrome"), "and removes it")
+    }),
+
+    ("chrome: a session starts with its assistant's choice, and the user's own choice wins", {
+        check(AgentLogic.startsWithChrome(role: true, isRoutine: false, setting: false), "the role turns it on")
+        check(AgentLogic.startsWithChrome(role: true, isRoutine: true, setting: false), "also for a routine running as it")
+        check(!AgentLogic.startsWithChrome(role: false, isRoutine: false, setting: true), "the role's off beats the setting")
+        check(AgentLogic.startsWithChrome(role: nil, isRoutine: false, setting: true), "a plain agent follows the setting")
+        check(!AgentLogic.startsWithChrome(role: nil, isRoutine: true, setting: true), "a plain routine stays off")
+        let start = AgentLogic.startsWithChrome(role: true, isRoutine: false, setting: false)
+        check(AgentLogic.chromeEnabled(nil, key: "a", fallback: start), "nothing saved: the role's default")
+        check(!AgentLogic.chromeEnabled(["a": false], key: "a", fallback: start), "switched off in the session")
+        check(AgentLogic.chromeSaved(false, byDefault: start) == false, "that choice is kept")
+    }),
+
+    ("assistant tools: chrome is a field of create and update", {
+        check(MCPServer.assistantTools().filter { $0.name.hasSuffix("_assistant") && $0.name != "delete_assistant" }.allSatisfy { $0.properties["chrome"] != nil }, "offered")
+        check((try? AssistantRequests.draft(["chrome": true]))?.chrome == true && (try? AssistantRequests.draft([:]))?.chrome == nil, "draft")
+        let base = AssistantRole(slug: "v", name: "V", summary: "x", chrome: true)
+        let kept = try? AssistantRequests.updated(base, with: AssistantDraft(summary: "y"), tools: []).get()
+        check(kept?.chrome == true && kept?.summary == "y", "an update that leaves it out keeps it")
+        let off = try? AssistantRequests.updated(base, with: AssistantDraft(chrome: false), tools: []).get()
+        check(off?.chrome == false, "an update can turn it off")
+        let made = try? AssistantRequests.updated(AssistantRole(slug: "n", name: "N"), with: AssistantDraft(summary: "x", chrome: true), tools: []).get()
+        check(made?.chrome == true, "a creation can turn it on")
+    }),
+
     ("assistant tools: the tools are offered, and only the list runs without asking", {
         for name in ["create_assistant", "update_assistant", "assistants", "delete_assistant"] { check(MCPServer.toolNames.contains(name), name) }
         let tools = MCPServer.assistantTools()

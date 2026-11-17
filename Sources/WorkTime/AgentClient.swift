@@ -119,16 +119,16 @@ final class AgentModel: ObservableObject {
     /// Whether this agent's sessions get the Claude in Chrome tools, saved per agent; the next prompt starts with the change.
     @Published var chrome = false {
         didSet {
-            guard oldValue != chrome else { return }
+            guard oldValue != chrome, !loadingDefaults else { return }
             var enabled = Self.defaults.dictionary(forKey: AgentLogic.chromeKey) ?? [:]
             enabled[historyKey] = AgentLogic.chromeSaved(chrome, byDefault: startsWithChrome)
             Self.defaults.set(enabled, forKey: AgentLogic.chromeKey)
             if !chrome { chromeProblem = nil }
         }
     }
-    /// Whether a new agent starts with Chrome on: the setting, except for assistants and routines.
+    /// Whether a new agent starts with Chrome on: its assistant's choice, or the setting, except for routines.
     private var startsWithChrome: Bool {
-        actingAs == nil && routine == nil && Self.defaults.bool(forKey: AgentLogic.chromeDefaultKey)
+        AgentLogic.startsWithChrome(role: actingAs?.role.chrome, isRoutine: routine != nil, setting: Self.defaults.bool(forKey: AgentLogic.chromeDefaultKey))
     }
     /// Why the Chrome tools failed last, usually the extension not being connected; cleared when one works.
     @Published private(set) var chromeProblem: String?

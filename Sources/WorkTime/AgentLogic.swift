@@ -269,6 +269,11 @@ enum AgentLogic {
         saved?[key] as? Bool ?? fallback
     }
 
+    /// Whether a new agent starts with Chrome on: its assistant's `chrome` when it runs as one, otherwise the setting, except for routines.
+    static func startsWithChrome(role: Bool?, isRoutine: Bool, setting: Bool) -> Bool {
+        role ?? (!isRoutine && setting)
+    }
+
     /// What is saved for an agent's Chrome switch: nothing when it matches the plain off, so only a choice against the default is kept.
     static func chromeSaved(_ enabled: Bool, byDefault: Bool) -> Bool? {
         enabled || byDefault ? enabled : nil
@@ -701,6 +706,7 @@ enum AgentLogic {
         without anyone opening WorkTime. Never tell the user to open Main and say yes.
         An assistant is a role agent under a workspace's Main with its own instructions, model, tools and permissions. Call assistants \
         to see them (with an assistant it returns its instructions); create_assistant, update_assistant and delete_assistant change them. \
+        Set chrome when it must drive a browser: its sessions then start with Claude in Chrome on, and the user can still switch it off. \
         Write its description as one line telling you when to hand work to it. Every routine, automation and assistant change asks the user to approve.
         """
 

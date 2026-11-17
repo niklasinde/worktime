@@ -227,6 +227,10 @@ struct AssistantEditorSheet: View {
             Text(role.name).font(.headline).lineLimit(1)
             Text("\(entry.role.slug).md").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
             Spacer()
+            Toggle("Chrome", isOn: Binding(get: { role.chrome }, set: { text = Assistants.settingChrome($0, in: text) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Its sessions start with Claude in Chrome on; the session's header can still turn it off")
             Picker("View", selection: $previewing) {
                 Text("Edit").tag(false)
                 Text("Preview").tag(true)
@@ -274,6 +278,7 @@ struct AssistantEditorSheet: View {
         let model = AgentLogic.models.first { $0.id == Assistants.modelID(role.model) }?.name ?? role.model
         return (["Model \(model)", "Permissions \(Assistants.permissionMode(role.permissionMode).title)",
                 "Tools " + (role.tools.isEmpty ? "default" : role.tools.joined(separator: ", ")),
+                "Chrome " + (role.chrome ? "on" : "off"),
                 "Folder " + (role.folder ?? "workspace")] + (Spaces.line(role.spaces, in: WorkspaceStore.shared.spaces(of: entry.workspace)).map { ["Spaces " + $0] } ?? [])).joined(separator: " \u{00B7} ")
     }
 
