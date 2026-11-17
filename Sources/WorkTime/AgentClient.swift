@@ -659,6 +659,12 @@ final class AgentModel: ObservableObject {
         return workspace.flatMap { self.prURL == nil ? WorkspaceStore.shared.mainPrompt(for: $0) : nil } ?? topic.map { TopicAgents.systemPrompt($0, workspace: promptWorkspace) }
     }
 
+    /// Where this agent's workspace keeps its files, and its own role file when it acts as an assistant.
+    private var locations: AgentWhere {
+        let workspace = WorkspaceStore.shared.workspace(promptWorkspace ?? Workspaces.defaultID) ?? Workspaces.defaults[0]
+        return AgentWhere(workspace: workspace, roleSlug: actingAs?.role.slug)
+    }
+
     /// The workspace whose prompt templates this agent follows: its Main's, its assistant's or its routine's.
     private var promptWorkspace: String? { workspace ?? actingAs?.workspace ?? routine?.workspace }
 
@@ -855,7 +861,7 @@ final class AgentModel: ObservableObject {
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
-                            delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace),
+                            delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace, locations: locations),
                             roleWaitSeconds: routine != nil ? RoleTools.waitSeconds() : nil))
         return true
     }

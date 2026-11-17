@@ -100,9 +100,12 @@ extension PromptTemplates {
         return render(body(template, workspace: workspace, files: files), values)
     }
 
-    /// The three texts the sidecar adds to every agent's system prompt, by the names it reads them under.
-    static func agentInstructions(workspace: String? = nil, files: PromptFiles = .current) -> [String: String] {
-        ["actions": body(.agentActions, workspace: workspace, files: files), "review": body(.agentReview, workspace: workspace, files: files),
-         "report": body(.agentReport, workspace: workspace, files: files)]
+    /// The texts the sidecar adds to every agent's system prompt, by the names it reads them under: the three templates and, with the
+    /// agent's `locations`, where its files live.
+    static func agentInstructions(workspace: String? = nil, locations: AgentWhere? = nil, files: PromptFiles = .current) -> [String: String] {
+        var texts = ["actions": body(.agentActions, workspace: workspace, files: files), "review": body(.agentReview, workspace: workspace, files: files),
+                     "report": body(.agentReport, workspace: workspace, files: files)]
+        if let locations { texts["where"] = render(body(.agentWhere, workspace: workspace, files: files), locations.values) }
+        return texts
     }
 }

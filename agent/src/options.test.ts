@@ -54,3 +54,10 @@ test("the app's own instruction texts replace the built-in ones, and a blank one
   assert.match(append, /Report my way\./);
   assert.doesNotMatch(append, /Send one report per job/);
 });
+
+test("the where-things-live block from the app is added, and left out when blank", () => {
+  const given = sessionOptions({ cwd: "/repo", instructions: { where: "Main's instructions: /data/Workspaces/work/MAIN.md" } }, "m", "default");
+  assert.match((given.systemPrompt as { append: string }).append, /\/data\/Workspaces\/work\/MAIN\.md/);
+  const blank = sessionOptions({ cwd: "/repo", instructions: { where: "  " } }, "m", "default");
+  assert.doesNotMatch((blank.systemPrompt as { append: string }).append, /MAIN\.md/);
+});

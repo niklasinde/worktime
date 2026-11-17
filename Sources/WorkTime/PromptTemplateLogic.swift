@@ -19,6 +19,7 @@ enum PromptTemplate: String, CaseIterable, Identifiable, Sendable {
     case agentActions = "agent-actions"
     case agentReview = "agent-review"
     case agentReport = "agent-report"
+    case agentWhere = "agent-where"
     case mainReportNote = "main-report-note"
     case unattendedRun = "unattended-run"
     case automationRun = "automation-run"
@@ -43,6 +44,7 @@ enum PromptTemplate: String, CaseIterable, Identifiable, Sendable {
         case .agentActions: "Next steps as buttons"
         case .agentReview: "Drafting a review"
         case .agentReport: "Reporting to Main"
+        case .agentWhere: "Where the agent's files live"
         case .mainReportNote: "Main: reports from agents"
         case .unattendedRun: "Scheduled runs"
         case .automationRun: "Runs started by an event"
@@ -62,6 +64,7 @@ enum PromptTemplate: String, CaseIterable, Identifiable, Sendable {
         case .agentActions: "Added to every agent: how to offer a next step as Do it here and Ask an assistant buttons."
         case .agentReview: "Added to every agent: how to write a review draft the app turns into buttons."
         case .agentReport: "Added to every agent: when and how to report to the workspace\u{2019}s Main with send_to_main."
+        case .agentWhere: "Added to every agent: the paths of its workspace's MAIN.md, assistants, prompts, routines and usage log, so it never searches for them."
         case .mainReportNote: "Added to every Main: a report from another agent is information, never the user."
         case .unattendedRun: "Added to a routine or automation run: nobody is at the keyboard."
         case .automationRun: "Added to a run started by an event: it only drafts and never posts."
@@ -101,6 +104,8 @@ enum PromptTemplate: String, CaseIterable, Identifiable, Sendable {
             Self.ask + Self.eventFields
         case .agentActions, .agentReview, .agentReport, .mainReportNote, .reviewDraftFormat:
             []
+        case .agentWhere:
+            AgentWhere.placeholders
         case .unattendedRun:
             [PromptPlaceholder(name: "kind", note: "automation or scheduled routine"), PromptPlaceholder(name: "name", note: "the routine\u{2019}s name")]
         case .automationRun:
@@ -150,6 +155,7 @@ enum PromptTemplate: String, CaseIterable, Identifiable, Sendable {
         case .agentActions: PromptBuiltIns.agentActions
         case .agentReview: PromptBuiltIns.agentReview
         case .agentReport: PromptBuiltIns.agentReport
+        case .agentWhere: PromptBuiltIns.agentWhere
         case .mainReportNote: PromptBuiltIns.mainReportNote
         case .unattendedRun: PromptBuiltIns.unattendedRun
         case .automationRun: PromptBuiltIns.automationRun
@@ -273,6 +279,7 @@ extension PromptTemplates {
             "topic_name": "Review: orbit.api #12 +1", "folder": "~/git/acme", "kind": "scheduled routine", "name": "Morning brief",
             "event": "a Slack message in #reviews", "yes": "Review it", "no": "Skip", "yes_lower": "review it", "no_lower": "skip",
         ]) { current, _ in current }
+        values.merge(AgentWhere.sampleValues) { current, _ in current }
         return values
     }
 }

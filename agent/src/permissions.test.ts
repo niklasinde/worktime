@@ -139,3 +139,16 @@ test("once the tool is on the list a tool that asks by default still asks for ea
   assert.deepEqual(preToolDecision("mcp__worktime__update_routine", {}, cwd, [], "default", allowed), { kind: "ask" });
   assert.deepEqual(preToolDecision("mcp__worktime__jira_search", {}, cwd, [], "default", [...allowed, "mcp__worktime__jira_search"]), { kind: "allow" });
 });
+
+test("reading a workspace's MAIN.md, assistants and prompts never asks, from any working folder", () => {
+  const base = "/Users/sam/Library/Application Support/MeetingRecorder/Workspaces";
+  for (const mode of modes) {
+    for (const tool of ["Read", "Grep", "Glob"]) {
+      assert.deepEqual(preToolDecision(tool, { file_path: `${base}/work/MAIN.md` }, cwd, [], mode), { kind: "allow" }, `${tool} ${mode}`);
+    }
+    for (const command of [`cat "${base}/work/MAIN.md"`, `ls "${base}/work/Assistants"`, `cat "${base}/work/Assistants/reviewer.md"`,
+                           `grep -rn review "${base}/_shared/Prompts"`, `ls "${base}/work/Prompts" "${base}/_shared/Prompts"`]) {
+      assert.deepEqual(preToolDecision("Bash", { command }, cwd, [], mode), { kind: "allow", readOnly: true }, `${command} ${mode}`);
+    }
+  }
+});

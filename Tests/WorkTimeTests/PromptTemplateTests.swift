@@ -200,6 +200,33 @@ let promptTemplateTests: [(name: String, run: () throws -> Void)] = [
         check(!AgentRequest.prompt(text: "hi", cwd: "/r", sessionID: nil).line.contains("instructions"), "none by default")
     }),
 
+    ("prompt templates: the where-things-live block names the real paths, for Main and for an assistant", {
+        let folders = URL(fileURLWithPath: "/Users/niklasinde/Library/Application Support/MeetingRecorder/Workspaces")
+        let support = URL(fileURLWithPath: "/Users/niklasinde/Library/Application Support/MeetingRecorder")
+        let work = Workspaces.defaults[0]
+        func locations(role: String?) -> AgentWhere {
+            AgentWhere(workspace: work, roleSlug: role, workspaceFolders: folders, support: support, routines: support.appendingPathComponent("routines.json"),
+                       usageLog: support.appendingPathComponent("usage.jsonl"))
+        }
+        let files = sandbox()
+        let main = PromptTemplates.agentInstructions(workspace: "work", locations: locations(role: nil), files: files)["where"] ?? ""
+        let base = "/Users/niklasinde/Library/Application Support/MeetingRecorder"
+        for path in ["\(base)/Workspaces/work/MAIN.md", "\(base)/Workspaces/work/Assistants", "\(base)/Workspaces/work/Prompts", "\(base)/Workspaces/_shared/Prompts",
+                     "routines.json", "usage.jsonl", "Data folder: \(base);"] {
+            check(main.contains(path), "\(path) in \(main)")
+        }
+        for tool in ["routines", "create_routine", "update_routine", "automations", "create_automation", "update_automation", "assistants", "create_assistant", "update_assistant"] {
+            check(main.contains(tool), tool)
+        }
+        check(main.contains("workspace Work, id work") && !main.contains("Your role") && PromptTemplates.placeholders(in: main).isEmpty, main)
+        let assistant = PromptTemplates.agentInstructions(workspace: "work", locations: locations(role: "reviewer"), files: files)["where"] ?? ""
+        check(assistant.contains("Your role: \(base)/Workspaces/work/Assistants/reviewer.md"), assistant)
+        check(main.count < 900 && assistant.count < 900, "\(main.count) and \(assistant.count) characters")
+        check(PromptTemplates.agentInstructions(files: files)["where"] == nil, "no block without locations")
+        files.write("Mine: {main_file}", .agentWhere, scope: .workspace("work"))
+        check(PromptTemplates.agentInstructions(workspace: "work", locations: locations(role: nil), files: files)["where"] == "Mine: \(base)/Workspaces/work/MAIN.md", "editable per workspace")
+    }),
+
     ("prompt templates: the editor says where the text comes from and refuses what the template cannot fill in", {
         let files = sandbox()
         let shared = PromptEditorState(template: .reviewSet, scope: .shared, files: files)

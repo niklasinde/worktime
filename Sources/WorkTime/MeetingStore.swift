@@ -53,7 +53,7 @@ enum AppPaths {
     static var workspaceFile: URL { support.appendingPathComponent("workspaces.json") }
     static var workspaceFolders: URL { support.appendingPathComponent("Workspaces", isDirectory: true) }
 
-    private static var support: URL {
+    static var support: URL {
         dataDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MeetingRecorder", isDirectory: true)
     }

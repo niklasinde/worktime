@@ -28,6 +28,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/PromptTemplateLogic.swift \
     Sources/WorkTime/PromptBuiltIns.swift \
     Sources/WorkTime/PromptFiles.swift \
+    Sources/WorkTime/AgentWhereLogic.swift \
     Sources/WorkTime/PromptSettingsLogic.swift \
     Sources/WorkTime/ProjectSetup.swift \
     Sources/WorkTime/ProjectSuggestionLogic.swift \
