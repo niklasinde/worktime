@@ -207,6 +207,22 @@ extension AutomationTrigger {
             }
         }
 
+        /// The prompt of a run that only looks at the event and recommends, when the user is asked what to do next.
+        var askPrompt: String {
+            switch source {
+            case .slack:
+                "A message in {slack_place} from {slack_author}: {slack_text}\n{slack_link}\n\n"
+                    + "If it asks for a review of a pull request ({pr_url}), look at it without reviewing it (read-only: gh pr view {pr_url} --json state,isDraft,author,title,additions,deletions,reviewDecision) "
+                    + "and say who asked, how big it is and the ticket it belongs to. If it is merged, closed or a draft, or the message asks for nothing, recommend skipping."
+            case .github:
+                "{pr_url} ({pr_title}, by {pr_author}) needs a look. Do not review it yet. Read what it is (read-only: gh pr view {pr_url} "
+                    + "--json state,isDraft,author,title,additions,deletions,reviewDecision) and say in a few lines who wrote it, how big it is and the ticket {ticket}. "
+                    + "If it is merged, closed or a draft, recommend skipping."
+            case .jira:
+                "{ticket} ({ticket_title}): {url}. Read it with jira_issue and say in a few lines what it asks, how big it looks and whether it is worth starting now."
+            }
+        }
+
         /// The prefix of its event ids. The first two kinds keep the prefixes saved before there were more.
         var idPrefix: String {
             switch self {

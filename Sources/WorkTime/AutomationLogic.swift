@@ -59,6 +59,8 @@ extension AutomationTrigger {
 struct AutomationFollowUp: Codable, Equatable, Sendable {
     var notify = true
     var remind = false
+    /// Ask the user before the next step: the notification carries two buttons, and the first starts an agent.
+    var ask: AutomationAsk?
 }
 
 /// One thing that happened, as the triggers see it.
@@ -84,6 +86,8 @@ struct AutomationState: Codable, Equatable, Sendable {
     var last: [String: AutomationEvent] = [:]
     /// The events waiting for the run an automation is in the middle of, kept so a restart does not lose them.
     var queued: [String: [AutomationEvent]] = [:]
+    /// The user's last answer to each automation's question.
+    var answers: [String: AskAnswer] = [:]
 
     mutating func rebaseline(_ id: String) {
         baselined.remove(id)
@@ -105,6 +109,7 @@ struct AutomationState: Codable, Equatable, Sendable {
         copy.fired = fired.filter { ids.contains($0.key) }
         copy.last = last.filter { ids.contains($0.key) }
         copy.queued = queued.filter { ids.contains($0.key) }
+        copy.answers = answers.filter { ids.contains($0.key) }
         return copy
     }
 }
@@ -118,6 +123,7 @@ extension AutomationState {
         fired = try container.decode([String: [Date]].self, forKey: .fired)
         last = try container.decode([String: AutomationEvent].self, forKey: .last)
         queued = try container.decodeIfPresent([String: [AutomationEvent]].self, forKey: .queued) ?? [:]
+        answers = try container.decodeIfPresent([String: AskAnswer].self, forKey: .answers) ?? [:]
     }
 }
 
@@ -304,7 +310,13 @@ enum Automations {
     }
 
     static func systemNote(_ routine: Routine) -> String {
-        "This run was started by an event (\(routine.trigger.map(label) ?? "an event")). Nothing you write is posted or sent: your answer is a draft shown to the user. "
+        var note = "This run was started by an event (\(routine.trigger.map(label) ?? "an event")). Nothing you write is posted or sent: your answer is a draft shown to the user. "
             + "Never approve, merge, close or comment on a pull request, or comment on, move or assign a ticket, or send a message; the user decides."
+        if let ask = routine.followUp?.ask {
+            note += " The user is asked next, with the buttons \u{201C}\(ask.yes)\u{201D} and \u{201C}\(ask.no)\u{201D} on a notification: do not tell them to open anything or to answer in a chat. "
+                + "Give your findings in a few short lines, then end with one line: Recommendation: \(ask.yes.lowercased()) or Recommendation: \(ask.no.lowercased()), "
+                + "a dash and the reason in one sentence."
+        }
+        return note
     }
 }

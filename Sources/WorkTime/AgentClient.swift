@@ -658,6 +658,18 @@ final class AgentModel: ObservableObject {
         client?.send(.interrupt)
     }
 
+    /// The Stop of the notice that says Main handed this agent a prompt: takes the ones still waiting back, and interrupts the turn that works on one.
+    func cancelFromMain() {
+        let working = busy && lastPromptFromMain
+        queued.removeAll { AgentInbox.fromMain($0) != nil }
+        if working { stop() }
+    }
+
+    private var lastPromptFromMain: Bool {
+        for item in items.reversed() { if case .user(let text) = item.kind { return AgentInbox.fromMain(text) != nil } }
+        return false
+    }
+
     func stopClient() {
         client?.terminate()
         client = nil

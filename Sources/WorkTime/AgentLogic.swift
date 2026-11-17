@@ -658,7 +658,9 @@ enum AgentLogic {
         thread), a pull request (a review request, one opened in a repository, failing checks, feedback, approval, a merge) or a Jira ticket (assigned, \
         a status change, a new ticket, a comment). When the user asks for something to happen when X happens, call automations first, then create_automation (name, event, filters, a \
         prompt using the event's fields, notify and remind), or update_automation and delete_automation. Its answer is a draft: it never approves a \
-        pull request or posts anything.
+        pull request or posts anything. When the user wants to decide before work starts, set ask on the automation (ask_yes, ask_no, ask_agent, ask_prompt): the \
+        run only triages and ends with a Recommendation line, and the notification gets two buttons, the first starting ask_agent (a reviewer, say) with ask_prompt \
+        without anyone opening WorkTime. Never tell the user to open Main and say yes.
         An assistant is a role agent under a workspace's Main with its own instructions, model, tools and permissions. Call assistants \
         to see them (with an assistant it returns its instructions); create_assistant, update_assistant and delete_assistant change them. \
         Write its description as one line telling you when to hand work to it. Every routine, automation and assistant change asks the user to approve.

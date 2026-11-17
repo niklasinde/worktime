@@ -56,6 +56,8 @@ struct AgentNotice: Codable, Equatable, Identifiable, Sendable {
     var created: Date
     var at: Date?
     var state = State.shown
+    /// An automation's question, answered with the notification's buttons.
+    var ask: NoticeAsk?
 
     var date: Date { at ?? created }
 }

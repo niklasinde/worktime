@@ -80,19 +80,23 @@ final class TodoModel: ObservableObject {
     }
 
     /// A reminder about something, due as the preset says; the same one still open is not made twice.
-    func remind(title: String, source: ReminderSource?, preset: ReminderPreset) {
-        guard let title = TodoLogic.text(title).map({ String($0.prefix(NoticeLogic.titleLimit)) }) else { return }
+    /// Returns the reminder's id, also when the same one was already open.
+    @discardableResult
+    func remind(title: String, source: ReminderSource?, preset: ReminderPreset) -> String? {
+        guard let title = TodoLogic.text(title).map({ String($0.prefix(NoticeLogic.titleLimit)) }) else { return nil }
         let due = ReminderLogic.due(preset, now: Date())
-        guard ReminderLogic.duplicate(of: title, due: due, in: book.reminders) == nil else { return }
+        if let same = ReminderLogic.duplicate(of: title, due: due, in: book.reminders) { return same.id }
         var new = book
-        new.add(Reminder(id: "", title: title, due: due, created: Date(), source: source))
+        let saved = new.add(Reminder(id: "", title: title, due: due, created: Date(), source: source))
         apply(new)
+        return saved.id
     }
 
     func complete(_ id: String) {
         var new = book
         new.complete(id, now: Date())
         apply(new)
+        NoticeCenter.shared.resolveAsk(reminder: id)
     }
 
     func reopen(_ id: String) {
@@ -222,14 +226,15 @@ struct TodoNotchList: View {
             if !notices.waiting.isEmpty {
                 heading("From agents", top: 0)
                 ForEach(notices.waiting) { notice in
-                    NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, remove: { notices.dismiss(notice.id) })
+                    NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, answer: { notices.answer(notice.id, yes: $0) },
+                              remove: { notices.dismiss(notice.id) })
                     separator
                 }
             }
             if !notices.pending.isEmpty {
                 heading("Scheduled", top: notices.waiting.isEmpty ? 0 : 10)
                 ForEach(notices.pending) { notice in
-                    NoticeRow(notice: notice, open: nil, remove: { notices.dismiss(notice.id) })
+                    NoticeRow(notice: notice, open: nil, answer: nil, remove: { notices.dismiss(notice.id) })
                     separator
                 }
             }
@@ -328,6 +333,7 @@ struct TodoNotchList: View {
 private struct NoticeRow: View {
     let notice: AgentNotice
     let open: (() -> Void)?
+    let answer: ((Bool) -> Void)?
     let remove: () -> Void
 
     var body: some View {
@@ -338,7 +344,15 @@ private struct NoticeRow: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(notice.title).lineLimit(2)
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(notice.ask == nil ? 1 : 3)
+                if let ask = notice.ask, let answer {
+                    HStack(spacing: 6) {
+                        Button(ask.yes) { answer(true) }.buttonStyle(.borderedProminent)
+                        Button(ask.no) { answer(false) }.buttonStyle(.bordered)
+                    }
+                    .controlSize(.small)
+                    .padding(.top, 3)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: remove) { Image(systemName: "xmark").font(.caption.bold()).foregroundStyle(.secondary) }

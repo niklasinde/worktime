@@ -124,6 +124,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/RoutineScriptFiles.swift \
     Sources/WorkTime/RoutineScriptRunner.swift \
     Sources/WorkTime/AutomationLogic.swift \
+    Sources/WorkTime/AutomationAskLogic.swift \
     Sources/WorkTime/AutomationKind.swift \
     Sources/WorkTime/AutomationGitHub.swift \
     Sources/WorkTime/AutomationJira.swift \
@@ -190,6 +191,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/RoutineTests.swift \
     Tests/WorkTimeTests/DeterminismTests.swift \
     Tests/WorkTimeTests/AutomationTests.swift \
+    Tests/WorkTimeTests/AutomationAskTests.swift \
     Tests/WorkTimeTests/AgentAttentionTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"

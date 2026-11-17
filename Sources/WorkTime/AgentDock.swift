@@ -259,20 +259,23 @@ final class AgentInboxWatcher {
             Task { @MainActor in answer(await MeetingBriefModel.shared.answer(request), to: request.id) }
         }
         for request in take(AgentInbox.Request.self, where: AgentInbox.isRequest) {
-            Task { @MainActor in
-                let reply: AgentInbox.Reply
-                if let problem = AgentInbox.problem(request, now: Date()) {
-                    reply = AgentInbox.Reply(id: request.id, status: .rejected, message: problem.message)
-                } else if TopicAgents.isKey(request.agent) {
-                    reply = TopicAgentStore.shared.deliver(request)
-                } else if Assistants.isKey(request.agent) {
-                    reply = AssistantStore.shared.deliver(request)
-                } else {
-                    reply = await PRAgents.shared.deliver(request)
-                }
-                answer(reply, to: request.id)
-            }
+            Task { @MainActor in answer(await Self.route(request), to: request.id) }
         }
+    }
+
+    /// Hands the prompt to the agent it names: an assistant, a topic agent or a pull request's.
+    static func route(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
+        if let problem = AgentInbox.problem(request, now: Date()) {
+            return AgentInbox.Reply(id: request.id, status: .rejected, message: problem.message)
+        }
+        if TopicAgents.isKey(request.agent) { return TopicAgentStore.shared.deliver(request) }
+        if Assistants.isKey(request.agent) { return AssistantStore.shared.deliver(request) }
+        return await PRAgents.shared.deliver(request)
+    }
+
+    /// A prompt the user chose to send, from a notification's button: the same path as Main's send_to_agent, which asks first.
+    static func send(_ text: String, to agent: String) async -> AgentInbox.Reply {
+        await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date()))
     }
 
     /// Takes the inbox's requests of one kind off the folder, dropping any that cannot be read.

@@ -578,7 +578,7 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   routine's second line says how the last run was done and what it saved. `analyze_routine(id)` (read only) and `compile_routine(id, mode, script, prompt?)` (asks) do the same from an agent.
 - **Automations.** A routine started by an event instead of a schedule (the sidebar's Automations section, next to Routines).
   `create_automation(name, event, place?, contains?, status?, from_status?, jql?, pattern?, needs_pull_request?, prompt?, notify?, remind?,
-  workspace?, assistant?, folder?, model?)` with `event` one of: Slack `slack_message` (a mention or direct message waiting on the user),
+  ask?, ask_yes?, ask_no?, ask_agent?, ask_prompt?, workspace?, assistant?, folder?, model?)` with `event` one of: Slack `slack_message` (a mention or direct message waiting on the user),
   `slack_channel` (new messages in the channels in `place`), `slack_keyword` (messages with the words in `contains`, optionally in
   `place`, and a `pattern` regex), `slack_reply` (replies by others in threads the user wrote in); GitHub `review_requested`,
   `pr_opened` and `pr_updated` (a repository's pull requests by others; `place` is the repository), `ci_failed`, `pr_feedback`,
@@ -591,7 +591,14 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   at most six an hour, one run at a time, and the ones waiting for a run survive a restart. Settings > Agent > Automations turns all of
   them off; turned on again they start from what is there. The run is unattended like a routine's and its answer is a draft, never an
   approval. A finished run notifies (the notification about someone else's pull request offers Approve and Request changes, which open
-  the page's own confirmation) and can make a reminder linked to the source. `automations` lists them and runs without asking;
+  the page's own confirmation) and can make a reminder linked to the source.
+  **Ask me what to do next** (`ask`, "Then" in the editor) makes the run a triage that ends with `Recommendation: <yes or skip> — <reason>`, and
+  the notification carries two buttons with your own names (Review it / Skip by default, Start it for a ticket). The first starts the
+  assistant in `ask_agent` (a Reviewer, say; empty is the pull request's own agent) with `ask_prompt`, which can use the event's fields plus `{recommendation}` and
+  `{answer}`, without opening the app and without a second approval, since the click is the approval; the second skips. Both work on the banner, in the
+  notch bar and from the notch's reminder list. The reminder ("Decide on repo #n") stays until answered, then completes; the automation's row says how many
+  wait for you and what you last chose. The started agent only drafts and the "Main → agent" notice that follows has a Stop button that cancels the run.
+  `automations` lists them and runs without asking;
   `create_automation`, `update_automation(id, …)` and `delete_automation(id)` ask.
 - **Assistants.** `assistants(assistant?)` lists every workspace's assistants (key, name, when to use it, model, permissions, tools,
   folder), with one's instructions when it is named, and runs without asking. `create_assistant(name, description, instructions,

@@ -7,6 +7,7 @@ struct RoutineSection: View {
     @ObservedObject var hub: AgentHub
     var automations = false
     @ObservedObject private var store = RoutineStore.shared
+    @ObservedObject private var notices = NoticeCenter.shared
     @AppStorage(Routines.collapsedKey) private var collapsedRoutines = ""
     @AppStorage(Routines.automationsCollapsedKey) private var collapsedAutomations = ""
     @State private var editing: RoutineEdit?
@@ -76,7 +77,7 @@ struct RoutineSection: View {
             Image(systemName: routine.isAutomation ? "bolt.fill" : "clock.arrow.2.circlepath").font(.callout).foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(routine.name).font(.callout).lineLimit(1)
-                Text(Routines.detail(routine, now: now)).font(.caption2).foregroundStyle(running ? Color.orange : .secondary).lineLimit(1)
+                Text(Routines.detail(routine, now: now, waiting: notices.waitingAsks(routine: routine.id), answer: store.lastAnswer(routine))).font(.caption2).foregroundStyle(running ? Color.orange : .secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
         }
@@ -225,7 +226,7 @@ struct RoutineEditorSheet: View {
     private var kindBinding: Binding<AutomationTrigger.Kind> {
         Binding { trigger.wrappedValue.kind } set: { kind in
             let old = trigger.wrappedValue.kind
-            if routine.prompt == old.defaultPrompt || routine.prompt.isEmpty { routine.prompt = kind.defaultPrompt }
+            if [old.defaultPrompt, old.askPrompt, ""].contains(routine.prompt) { routine.prompt = routine.followUp?.ask == nil ? kind.defaultPrompt : kind.askPrompt }
             trigger.wrappedValue = AutomationTrigger(kind: kind)
         }
     }
@@ -265,12 +266,59 @@ struct RoutineEditorSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle("Notify me with the answer", isOn: followUp.notify)
             Toggle("Remind me to follow up", isOn: followUp.remind)
-                .help("A reminder linked to the pull request, the ticket or the message, made when the run finishes")
+                .help("A reminder linked to the pull request, the ticket or the message, made when the run finishes. With a question it stays until you answer.")
+            Toggle("Ask me what to do next", isOn: asking)
+                .help("The notification carries two buttons. The first starts an agent, the second skips, and both work without opening the app.")
+            if routine.followUp?.ask != nil { askFields }
             if routine.trigger?.kind.offersReview == true || routine.trigger?.needsPullRequest == true {
                 Text("The notification can open the pull request with Approve or Request changes, which you still confirm on the page.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var asking: Binding<Bool> {
+        Binding { routine.followUp?.ask != nil } set: { on in
+            var next = routine.followUp ?? AutomationFollowUp()
+            let kind = trigger.wrappedValue.kind
+            if on {
+                var ask = AutomationAsk()
+                ask.agent = assistants.entries(routine.workspace).first { $0.role.name.caseInsensitiveCompare("Reviewer") == .orderedSame }?.key ?? ""
+                next.ask = ask
+                if [kind.defaultPrompt, ""].contains(routine.prompt) { routine.prompt = kind.askPrompt }
+            } else {
+                next.ask = nil
+                if routine.prompt == kind.askPrompt { routine.prompt = kind.defaultPrompt }
+            }
+            routine.followUp = next
+        }
+    }
+
+    private var ask: Binding<AutomationAsk> {
+        Binding { routine.followUp?.ask ?? AutomationAsk() } set: { routine.followUp?.ask = $0 }
+    }
+
+    @ViewBuilder
+    private var askFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("First button", text: ask.yes, prompt: Text("Review it")).textFieldStyle(.roundedBorder)
+                TextField("Second button", text: ask.no, prompt: Text("Skip")).textFieldStyle(.roundedBorder)
+            }
+            Picker("Starts", selection: ask.agent) {
+                Text(trigger.wrappedValue.kind.source == .jira ? "Choose an assistant" : "The pull request\u{2019}s agent").tag("")
+                ForEach(assistants.entries(routine.workspace), id: \.key) { Text($0.role.name).tag($0.key) }
+            }
+            .fixedSize()
+            TextEditor(text: ask.prompt)
+                .font(.body)
+                .frame(height: 70)
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.primary.opacity(0.15)))
+            Text("What the first button sends, with the placeholders above plus {recommendation} and {answer} (the run\u{2019}s notes). Empty for a default. "
+                 + "The run ends with a recommendation, shown on the notification. The agent only drafts: it is never allowed to approve, merge or post.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.leading, 18)
     }
 
     private var assistantBinding: Binding<String> {
@@ -357,6 +405,8 @@ struct RoutineEditorSheet: View {
 
     private func save() {
         if let found = Routines.problem(name: routine.name, prompt: routine.prompt, schedule: routine.schedule, trigger: routine.trigger) { return problem = found }
+        if let ask = routine.followUp?.ask, let trigger = routine.trigger,
+           let found = AutomationAsks.problem(ask, trigger: trigger, assistants: Set(assistants.entries(routine.workspace).map(\.key))) { return problem = found }
         done(RoutineStore.shared.save(routine))
     }
 }

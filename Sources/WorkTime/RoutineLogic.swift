@@ -128,6 +128,7 @@ enum Routines {
         var routine = routine
         routine.name = String(routine.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(nameLimit))
         routine.prompt = routine.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ask = routine.followUp?.ask { routine.followUp?.ask = AutomationAsks.trimmed(ask) }
         routine.nextRun = routine.enabled && routine.trigger == nil ? routine.schedule.next(after: now, calendar: calendar) : nil
         return routine
     }
@@ -207,11 +208,12 @@ enum Routines {
     }
 
     /// The row's second line: the schedule, and what is next or how the last run went.
-    static func detail(_ routine: Routine, now: Date) -> String {
+    static func detail(_ routine: Routine, now: Date, waiting: Int = 0, answer: AskAnswer? = nil) -> String {
         let when = routine.trigger.map(Automations.label) ?? routine.schedule.label()
         guard routine.enabled else { return "\(when) \u{00B7} off" }
         let recompile = routine.determinism?.needsRecompile == true ? " \u{00B7} script needs recompiling" : ""
-        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))" + recompile
+        let asked = (AutomationAsks.waiting(waiting) ?? AutomationAsks.answered(answer, now: now)).map { " \u{00B7} " + $0 } ?? ""
+        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))" + asked + recompile
     }
 
     static func lastRunText(_ run: RoutineRun?, now: Date) -> String {

@@ -30,6 +30,14 @@ extension MCPServer {
                          + (creating ? ". A sensible default for the event when left out." : ".")],
              "notify": ["type": "boolean", "description": "Notify the user with the answer; on by default."],
              "remind": ["type": "boolean", "description": "Make a reminder, linked to the pull request, ticket or message, to follow up; off by default."],
+             "ask": ["type": "boolean", "description": "Ask the user what to do next, with two buttons on the notification (they work without opening the app): the first starts ask_agent "
+                         + "with ask_prompt, the second skips. The run then only triages: it should end with one line, Recommendation: <first button or skip> and a reason, shown on the notification. "
+                         + "With it the default prompt is a triage, and the notification and the reminder stay until the user answers. Naming any ask_ field turns it on."],
+             "ask_yes": ["type": "string", "description": "The first button, at most \(AutomationAsk.labelLimit) characters; Review it for a pull request, Start it for a ticket."],
+             "ask_no": ["type": "string", "description": "The second button; Skip."],
+             "ask_agent": ["type": "string", "description": "The assistant the first button starts, by key (like a Reviewer). Empty starts the agent of the pull request the event is about; a ticket needs one."],
+             "ask_prompt": ["type": "string", "description": "What the first button sends to it: the event's placeholders plus {recommendation} and {answer} (the triage run's notes). A default for the event when left out. "
+                            + "The agent only drafts: it is never allowed to approve, merge or post."],
              "workspace": ["type": "string"],
              "assistant": ["type": "string", "description": "Run as this assistant (its key), like a reviewer: its instructions, tools and permissions."],
              "folder": ["type": "string", "description": "Absolute folder to work in."],
@@ -80,14 +88,15 @@ extension MCPServer {
                     description: "Creates an automation in WorkTime: a prompt that runs in an agent of its own, a fresh session each time, whenever an event happens "
                         + "(a Slack message, a pull request or a Jira ticket: see event), with nobody at the keyboard (a call that needs approval "
                         + "is refused). It runs only while WorkTime is open, once per event, at most \(Automations.runsPerHour) times an hour. When it finishes the "
-                        + "user can be notified (the notification about someone else's pull request offers Approve and Request changes, which the user confirms on the page) and "
+                        + "user can be notified (the notification about someone else's pull request offers Approve and Request changes, which the user confirms on the page), "
+                        + "asked what to do next with two buttons that start an agent such as a Reviewer from the notification (ask), and "
                         + "reminded to decide. The run's answer is a draft; it never approves or posts. The user is asked to approve every creation.",
                     properties: automationProperties(creating: true), required: ["name", "event"], readOnly: false) { args in
                 try send(.create, draft: try RoutineRequests.automationDraft(args))
             },
             MCPTool(name: "update_automation",
                     description: "Changes one of the user's WorkTime automations, by the id create_automation or automations gave: only the fields you pass change. "
-                        + "An empty place, contains, status, from_status, jql, pattern, assistant, folder or model clears it. The user is asked to approve every change.",
+                        + "An empty place, contains, status, from_status, jql, pattern, assistant, folder, model or ask_agent clears it; ask false turns the question off. The user is asked to approve every change.",
                     properties: automationProperties(creating: false).merging(["id": ["type": "string"]]) { first, _ in first }, required: ["id"], readOnly: false) { args in
                 try send(.update, patch: try RoutineRequests.automationPatch(args), routine: try routineID(args))
             },

@@ -19,6 +19,7 @@ final class AgentAttentionCenter {
         case .allowSession: if let request { model.answer(permission: request, allow: true, session: true) }
         case .deny: if let request { model.answer(permission: request, allow: false) }
         case .answer(let reply): model.reply(reply)
+        case .stop: model.cancelFromMain()
         case .open: AgentHub.shared.show(agent)
         }
     }

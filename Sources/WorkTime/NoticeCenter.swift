@@ -18,6 +18,7 @@ final class NoticeCenter: ObservableObject {
     func start(file: URL = AppPaths.notices) {
         self.file = file
         notices = NoticeLogic.decode(try? Data(contentsOf: file))
+        Notifier.register(asks: notices.compactMap(\.ask))
         fireDue()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -65,7 +66,7 @@ final class NoticeCenter: ObservableObject {
     /// Opens what the notification links to (or the agent that sent it) and takes it off the list.
     func open(_ id: String) {
         guard let notice = notices.first(where: { $0.id == id }) else { return }
-        dismiss(id)
+        if notice.ask == nil { dismiss(id) }
         switch notice.link.flatMap(NoticeLogic.link) {
         case .pullRequest(let target)?: AgentModel.openPullRequestLink?(target)
         case .agent(let key)?: AgentHub.shared.show(key)
@@ -76,6 +77,28 @@ final class NoticeCenter: ObservableObject {
             if let agent = notice.source.agent { AgentHub.shared.show(agent) } else { TodoModel.shared.reveal() }
         }
     }
+
+    /// The user's answer to an automation's question, from the notification's buttons or the notch bar: takes the question off the list,
+    /// completes its reminder, notes the answer on the automation, and with yes starts the agent it names, without opening the app.
+    func answer(_ id: String, yes: Bool) {
+        guard let notice = notices.first(where: { $0.id == id }), let ask = notice.ask else { return }
+        dismiss(id)
+        if let reminder = ask.reminder { TodoModel.shared.complete(reminder) }
+        RoutineStore.shared.record(AskAnswer(title: notice.title, yes: yes, date: Date()), routine: ask.routine)
+        guard yes else { return }
+        Task {
+            let reply = await AgentInboxWatcher.send(ask.prompt, to: ask.agent)
+            if reply.status == .rejected { Notifier.postAgentMessage(title: "Could not start: \(notice.title)", body: reply.message) }
+        }
+    }
+
+    /// The reminder of a question was completed in the app: the user dealt with it, so the question goes without starting anything.
+    func resolveAsk(reminder: String) {
+        for notice in notices where notice.ask?.reminder == reminder { dismiss(notice.id) }
+    }
+
+    /// How many questions of the automation wait for an answer.
+    func waitingAsks(routine: String) -> Int { notices.filter { $0.ask?.routine == routine }.count }
 
     /// Shows the agent whose run sent the notification.
     func openAgent(_ id: String) {

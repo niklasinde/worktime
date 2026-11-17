@@ -6,10 +6,12 @@ enum AgentAttention {
     static let approvalCategory = "agent-approval"
     static let sessionApprovalCategory = "agent-approval-session"
     static let questionCategory = "agent-question"
+    static let handoffCategory = "agent-handoff"
     static let allowAction = "agent-allow"
     static let allowSessionAction = "agent-allow-session"
     static let denyAction = "agent-deny"
     static let replyAction = "agent-reply"
+    static let stopAction = "agent-stop"
     static let agentKey = "agentAttentionAgent"
     static let requestKey = "agentAttentionRequest"
     static let bodyLimit = 400
@@ -17,7 +19,7 @@ enum AgentAttention {
     static let questionLimit = 200
 
     enum Response: Equatable {
-        case allow, allowSession, deny, answer(String), open
+        case allow, allowSession, deny, answer(String), stop, open
     }
 
     static func enabled(defaults: UserDefaults = .standard) -> Bool {
@@ -49,6 +51,7 @@ enum AgentAttention {
         case allowAction: return .allow
         case allowSessionAction: return .allowSession
         case denyAction: return .deny
+        case stopAction: return .stop
         case replyAction:
             let answer = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return answer.isEmpty ? .open : .answer(answer)

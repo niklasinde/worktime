@@ -394,11 +394,11 @@ final class RoutineStore: ObservableObject {
         let event = starting.removeValue(forKey: routine.id)
         if info?.sampled == true, run.status == .done { verify(routine, event: event) }
         if run.status == .done, info?.mode == .ai, routine.determinism == nil, routine.analyzed == nil, Determinism.autoAnalyze() { analyze(key, automatic: true) }
-        notify(routine, run: run, event: event)
-        if let event, run.status == .done, routine.followUp?.remind == true,
-           let reminder = Automations.reminder(for: event) {
-            TodoModel.shared.remind(title: reminder.title, source: reminder.source, preset: .noDate)
+        var reminder: String?
+        if let event, run.status == .done, routine.followUp?.remind == true, let made = Automations.reminder(for: event) {
+            reminder = TodoModel.shared.remind(title: made.title, source: made.source, preset: .noDate)
         }
+        notify(routine, run: run, event: event, reminder: reminder)
         if automationsEnabled(), let next = automationState.queued[routine.id]?.first {
             automationState.queued[routine.id]?.removeFirst()
             saveState()
@@ -416,16 +416,34 @@ final class RoutineStore: ObservableObject {
         }
     }
 
-    private func notify(_ routine: Routine, run: RoutineRun, event: AutomationEvent?) {
-        if event != nil, routine.followUp?.notify == false { return }
-        let text = event.map { Automations.notification(for: routine, event: $0, run: run) } ?? Routines.notification(for: routine, run: run)
+    /// The notification of a run. An automation that asks makes it carry the question and its two buttons; the others carry the answer.
+    private func notify(_ routine: Routine, run: RoutineRun, event: AutomationEvent?, reminder: String? = nil) {
+        var question: NoticeAsk?
+        if let event, run.status == .done, let ask = routine.followUp?.ask {
+            question = AutomationAsks.notice(for: routine, event: event, run: run, ask: ask, reminder: reminder)
+        }
+        if event != nil, question == nil, routine.followUp?.notify == false { return }
+        let text = event.map { event in
+            question == nil ? Automations.notification(for: routine, event: event, run: run)
+                : AutomationAsks.notification(for: routine, event: event, run: run, ask: routine.followUp?.ask ?? AutomationAsk())
+        } ?? Routines.notification(for: routine, run: run)
         let now = Date()
         var source = NoticeSource(agent: routine.key, workspace: routine.workspace)
         if event?.kind.offersReview == true { source.reviewing = true }
-        let notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: event.flatMap(Automations.noticeLink) ?? routine.key,
+        var notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: event.flatMap(Automations.noticeLink) ?? routine.key,
                                  source: source, created: now)
+        notice.ask = question
         _ = NoticeCenter.shared.handle(NoticeRequest(id: notice.id, action: .notify, notice: notice, cancel: nil, source: source, created: now))
     }
+
+    /// Notes the user's answer to an automation's question, for its row.
+    func record(_ answer: AskAnswer, routine id: String) {
+        automationState.answers[id] = answer
+        saveState()
+        objectWillChange.send()
+    }
+
+    func lastAnswer(_ routine: Routine) -> AskAnswer? { automationState.answers[routine.id] }
 
     private func update(_ key: String, _ change: (inout Routine) -> Void) {
         guard let index = routines.firstIndex(where: { $0.key == key }) else { return }

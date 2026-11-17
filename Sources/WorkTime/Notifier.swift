@@ -29,26 +29,68 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         self.onKeepRecording = onKeepRecording
         super.init()
         center.delegate = self
-        let record = UNNotificationAction(identifier: Self.recordAction, title: "Record", options: [])
-        let stop = UNNotificationAction(identifier: Self.stopAction, title: "Stop", options: [])
-        let keep = UNNotificationAction(identifier: Self.keepAction, title: "Keep recording", options: [])
+        Self.applyCategories()
+    }
+
+    private static func fixedCategories() -> [UNNotificationCategory] {
+        let record = UNNotificationAction(identifier: recordAction, title: "Record", options: [])
+        let stop = UNNotificationAction(identifier: stopAction, title: "Stop", options: [])
+        let keep = UNNotificationAction(identifier: keepAction, title: "Keep recording", options: [])
         let allow = UNNotificationAction(identifier: AgentAttention.allowAction, title: "Allow once", options: [])
         let allowSession = UNNotificationAction(identifier: AgentAttention.allowSessionAction, title: "Allow for this session", options: [])
         let deny = UNNotificationAction(identifier: AgentAttention.denyAction, title: "Deny", options: [.destructive])
         let reply = UNTextInputNotificationAction(identifier: AgentAttention.replyAction, title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Answer the agent")
-        let reviewAgent = UNNotificationAction(identifier: Self.reviewAgentAction, title: "Open review", options: [.foreground])
-        let reviewApprove = UNNotificationAction(identifier: Self.reviewApproveAction, title: "Approve\u{2026}", options: [.foreground])
-        let reviewChanges = UNNotificationAction(identifier: Self.reviewChangesAction, title: "Request changes\u{2026}", options: [.foreground])
-        let reviewDismiss = UNNotificationAction(identifier: Self.reviewDismissAction, title: "Dismiss", options: [])
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: Self.reviewCategory, actions: [reviewApprove, reviewChanges, reviewAgent, reviewDismiss], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: Self.meetingCategory, actions: [record], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: Self.endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
+        let stopAgent = UNNotificationAction(identifier: AgentAttention.stopAction, title: "Stop", options: [.destructive])
+        let reviewAgent = UNNotificationAction(identifier: reviewAgentAction, title: "Open review", options: [.foreground])
+        let reviewApprove = UNNotificationAction(identifier: reviewApproveAction, title: "Approve\u{2026}", options: [.foreground])
+        let reviewChanges = UNNotificationAction(identifier: reviewChangesAction, title: "Request changes\u{2026}", options: [.foreground])
+        let reviewDismiss = UNNotificationAction(identifier: reviewDismissAction, title: "Dismiss", options: [])
+        return [
+            UNNotificationCategory(identifier: reviewCategory, actions: [reviewApprove, reviewChanges, reviewAgent, reviewDismiss], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: meetingCategory, actions: [record], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.approvalCategory, actions: [allow, deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.sessionApprovalCategory, actions: [allow, allowSession, deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.questionCategory, actions: [reply], intentIdentifiers: [], options: []),
-        ])
+            UNNotificationCategory(identifier: AgentAttention.handoffCategory, actions: [stopAgent], intentIdentifiers: [], options: []),
+        ]
+    }
+
+    /// The buttons of an automation's question are its own names, so each pair of names is a category of its own, added as they are needed.
+    private final class AskCategories: @unchecked Sendable {
+        static let shared = AskCategories()
+        private let lock = NSLock()
+        private var known: [String: NoticeAsk] = [:]
+
+        /// Whether the question's buttons were not known yet.
+        func insert(_ ask: NoticeAsk) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return known.updateValue(ask, forKey: AutomationAsks.category(ask)) == nil
+        }
+
+        var categories: [UNNotificationCategory] {
+            lock.lock()
+            defer { lock.unlock() }
+            return known.values.map { ask in
+                let yes = UNNotificationAction(identifier: AutomationAsks.yesAction, title: ask.yes, options: [])
+                let no = UNNotificationAction(identifier: AutomationAsks.noAction, title: ask.no, options: [])
+                let open = UNNotificationAction(identifier: AutomationAsks.openAction, title: "Open", options: [.foreground])
+                return UNNotificationCategory(identifier: AutomationAsks.category(ask), actions: [yes, no, open], intentIdentifiers: [], options: [])
+            }
+        }
+    }
+
+    private static func applyCategories() {
+        UNUserNotificationCenter.current().setNotificationCategories(Set(fixedCategories() + AskCategories.shared.categories))
+    }
+
+    /// Makes the buttons of questions that are still waiting known to the system, as after a restart.
+    static func register(asks: [NoticeAsk]) {
+        var added = false
+        for ask in asks where AskCategories.shared.insert(ask) { added = true }
+        if added { applyCategories() }
     }
 
     func postMeetingStarted(appName: String?) {
@@ -76,7 +118,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = String(body.prefix(AgentAttention.handoffLimit))
-        if let agent { content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: ""] }
+        if let agent {
+            content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: ""]
+            content.categoryIdentifier = AgentAttention.handoffCategory
+        }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
@@ -116,7 +161,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.body = notice.body ?? ""
         content.sound = .default
         content.userInfo = [NoticeLogic.userInfoKey: notice.id]
-        if NoticeLogic.isReview(notice) { content.categoryIdentifier = reviewCategory }
+        if let ask = notice.ask {
+            register(asks: [ask])
+            content.categoryIdentifier = AutomationAsks.category(ask)
+        } else if NoticeLogic.isReview(notice) {
+            content.categoryIdentifier = reviewCategory
+        }
         if notice.urgency == .high { content.interruptionLevel = .timeSensitive }
         let trigger = notice.at.map {
             UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: $0),
@@ -195,7 +245,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
         if let id = content.userInfo[NoticeLogic.userInfoKey] as? String {
             switch action {
-            case UNNotificationDefaultActionIdentifier: await NoticeCenter.shared.open(id)
+            case UNNotificationDefaultActionIdentifier, AutomationAsks.openAction: await NoticeCenter.shared.open(id)
+            case AutomationAsks.yesAction: await NoticeCenter.shared.answer(id, yes: true)
+            case AutomationAsks.noAction: await NoticeCenter.shared.answer(id, yes: false)
             case Self.reviewApproveAction: await NoticeCenter.shared.review(id, requestChanges: false)
             case Self.reviewChangesAction: await NoticeCenter.shared.review(id, requestChanges: true)
             case Self.reviewAgentAction: await NoticeCenter.shared.openAgent(id)

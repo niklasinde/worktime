@@ -26,6 +26,11 @@ struct AutomationPatch: Codable, Equatable, Sendable {
     var pattern: String?
     var notify: Bool?
     var remind: Bool?
+    var ask: Bool?
+    var askYes: String?
+    var askNo: String?
+    var askAgent: String?
+    var askPrompt: String?
 
     func applied(to trigger: AutomationTrigger?, followUp: AutomationFollowUp?) -> (AutomationTrigger, AutomationFollowUp) {
         var trigger = trigger ?? AutomationTrigger(kind: kind ?? .reviewRequested), followUp = followUp ?? AutomationFollowUp()
@@ -39,6 +44,16 @@ struct AutomationPatch: Codable, Equatable, Sendable {
         if let pattern { trigger.pattern = pattern }
         if let notify { followUp.notify = notify }
         if let remind { followUp.remind = remind }
+        if ask == false {
+            followUp.ask = nil
+        } else if ask == true || askYes != nil || askNo != nil || askAgent != nil || askPrompt != nil {
+            var value = followUp.ask ?? AutomationAsk.defaults(for: trigger.kind)
+            if let askYes, !askYes.isEmpty { value.yes = askYes }
+            if let askNo, !askNo.isEmpty { value.no = askNo }
+            if let askAgent { value.agent = askAgent }
+            if let askPrompt { value.prompt = askPrompt }
+            followUp.ask = value
+        }
         return (trigger, followUp)
     }
 }
@@ -136,10 +151,26 @@ enum RoutineRequests {
                                         needsPullRequest: try FilterLogic.flag(args, "needs_pull_request") ?? false, status: FilterLogic.text(args, "status") ?? "",
                                         fromStatus: FilterLogic.text(args, "from_status") ?? "", jql: FilterLogic.text(args, "jql") ?? "",
                                         pattern: FilterLogic.text(args, "pattern") ?? "")
-        return RoutineDraft(name: name, prompt: FilterLogic.text(args, "prompt") ?? kind.defaultPrompt, schedule: RoutineSchedule(kind: .daily),
+        let ask = try askDraft(args, kind: kind)
+        return RoutineDraft(name: name, prompt: FilterLogic.text(args, "prompt") ?? (ask == nil ? kind.defaultPrompt : kind.askPrompt),
+                            schedule: RoutineSchedule(kind: .daily),
                             workspace: FilterLogic.text(args, "workspace"), assistant: FilterLogic.text(args, "assistant"),
                             folder: FilterLogic.text(args, "folder"), model: FilterLogic.text(args, "model"), trigger: trigger,
-                            followUp: AutomationFollowUp(notify: try FilterLogic.flag(args, "notify") ?? true, remind: try FilterLogic.flag(args, "remind") ?? false))
+                            followUp: AutomationFollowUp(notify: try FilterLogic.flag(args, "notify") ?? true, remind: try FilterLogic.flag(args, "remind") ?? false, ask: ask))
+    }
+
+    /// The question of `create_automation`: on with `ask`, or by naming any part of it.
+    private static func askDraft(_ args: [String: Any], kind: AutomationTrigger.Kind) throws -> AutomationAsk? {
+        let on = try FilterLogic.flag(args, "ask")
+        let yes = FilterLogic.text(args, "ask_yes"), no = FilterLogic.text(args, "ask_no")
+        let agent = FilterLogic.text(args, "ask_agent"), prompt = FilterLogic.text(args, "ask_prompt")
+        guard on == true || (on == nil && [yes, no, agent, prompt].contains { $0 != nil }) else { return nil }
+        var ask = AutomationAsk.defaults(for: kind)
+        if let yes { ask.yes = yes }
+        if let no { ask.no = no }
+        ask.agent = agent ?? ""
+        ask.prompt = prompt ?? ""
+        return ask
     }
 
     static func automationPatch(_ args: [String: Any]) throws -> RoutinePatch {
@@ -151,7 +182,9 @@ enum RoutineRequests {
                                            needsPullRequest: try FilterLogic.flag(args, "needs_pull_request"),
                                            status: stringOrEmpty(args, "status"), fromStatus: stringOrEmpty(args, "from_status"),
                                            jql: stringOrEmpty(args, "jql"), pattern: stringOrEmpty(args, "pattern"),
-                                           notify: try FilterLogic.flag(args, "notify"), remind: try FilterLogic.flag(args, "remind"))
+                                           notify: try FilterLogic.flag(args, "notify"), remind: try FilterLogic.flag(args, "remind"),
+                                           ask: try FilterLogic.flag(args, "ask"), askYes: stringOrEmpty(args, "ask_yes"), askNo: stringOrEmpty(args, "ask_no"),
+                                           askAgent: stringOrEmpty(args, "ask_agent"), askPrompt: stringOrEmpty(args, "ask_prompt"))
         return patch
     }
 
@@ -239,6 +272,9 @@ enum RoutineRequests {
     /// The routine a draft describes, in the workspace it names, else its assistant's, else the asking agent's, else the default one.
     static func routine(from draft: RoutineDraft, source: NoticeSource, workspaces: [String], assistants: Set<String>, id: String, now: Date) -> Result<Routine, NoticeError> {
         if let problem = Routines.problem(name: draft.name, prompt: draft.prompt, schedule: draft.schedule, trigger: draft.trigger) { return .failure(NoticeError(problem)) }
+        if let ask = draft.followUp?.ask, let trigger = draft.trigger, let problem = AutomationAsks.problem(ask, trigger: trigger, assistants: assistants) {
+            return .failure(NoticeError(problem))
+        }
         let assistant = draft.assistant
         if let assistant, !assistants.contains(assistant) {
             return .failure(NoticeError("No assistant with key \(assistant)." + (assistants.isEmpty ? "" : " Known: \(assistants.sorted().joined(separator: ", "))")))
@@ -311,6 +347,7 @@ enum RoutineRequests {
     static func line(_ routine: Routine, now: Date) -> String {
         var parts = ["id \(routine.id)", routine.name, when(routine), routine.enabled ? "on" : "off", "workspace \(routine.workspace)"]
         if let assistant = routine.assistant { parts.append("assistant \(assistant)") }
+        if let ask = routine.followUp?.ask { parts.append("asks \u{201C}\(ask.yes)\u{201D}/\u{201C}\(ask.no)\u{201D}" + (ask.agent.isEmpty ? "" : " \u{2192} \(ask.agent)")) }
         parts.append(lastRunText(routine, now: now))
         return "- " + parts.joined(separator: " \u{00B7} ")
     }
