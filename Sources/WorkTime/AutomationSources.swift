@@ -4,7 +4,8 @@ import Foundation
 /// Hands the automations the events they wait for. The Slack mentions and direct messages, and the pull requests, come from the
 /// lists the app already follows, each handed over once its source has fetched, so an empty list is never mistaken for everything
 /// being new. The rest (channel messages, keywords, thread replies, Jira, a repository's pull requests) are searched on a timer, and
-/// only for the automations that are on; with none, nothing is fetched.
+/// only for the automations that are on; with none, nothing is fetched. The Slack ones also arrive within seconds over Slack's
+/// Socket Mode when an app-level token is set up; the search stays as the safety net for what that missed.
 @MainActor
 final class AutomationSources {
     static let shared = AutomationSources()
@@ -16,8 +17,10 @@ final class AutomationSources {
     }
 
     private var subscriptions: Set<AnyCancellable> = []
+    var socketSubscriptions: Set<AnyCancellable> = []
     private var loop: Task<Void, Never>?
     private var polling = false
+    let socketNames = SlackSocketNames()
 
     func start() {
         subscriptions = []
@@ -43,10 +46,13 @@ final class AutomationSources {
             .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in Task { await self?.poll() } }
             .store(in: &subscriptions)
+        socketSubscriptions = []
+        startSocket()
         loop?.cancel()
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(Self.pollInterval) * 1_000_000_000)
+                self?.updateSocket()
                 await self?.poll()
             }
         }

@@ -132,6 +132,8 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AutomationGitHub.swift \
     Sources/WorkTime/AutomationJira.swift \
     Sources/WorkTime/AutomationSlack.swift \
+    Sources/WorkTime/SlackSocketLogic.swift \
+    Sources/WorkTime/AutomationSocket.swift \
     Tests/WorkTimeTests/Tests.swift \
     Tests/WorkTimeTests/StoreTests.swift \
     Tests/WorkTimeTests/AudioRetentionTests.swift \
@@ -196,6 +198,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/DeterminismTests.swift \
     Tests/WorkTimeTests/AutomationTests.swift \
     Tests/WorkTimeTests/AutomationAskTests.swift \
+    Tests/WorkTimeTests/SlackSocketTests.swift \
     Tests/WorkTimeTests/AgentAttentionTests.swift \
     Tests/WorkTimeTests/AgentSetTests.swift \
     Tests/WorkTimeTests/QuickChatTests.swift \

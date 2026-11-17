@@ -354,6 +354,8 @@ struct TokenStore {
     static let jira = TokenStore(secrets: AppSecretStore(service: jiraService), account: "api-token")
     static let slackService = "com.niklasinde.MeetingRecorder.slack"
     static let slack = TokenStore(secrets: AppSecretStore(service: slackService), account: "user-token")
+    /// The app-level token (`xapp-`) Slack's Socket Mode connects with.
+    static let slackApp = TokenStore(secrets: AppSecretStore(service: slackService), account: "app-token")
 
     let secrets: PhoneSecretStore
     let account: String

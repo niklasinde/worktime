@@ -307,6 +307,9 @@ final class RoutineStore: ObservableObject {
         saveState()
     }
 
+    /// The automations that have looked at what was there when they were turned on, so what comes after is new.
+    var baselinedAutomations: Set<String> { automationState.baselined }
+
     /// The latest event the automation matched, for trying it out.
     func lastEvent(_ routine: Routine) -> AutomationEvent? { automationState.last[routine.id] }
 

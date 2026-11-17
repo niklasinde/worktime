@@ -605,6 +605,15 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   them off; turned on again they start from what is there. The run is unattended like a routine's and its answer is a draft, never an
   approval. A finished run notifies (the notification about someone else's pull request offers Approve and Request changes, which open
   the page's own confirmation) and can make a reminder linked to the source.
+  **Live Slack events (Socket Mode).** With an app-level token (`xapp-`, scope `connections:write`) saved in Settings > Slack, WorkTime
+  opens a websocket to Slack while a Slack automation (`slack_message`, `slack_channel`, `slack_keyword`, `slack_reply`) is on and
+  automations are on, and Slack pushes each message within seconds instead of the five-minute search finding it. It reads only what
+  the user's own token can see (message events on behalf of the user: `message.channels`, `message.groups`, `message.im`,
+  `message.mpim`), asks for no write scope, answers every envelope at once, reconnects with a growing wait (1 to 60 seconds), on
+  Slack's disconnect and after sleep, and watches the connection with pings. The pushed events get the same ids as the search's, so a
+  message both ways runs once; the search stays as the safety net and runs again after every reconnect. A pushed event reaches an
+  automation only after the search has looked at what was there (`slack_message` after the notch list has), so the first one is
+  never swallowed as old. Settings > Slack shows the connection, a Test button, the steps and a manifest to paste into Slack.
   **Ask me what to do next** (`ask`, "Then" in the editor) makes the run a triage that ends with `Recommendation: <yes or skip> — <reason>`, and
   the notification carries two buttons with your own names (Review it / Skip by default, Start it for a ticket). The first starts the
   assistant in `ask_agent` (a Reviewer, say; empty is the pull request's own agent) with `ask_prompt`, which can use the event's fields plus `{recommendation}` and

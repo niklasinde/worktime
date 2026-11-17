@@ -80,6 +80,10 @@ struct SlackClient: SlackAPI {
         }
     }
 
+    func conversation(_ id: String) async throws -> SlackConversation {
+        try SlackLogic.parseConversationInfo(await send("conversations.info", ["channel": id]))
+    }
+
     func userName(_ id: String) async throws -> String {
         try SlackLogic.parseUserName(await send("users.info", ["user": id]))
     }

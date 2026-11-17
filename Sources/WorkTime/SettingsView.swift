@@ -402,7 +402,12 @@ struct SettingsView: View {
         case .notchBar: NotchBarSettingsSection(model: .shared)
         case .gitHub: GitHubSettingsSection(model: .shared)
         case .jira: JiraSettingsSection(model: .shared).id(SettingsAnchor.jira)
-        case .slack: SlackSettingsSection(model: .shared).id(SettingsAnchor.slack)
+        case .slack:
+            VStack(alignment: .leading, spacing: 22) {
+                SlackSettingsSection(model: .shared)
+                SlackSocketSettingsSection(socket: .shared)
+            }
+            .id(SettingsAnchor.slack)
         case .models: ModelOverview(models: models, whisper: whisper, speakers: speakers, tracker: tracker, show: show)
         case .agent: AgentSettingsSection(store: .shared)
         case .iphone: PhoneSettingsSection(model: .shared)
