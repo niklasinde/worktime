@@ -197,6 +197,7 @@ final class ActivityTracker: ObservableObject {
         guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid() else { return ingest(.idle(at: now)) }
         var sample = ActivitySample(time: now, appBundle: app.bundleIdentifier, appName: app.localizedName)
         sample.windowTitle = Self.focusedWindowTitle(of: app.processIdentifier)
+        if app.bundleIdentifier == ChromeProfiles.bundle { ChromeProfiles.learn(fromTitle: sample.windowTitle) }
         if app.bundleIdentifier == ChromeProfiles.bundle, !settings.chromeProfile.isEmpty,
            !ChromeProfiles.allows(title: sample.windowTitle, chosen: settings.chromeProfile, profiles: chromeProfiles(now)) {
             return flush()
@@ -260,7 +261,7 @@ final class ActivityTracker: ObservableObject {
 
     private func chromeProfiles(_ now: Date) -> [ChromeProfile] {
         if now.timeIntervalSince(chromeProfilesLoaded) > ChromeProfiles.refreshInterval {
-            chromeProfilesCache = ChromeProfiles.load()
+            chromeProfilesCache = ChromeProfiles.refresh().profiles
             chromeProfilesLoaded = now
         }
         return chromeProfilesCache

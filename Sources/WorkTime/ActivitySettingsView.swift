@@ -70,7 +70,10 @@ struct ActivitySettingsView: View {
     @AppStorage(ActivitySettings.idleKey) private var idleSeconds = 120.0
     @AppStorage(ActivitySettings.retentionKey) private var retentionDays = 90
     @AppStorage(ActivitySettings.chromeProfileKey) private var chromeProfile = ""
-    @State private var chromeProfiles: [ChromeProfile] = []
+    @State private var chromeList = ChromeProfileList(profiles: [], access: .readable)
+    @State private var chromeChoices: [ChromeProfile] = []
+    @State private var addingChromeProfile = false
+    @State private var newChromeProfile = ""
     @State private var confirmingDeleteAll = false
     @State private var offeringPromptDeletion = false
     @State private var confirmingClearPrompts = false
@@ -123,16 +126,33 @@ struct ActivitySettingsView: View {
                 }
                 Divider().padding(.leading, 14)
                 SettingsRow("Chrome profile", detail: chromeProfileDetail) {
-                    Picker("Chrome profile", selection: $chromeProfile) {
-                        Text("All profiles").tag("")
-                        ForEach(chromeProfiles) { Text($0.label).tag($0.name) }
-                        if !chromeProfile.isEmpty, !chromeProfiles.contains(where: { $0.name == chromeProfile }) {
-                            Text("\(chromeProfile) (not found)").tag(chromeProfile)
+                    HStack(spacing: 8) {
+                        Picker("Chrome profile", selection: $chromeProfile) {
+                            Text("All profiles").tag("")
+                            ForEach(chromeChoices) { Text($0.label).tag($0.name) }
+                            if !chromeProfile.isEmpty, !chromeChoices.contains(where: { $0.name == chromeProfile }) {
+                                Text("\(chromeProfile) (not found)").tag(chromeProfile)
+                            }
                         }
+                        .labelsHidden().fixedSize()
+                        Menu {
+                            Button("Choose Chrome\u{2019}s Local State\u{2026}", action: chooseLocalState)
+                            Button("Add Profile Name\u{2026}") { newChromeProfile = ""; addingChromeProfile = true }
+                            Button("Open Full Disk Access\u{2026}") { Permissions.openPrivacySettings(pane: "Privacy_AllFiles") }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).fixedSize()
                     }
-                    .labelsHidden().fixedSize()
                 }
-                .onAppear { chromeProfiles = ChromeProfiles.load() }
+                .onAppear(perform: reloadChromeProfiles)
+                .alert("Add a Chrome profile name", isPresented: $addingChromeProfile) {
+                    TextField("Name as Chrome shows it in the window title", text: $newChromeProfile)
+                    Button("Add") {
+                        ChromeProfiles.add(name: newChromeProfile)
+                        chromeProfile = newChromeProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+                        reloadChromeProfiles()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
             }
             ResumeSettingsSection()
             SettingsSection("Stored activity", footer: nil) {
@@ -254,10 +274,29 @@ struct ActivitySettingsView: View {
     }
 
     private var chromeProfileDetail: String {
-        chromeProfile.isEmpty
+        let base = chromeProfile.isEmpty
             ? "Track every Chrome profile."
             : "Only \(chromeProfile) is tracked. Chrome shows the profile in its window title, which needs Accessibility; "
                 + "windows whose profile can\u{2019}t be told, and Incognito and Guest windows, are not tracked."
+        return [base, chromeList.note].compactMap { $0 }.joined(separator: " ")
+    }
+
+    private func reloadChromeProfiles() {
+        chromeList = ChromeProfiles.refresh()
+        chromeChoices = ChromeProfiles.choices(known: chromeList.profiles)
+    }
+
+    private func chooseLocalState() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose Chrome\u{2019}s Local State file, in Google/Chrome inside Application Support."
+        panel.directoryURL = ChromeProfiles.localState.deletingLastPathComponent()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+        let profiles = ChromeProfiles.adopt(data)
+        chromeList = ChromeProfileList(profiles: profiles, access: profiles.isEmpty ? .unreadable : .readable)
+        chromeChoices = ChromeProfiles.choices(known: profiles)
     }
 
     private func toggleRow(_ title: String, _ value: Binding<Bool>) -> some View {
