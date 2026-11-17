@@ -108,6 +108,15 @@ struct GitHubActionRequest: Equatable {
         self.deleteBranch = deleteBranch
     }
 
+    /// The same review with every comment on a line moved into its body, for when GitHub would not place them.
+    func foldingInline() -> GitHubActionRequest {
+        var copy = self
+        let moved = inline.map { ReviewAnchors.Moved(comment: $0, reason: "") }
+        copy.comment = ReviewDraft.tagged(ReviewAnchors.foldedBody(ReviewDraft.untagged(comment), moved: moved))
+        copy.inline = []
+        return copy
+    }
+
     func with(comment: String, deleteBranch: Bool) -> GitHubActionRequest {
         var copy = self
         copy.comment = comment
@@ -171,6 +180,8 @@ enum GitHubActionError: Error, Equatable {
     case methodNotAllowed
     case offline
     case rateLimited
+    /// GitHub answered 422: it understood the request and would not take it, with the reason it gave.
+    case unprocessable(String)
     case failed(String)
 
     var message: String {
@@ -187,18 +198,39 @@ enum GitHubActionError: Error, Equatable {
         case .methodNotAllowed: return "The repository does not allow that merge method. Choose another one and try again."
         case .offline: return "GitHub cannot be reached. Nothing was changed; try again when you are online."
         case .rateLimited: return "GitHub's rate limit is reached. Nothing was changed; try again in a few minutes."
+        case .unprocessable(let detail): return "GitHub would not accept this: \(detail)"
         case .failed(let detail): return "GitHub returned an error: \(detail)"
         }
     }
 
+    var isUnprocessable: Bool { if case .unprocessable = self { true } else { false } }
+
+    /// What GitHub's error body says: its message and each of its errors, whether they are text or objects with a message.
+    static func detail(fromBody body: String) -> String? {
+        guard let data = body.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        var parts: [String] = []
+        if let message = object["message"] as? String, !message.isEmpty { parts.append(message) }
+        for error in object["errors"] as? [Any] ?? [] {
+            if let text = error as? String { parts.append(text) } else if let item = error as? [String: Any] {
+                let text = (item["message"] as? String) ?? [item["field"], item["code"]].compactMap { $0 as? String }.joined(separator: " ")
+                if !text.isEmpty { parts.append(text) }
+            }
+        }
+        return parts.isEmpty ? nil : ActivityLogic.truncate(parts.joined(separator: ": "), to: 400)
+    }
+
     /// Reads what `gh` printed on stderr. Specific causes come before the general ones their wording overlaps with.
-    static func classify(_ stderr: String) -> GitHubActionError {
+    static func classify(_ stderr: String, body: String = "") -> GitHubActionError {
         let text = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowered = text.lowercased()
         func has(_ needles: String...) -> Bool { needles.contains { lowered.contains($0) } }
         let firstLine = ActivityLogic.truncate(text.split(separator: "\n").first.map(String.init) ?? "unknown error", to: 160)
         if has("rate limit", "abuse detection") { return .rateLimited }
         if has("saml", "single sign-on") { return .sso }
+        if has("http 422", "unprocessable", "validation failed") {
+            let given = detail(fromBody: body.trimmingCharacters(in: .whitespacesAndNewlines))
+            return .unprocessable(given ?? firstLine)
+        }
         if has("can not approve your own", "cannot approve your own", "can not request changes on your own",
                "cannot request changes on your own") { return .ownPullRequest }
         if has("already closed", "already merged", "closed pull request", "merged pull request", "pull request is closed",
@@ -281,6 +313,9 @@ enum GitHubActions {
     static let overlayLifetime: TimeInterval = 120
     static let recentLimit = 50
     static let pauseBetweenBatchItems: TimeInterval = 1
+    /// How often and for how long an approval waits for the checks to pass.
+    static let greenPoll: TimeInterval = 60
+    static let greenWait: TimeInterval = 4 * 3600
 
     static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: enabledKey) }
     static func setEnabled(_ on: Bool, _ defaults: UserDefaults = .standard) { defaults.set(on, forKey: enabledKey) }
@@ -324,7 +359,11 @@ enum GitHubActions {
         var body: [String: Any] = ["event": request.action == .approve ? "APPROVE" : request.action == .requestChanges ? "REQUEST_CHANGES" : "COMMENT"]
         if !request.trimmedComment.isEmpty { body["body"] = request.trimmedComment }
         if let commit = request.commitID, !commit.isEmpty { body["commit_id"] = commit }
-        body["comments"] = request.inline.map { ["path": $0.path, "line": $0.line, "side": "RIGHT", "body": $0.body] as [String: Any] }
+        body["comments"] = request.inline.map { comment -> [String: Any] in
+            var item: [String: Any] = ["path": comment.path, "line": comment.line, "side": "RIGHT", "body": comment.body]
+            if let start = comment.startLine, start < comment.line { item["start_line"] = start; item["start_side"] = "RIGHT" }
+            return item
+        }
         return (try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])) ?? Data()
     }
 
@@ -374,11 +413,12 @@ enum GitHubActions {
     }
 
     static let checksFailing = "Checks are failing"
+    static let checksRunning = "Checks are still running"
 
     private static func checkWarnings(_ target: GitHubActionTarget) -> [String] {
         var warnings: [String] = []
         if target.checks == .failed { warnings.append(checksFailing) }
-        if target.checks == .running { warnings.append("Checks are still running") }
+        if target.checks == .running { warnings.append(checksRunning) }
         return warnings
     }
 
@@ -451,8 +491,8 @@ enum GitHubActions {
 
     // MARK: Result text
 
-    static func successText(_ request: GitHubActionRequest) -> String {
-        let base = "\(request.action.pastTense) \(request.shortReference)"
+    static func successText(_ request: GitHubActionRequest, moved: Int = 0) -> String {
+        let base = "\(request.action.pastTense) \(request.shortReference)" + (ReviewAnchors.movedText(moved).map { " \u{00B7} " + $0 } ?? "")
         switch request.action {
         case .approve, .requestChanges: return base + " \u{00B7} Undo isn't possible \u{2014} it can be dismissed on GitHub"
         case .comment: return base + " \u{00B7} The comment can be deleted on GitHub"
@@ -547,7 +587,7 @@ enum GitHubActionRunner {
         guard let output = GitHubClient.run(cli, GitHubActions.arguments(request, inputFile: input?.path ?? "review.json"), directory: FileManager.default.temporaryDirectory) else {
             return .failure(.cliMissing)
         }
-        if output.status != 0 { return .failure(GitHubActionError.classify(output.stderr)) }
+        if output.status != 0 { return .failure(GitHubActionError.classify(output.stderr, body: String(decoding: output.stdout, as: UTF8.self))) }
         let lowered = output.stderr.lowercased()
         if request.action == .close, lowered.contains("already closed") || lowered.contains("already merged") { return .failure(.alreadyClosed) }
         if request.action == .reopen, lowered.contains("already open") { return .failure(.alreadyOpen) }

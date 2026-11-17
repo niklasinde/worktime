@@ -28,6 +28,8 @@ struct ReviewDraft: Codable, Equatable, Identifiable, Sendable {
         var path: String
         var line: Int
         var body: String
+        /// The first line of a comment on several lines, when the agent gave one.
+        var startLine: Int?
     }
 
     var pr: String
@@ -100,9 +102,21 @@ enum ReviewDrafts {
         func string(_ keys: [String]) -> String? {
             keys.lazy.compactMap { (object[$0] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
         }
-        let line = (object["line"] as? Int) ?? (object["end_line"] as? Int) ?? string(["line"]).flatMap { Int($0) }
-        guard let path = string(["file", "path"]), let line, line > 0, let body = string(["body", "text", "comment"]) else { return nil }
-        return ReviewDraft.Comment(path: path, line: line, body: clipped(body, commentBodyLimit))
+        func number(_ keys: [String]) -> Int? {
+            for key in keys {
+                if let value = object[key] as? Int { return value }
+                if let text = object[key] as? String, let value = integer(text) { return value }
+            }
+            return nil
+        }
+        guard let path = string(["file", "path"]), let line = number(["line", "end_line"]), line > 0, let body = string(["body", "text", "comment"]) else { return nil }
+        let start = number(["start_line", "line_start"]).flatMap { $0 > 0 && $0 < line ? $0 : nil }
+        return ReviewDraft.Comment(path: path, line: line, body: clipped(body, commentBodyLimit), startLine: start)
+    }
+
+    /// A whole number written as text, also when the writer grouped the digits (`1 290`, `1,290`).
+    static func integer(_ text: String) -> Int? {
+        Int(String(text.filter { $0.isNumber || $0 == "-" }))
     }
 
     /// A block that is not JSON: the keys it states, and what follows `summary:` as the summary. No comments are read from it.
@@ -177,11 +191,13 @@ extension ReviewDraft {
     /// The comments that go on lines: with a request for changes or a plain comment, not with an approval.
     func inline(for action: ReviewAction) -> [Comment] { action == .approve ? [] : comments }
 
-    /// The review's body for this action: the summary, or a pointer to the comments when only they are there.
-    func body(for action: ReviewAction) -> String {
+    /// The review's body for this action: the summary with the comments GitHub cannot place under it, or a pointer to the comments when
+    /// only they are there.
+    func body(for action: ReviewAction, moved: [ReviewAnchors.Moved] = [], anchored: Int? = nil) -> String {
         let text = ReviewDraft.tagged(summary)
+        if action != .approve, !moved.isEmpty { return ReviewDraft.tagged(ReviewAnchors.foldedBody(ReviewDraft.untagged(text), moved: moved)) }
         if !text.isEmpty || action == .approve { return text }
-        return comments.isEmpty ? "" : ReviewDraft.tagged("See the comments on the lines.")
+        return (anchored ?? comments.count) == 0 ? "" : ReviewDraft.tagged("See the comments on the lines.")
     }
 
     /// Why this cannot be posted as `action`, nil when it can.
@@ -192,10 +208,11 @@ extension ReviewDraft {
     }
 
     /// The request the page's own code runs: the review as it will be posted, on the commit it covers.
-    func request(_ action: ReviewAction, pr: GitHubPR, commit: String?, actor: String?, via: String?) -> GitHubActionRequest {
+    func request(_ action: ReviewAction, pr: GitHubPR, commit: String?, actor: String?, via: String?, plan: ReviewAnchors.Plan? = nil) -> GitHubActionRequest {
         var request = GitHubActionRequest(action.action, pr: pr)
-        request.comment = body(for: action)
-        request.inline = inline(for: action).map { Comment(path: $0.path, line: $0.line, body: ReviewDraft.tagged($0.body)) }
+        let placed = plan.map { action == .approve ? [] : $0.anchored } ?? inline(for: action)
+        request.comment = body(for: action, moved: plan?.moved ?? [], anchored: placed.count)
+        request.inline = placed.map { Comment(path: $0.path, line: $0.line, body: ReviewDraft.tagged($0.body), startLine: $0.startLine) }
         request.commitID = commit
         request.actor = actor
         request.via = via

@@ -399,8 +399,9 @@ private struct NoticeRow: View {
                 if !draft.comments.isEmpty { Button("Post comments") { review(draft, .postComments) }.buttonStyle(.bordered) }
                 if center.reviewWorking.contains(draft.id) { ProgressView().controlSize(.small) }
             }
-            .disabled(center.reviewWorking.contains(draft.id))
+            .disabled(center.reviewWorking.contains(draft.id) || center.reviewWaiting.contains(draft.id))
             .controlSize(.small)
+            ReviewWays(draft: draft, via: "notch")
             if let text = center.reviewResults[draft.id] { Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
         }
         .padding(.top, 3)

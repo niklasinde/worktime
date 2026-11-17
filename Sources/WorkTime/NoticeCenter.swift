@@ -11,6 +11,9 @@ final class NoticeCenter: ObservableObject {
     /// The drafted reviews being posted now, and what became of the last click on each, for the rows that have buttons for them.
     @Published private(set) var reviewWorking: Set<String> = []
     @Published private(set) var reviewResults: [String: String] = [:]
+    /// What a refused click leaves to click instead, and the approvals waiting for their checks, by draft.
+    @Published private(set) var reviewRefusals: [String: ReviewRefusal] = [:]
+    @Published private(set) var reviewWaiting: Set<String> = []
     private var recent: [AgentNotice] = []
     private var file: URL?
     private var timer: Timer?
@@ -151,11 +154,18 @@ final class NoticeCenter: ObservableObject {
     /// The user's click on a button of a drafted review, from a notification, the notch bar or a chat. Whether it posts at once or opens
     /// the page's confirmation is decided by what the pull request is like now.
     @discardableResult
-    func post(_ draft: ReviewDraft, _ action: ReviewAction, via: String) async -> ReviewOutcome {
+    func post(_ draft: ReviewDraft, _ action: ReviewAction, via: String, mode: ReviewPostMode = .normal) async -> ReviewOutcome {
         reviewWorking.insert(draft.id)
         reviewResults[draft.id] = nil
-        let outcome = await GitHubModel.shared.postReview(draft, action, via: via)
+        reviewRefusals[draft.id] = nil
+        let outcome = await GitHubModel.shared.postReview(draft, action, via: via, mode: mode)
         reviewWorking.remove(draft.id)
+        if case .confirming = outcome { reviewRefusals[draft.id] = GitHubModel.shared.reviewRefusal(for: draft.id) }
+        finish(draft, action, via: via, outcome)
+        return outcome
+    }
+
+    private func finish(_ draft: ReviewDraft, _ action: ReviewAction, via: String, _ outcome: ReviewOutcome) {
         reviewResults[draft.id] = outcome.text
         switch outcome {
         case .posted(let text): ReviewPostStore.shared.record(ReviewPosted(action: action, text: text, ok: true, date: Date()), draft: draft.id)
@@ -163,7 +173,24 @@ final class NoticeCenter: ObservableObject {
         case .confirming, .opened: break
         }
         settle(draft, outcome: outcome, loud: via == "notification")
-        return outcome
+    }
+
+    /// "Approve when green": waits for the checks and approves only if the pull request is still fine to approve with one click.
+    func approveWhenGreen(_ draft: ReviewDraft, via: String) {
+        reviewRefusals[draft.id] = nil
+        reviewResults[draft.id] = nil
+        reviewWaiting.insert(draft.id)
+        GitHubModel.shared.approveWhenGreen(draft, via: via) { [weak self] outcome in
+            guard let self else { return }
+            self.reviewWaiting.remove(draft.id)
+            self.finish(draft, .approve, via: via, outcome)
+        }
+    }
+
+    func cancelWaiting(_ draft: ReviewDraft) {
+        GitHubModel.shared.cancelGreenWait(draft.id)
+        reviewWaiting.remove(draft.id)
+        reviewResults[draft.id] = "Stopped waiting. Nothing was posted."
     }
 
     /// What a click did to the notification that holds the draft: the posted draft goes, and with the last one the notification
@@ -178,8 +205,8 @@ final class NoticeCenter: ObservableObject {
             replace(updated, at: index, show: loud)
         case .failed(let text):
             replace(ReviewNotices.afterFailure(notice, text: text), at: index, show: loud)
-        case .confirming, .opened:
-            break
+        case .confirming(let text), .opened(let text):
+            replace(ReviewNotices.afterFailure(notice, text: "Not posted: " + text), at: index, show: loud)
         }
     }
 

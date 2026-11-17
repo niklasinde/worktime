@@ -601,6 +601,14 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   every other case, and always while the setting is off, the pull request opens with the usual confirmation sheet, the draft in
   it and the reason shown. Every post is logged with the time, the commit, who was signed in and where the click was; approvals
   cannot be undone from the app, so the result says to dismiss the review on GitHub.
+  A refusal is never a dead end: the card (and the notch row) lists the reason and what can be clicked instead. For checks that are
+  running or failing, a draft, or an earlier request for changes, **Approve anyway** posts with that click; while checks are the only
+  thing running, **Approve when green** waits (a visible wait with Cancel, checked every minute for up to four hours, lost when the
+  app quits) and posts only when the pull request would have gone with one click; **Comment instead** posts the summary and comments
+  as a plain comment; **Review in the confirmation** always opens the sheet. A moved commit, or the setting being off, only offers the
+  sheet. Before posting comments on lines the pull request's files are read, and a comment on a file the pull request does not change
+  or a line outside its hunks goes under the summary instead of failing the review (a 422 from GitHub is retried once the same way);
+  the result says how many were moved, and GitHub's own error text is shown.
 - **Notifications.** Any agent, and Claude Code sessions with the plugin, can call `notify(title, body?, link?, urgency?, at?)`:
   the running app posts a macOS notification (now, or at `at`: ISO 8601 or `HH:mm`, up to 30 days ahead) and keeps it under
   From agents / Scheduled in the notch bar's Reminders list until opened or dismissed. A click opens the link (a pull request

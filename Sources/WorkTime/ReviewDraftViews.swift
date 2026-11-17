@@ -25,20 +25,61 @@ struct ReviewButtons: View {
     let via: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            button(.approve, prominent: draft.verdict == .approve)
-            if draft.problem(for: .requestChanges) == nil { button(.requestChanges, prominent: draft.verdict == .requestChanges) }
-            if !draft.comments.isEmpty { button(.postComments, prominent: false) }
-            if notices.reviewWorking.contains(draft.id) { ProgressView().controlSize(.small) }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                button(.approve, prominent: draft.verdict == .approve)
+                if draft.problem(for: .requestChanges) == nil { button(.requestChanges, prominent: draft.verdict == .requestChanges) }
+                if !draft.comments.isEmpty { button(.postComments, prominent: false) }
+                if notices.reviewWorking.contains(draft.id) { ProgressView().controlSize(.small) }
+            }
+            ReviewWays(draft: draft, via: via)
         }
         .controlSize(.small)
     }
 
     @ViewBuilder private func button(_ action: ReviewAction, prominent: Bool) -> some View {
         let title = Button(action.title) { Task { await notices.post(draft, action, via: via) } }
-            .disabled(notices.reviewWorking.contains(draft.id))
+            .disabled(notices.reviewWorking.contains(draft.id) || notices.reviewWaiting.contains(draft.id))
             .help(GitHubActions.isReviewFromNotifications() ? "Posts the review with this click" : "Opens the confirmation with the review in it")
         if prominent { title.buttonStyle(.borderedProminent) } else { title.buttonStyle(.bordered) }
+    }
+}
+
+/// What can be clicked after a click did not post: the reason, and the ways on, or the wait for the checks with its Cancel. Every refusal
+/// leaves at least the confirmation to open.
+struct ReviewWays: View {
+    let draft: ReviewDraft
+    let via: String
+    @ObservedObject private var notices = NoticeCenter.shared
+
+    var body: some View {
+        if notices.reviewWaiting.contains(draft.id) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Waiting for the checks to pass, then approving").font(.caption).foregroundStyle(.secondary)
+                Button("Cancel") { notices.cancelWaiting(draft) }.buttonStyle(.link).font(.caption)
+            }
+        } else if let refusal = notices.reviewRefusals[draft.id], !notices.reviewWorking.contains(draft.id) {
+            HStack(spacing: 8) {
+                ForEach(refusal.choices, id: \.self) { choice in
+                    if choice == refusal.choices.first {
+                        Button(choice.title) { run(choice, refusal) }.buttonStyle(.borderedProminent)
+                    } else {
+                        Button(choice.title) { run(choice, refusal) }.buttonStyle(.bordered)
+                    }
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func run(_ choice: ReviewChoice, _ refusal: ReviewRefusal) {
+        switch choice {
+        case .approveAnyway: Task { await notices.post(draft, .approve, via: via, mode: .anyway) }
+        case .approveWhenGreen: notices.approveWhenGreen(draft, via: via)
+        case .commentInstead: Task { await notices.post(draft, .postComments, via: via) }
+        case .openSheet: Task { await notices.post(draft, refusal.action, via: via, mode: .sheet) }
+        }
     }
 }
 
@@ -85,7 +126,7 @@ struct ReviewDraftCard: View {
         if showsComments {
             ForEach(Array(draft.comments.enumerated()), id: \.offset) { _, comment in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(comment.path):\(comment.line)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    Text(verbatim: comment.label).font(.caption.monospaced()).foregroundStyle(.secondary)
                     Text(comment.body).font(.callout).textSelection(.enabled)
                 }
                 .padding(.leading, 8)
