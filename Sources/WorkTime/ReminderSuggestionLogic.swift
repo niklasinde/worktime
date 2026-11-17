@@ -37,6 +37,11 @@ struct ReminderPageFilter: Equatable {
         (kind == nil || kind == .meeting) && matches(text: [item.task, item.title, item.owner])
     }
 
+    /// This filter, or none when it would hide the reminder being revealed.
+    func revealing(_ reminder: Reminder) -> ReminderPageFilter { matches(reminder) ? self : ReminderPageFilter() }
+
+    func revealing(_ item: MeetingTodo) -> ReminderPageFilter { matches(item) ? self : ReminderPageFilter() }
+
     private func matches(text parts: [String?]) -> Bool {
         let words = query.split(separator: " ").map(String.init)
         let text = parts.compactMap { $0 }.joined(separator: " ")
@@ -45,6 +50,9 @@ struct ReminderPageFilter: Equatable {
 }
 
 enum SuggestionLogic {
+    /// What the page scrolls to and highlights for a suggestion: its id could be a reminder's too, so it is told apart.
+    static func focusID(_ item: MeetingTodo) -> String { "suggestion:\(item.id)" }
+
     /// The meeting action items nobody answered yet, in the order given.
     static func suggestions(_ items: [MeetingTodo], decisions: SuggestionDecisions) -> [MeetingTodo] {
         items.filter { !decisions.decided($0.id) }

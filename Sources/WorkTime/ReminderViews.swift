@@ -43,6 +43,8 @@ struct ReminderRow: View {
     let now: Date
     var pickDate = false
     var onHold: (Bool) -> Void = { _ in }
+    /// Set where clicking the reminder should open it on the Reminders page, as in the notch bar.
+    var onOpen: (() -> Void)?
     @ObservedObject private var model = TodoModel.shared
     @State private var checked = false
     @State private var editing = false
@@ -76,10 +78,14 @@ struct ReminderRow: View {
                 .font(.caption)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { if !editing, let onOpen { onOpen(); model.reveal(reminder.id) } }
             if pickDate { dateButton }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
+        .background(FocusHighlight(id: reminder.id))
+        .id(reminder.id)
         .opacity(checked ? 0.6 : 1)
         .animation(.easeOut(duration: 0.15), value: checked)
         .transition(.opacity)
@@ -141,6 +147,7 @@ struct ReminderRow: View {
 struct SuggestionRow: View {
     let item: MeetingTodo
     var labeled = false
+    var onOpen: (() -> Void)?
     @ObservedObject private var model = TodoModel.shared
 
     var body: some View {
@@ -151,6 +158,8 @@ struct SuggestionRow: View {
                 Text([item.owner, item.title].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { if let onOpen { onOpen(); model.reveal(SuggestionLogic.focusID(item)) } }
             if labeled {
                 Button("Approve") { model.approve(item) }.help("Make it a reminder")
                 Button("Dismiss") { model.dismiss(item) }.help("Hide it for good")
@@ -164,6 +173,8 @@ struct SuggestionRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
+        .background(FocusHighlight(id: SuggestionLogic.focusID(item)))
+        .id(SuggestionLogic.focusID(item))
         .transition(.opacity)
         .contextMenu {
             Button("Approve") { model.approve(item) }
@@ -288,5 +299,18 @@ struct CheckCircle: View {
         .frame(width: 18, height: 18)
         .contentShape(Circle())
         .animation(.spring(response: 0.2, dampingFraction: 0.7), value: checked)
+    }
+}
+
+/// Tints a row of the Reminders page for a moment when it is the one just opened from the notch bar.
+struct FocusHighlight: View {
+    static let duration = 2.5
+    let id: String
+    @ObservedObject private var model = TodoModel.shared
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color.accentColor.opacity(model.focus == id ? 0.18 : 0))
+            .animation(.easeOut(duration: 0.4), value: model.focus)
     }
 }

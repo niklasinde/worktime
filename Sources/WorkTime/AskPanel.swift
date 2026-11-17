@@ -315,7 +315,7 @@ private struct AskPanelView: View {
                         switch panel.list {
                         case .gitHub: WaitingPullRequests(onOpen: panel.collapse, onHold: panel.hold)
                         case .jira: AssignedTickets(onOpen: panel.collapse)
-                        case .todo: TodoNotchList(onHold: panel.hold, onType: panel.type)
+                        case .todo: TodoNotchList(onOpen: panel.collapse, onHold: panel.hold, onType: panel.type)
                         case .slack: SlackNotchList(onOpen: panel.collapse)
                         }
                     }

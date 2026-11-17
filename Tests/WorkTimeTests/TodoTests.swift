@@ -95,6 +95,15 @@ let todoTests: [(name: String, run: () throws -> Void)] = [
         check(ReminderPageFilter(query: "room").matches(item(2, "Book a room")) && !ReminderPageFilter(query: "room").matches(item(3, "Call")), "suggestion text")
     }),
 
+    ("revealing a reminder keeps a filter that shows it and drops one that hides it", {
+        let dentist = Reminder(id: "c", title: "Book the dentist", created: now)
+        let filter = ReminderPageFilter(query: "dentist")
+        check(filter.revealing(dentist) == filter, "kept when it matches")
+        check(ReminderPageFilter(query: "report").revealing(dentist).isEmpty, "dropped when it hides it")
+        check(ReminderPageFilter(kind: .jira).revealing(item(1, "x")).isEmpty, "dropped for a suggestion too")
+        check(SuggestionLogic.focusID(item(5, "x")) == "suggestion:5", "a suggestion's focus id")
+    }),
+
     ("the page lists completed reminders latest first and offers the source kinds that exist", {
         var done1 = Reminder(id: "1", title: "a", created: now)
         done1.completed = now

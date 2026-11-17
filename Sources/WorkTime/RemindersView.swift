@@ -11,10 +11,26 @@ struct RemindersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            ScrollView { content.padding(.horizontal, Self.gutter).padding(.bottom, 20) }
+            ScrollViewReader { proxy in
+                ScrollView { content.padding(.horizontal, Self.gutter).padding(.bottom, 20) }
+                    .onChange(of: model.focus) { _, id in reveal(id, in: proxy) }
+                    .onAppear { reveal(model.focus, in: proxy) }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { model.reloadMeetings() }
+    }
+
+    /// Scrolls to the reminder or suggestion opened from the notch bar, clearing a filter that hides it, and lets its tint fade.
+    private func reveal(_ id: String?, in proxy: ScrollViewProxy) {
+        guard let id else { return }
+        if let reminder = (model.reminders + model.completed).first(where: { $0.id == id }) {
+            filter = filter.revealing(reminder)
+        } else if let item = model.suggestions.first(where: { SuggestionLogic.focusID($0) == id }) {
+            filter = filter.revealing(item)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { withAnimation { proxy.scrollTo(id, anchor: .center) } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + FocusHighlight.duration) { if model.focus == id { model.focus = nil } }
     }
 
     private var header: some View {

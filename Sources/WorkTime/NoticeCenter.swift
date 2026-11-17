@@ -72,7 +72,8 @@ final class NoticeCenter: ObservableObject {
         case .jira(let key)?:
             if let url = JiraModel.shared.site.flatMap({ JiraLogic.browseURL(site: $0, key: key) }) { NSWorkspace.shared.open(url) }
         case .web(let url)?: NSWorkspace.shared.open(url)
-        case nil: if let agent = notice.source.agent { AgentHub.shared.show(agent) }
+        case nil:
+            if let agent = notice.source.agent { AgentHub.shared.show(agent) } else { TodoModel.shared.reveal() }
         }
     }
 

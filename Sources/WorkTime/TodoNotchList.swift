@@ -7,6 +7,9 @@ final class TodoModel: ObservableObject {
     @Published private(set) var meeting: [MeetingTodo] = []
     @Published private(set) var decisions = SuggestionDecisions()
     var openMeeting: (Int64) -> Void = { _ in }
+    var showPage: () -> Void = {}
+    /// The reminder or suggestion the Reminders page scrolls to and highlights, until it has.
+    @Published var focus: String?
     private var file: URL?
     private var decisionsFile: URL?
     private var store: MeetingStore?
@@ -42,6 +45,12 @@ final class TodoModel: ObservableObject {
             guard !items.isEmpty else { return }
             apply(ReminderLogic.importing(items, into: book, now: Date(), jiraSite: JiraModel.shared.site))
         }
+    }
+
+    /// Shows the Reminders page, scrolled to `id` when given.
+    func reveal(_ id: String? = nil) {
+        focus = id
+        showPage()
     }
 
     func reloadMeetings() {
@@ -183,6 +192,7 @@ final class TodoModel: ObservableObject {
 /// The notch bar's todo list: the reminders by when they are due, each with a chip that opens what it is about, a New Reminder row,
 /// and the meeting action items suggested as reminders.
 struct TodoNotchList: View {
+    let onOpen: () -> Void
     let onHold: (Bool) -> Void
     let onType: (String) -> Void
     @ObservedObject private var model = TodoModel.shared
@@ -212,7 +222,7 @@ struct TodoNotchList: View {
             if !notices.waiting.isEmpty {
                 heading("From agents", top: 0)
                 ForEach(notices.waiting) { notice in
-                    NoticeRow(notice: notice, open: { notices.open(notice.id) }, remove: { notices.dismiss(notice.id) })
+                    NoticeRow(notice: notice, open: { onOpen(); notices.open(notice.id) }, remove: { notices.dismiss(notice.id) })
                     separator
                 }
             }
@@ -238,7 +248,7 @@ struct TodoNotchList: View {
         ForEach(sections, id: \.section) { group in
             if titled { heading(group.section.title, top: alone && group.section == sections.first?.section ? 0 : 10, overdue: group.section == .overdue) }
             ForEach(group.reminders.prefix(TodoLogic.todoLimit)) { reminder in
-                ReminderRow(reminder: reminder, now: now, onHold: onHold)
+                ReminderRow(reminder: reminder, now: now, onHold: onHold, onOpen: onOpen)
                 separator
             }
         }
@@ -249,7 +259,7 @@ struct TodoNotchList: View {
         if !items.isEmpty {
             heading("Suggested from meetings", top: 14)
             ForEach(items) { item in
-                SuggestionRow(item: item)
+                SuggestionRow(item: item, onOpen: onOpen)
                 if item.id != items.last?.id { separator }
             }
         }

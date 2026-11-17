@@ -244,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NoticeCenter.shared.start()
         AgentInboxWatcher.shared.start()
         InCallHelp.shared.openMeeting = { [weak self] in self?.mainWindow.show(meeting: $0, at: nil) }
+        TodoModel.shared.showPage = { [weak self] in self?.mainWindow.show(section: .reminders) }
         TodoModel.shared.openMeeting = { [weak self] in self?.mainWindow.show(meeting: $0, at: nil) }
         InCallHelp.shared.start(recorder: recorder, store: store)
         MeetingBriefModel.shared.startRecording = { [weak self] in if self?.recorder.isRecording == false { self?.toggleRecording() } }
