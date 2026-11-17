@@ -33,7 +33,7 @@ const sessionAllowed = new Set<string>();
 function reportSessionAllowed() {
   send({ type: "session_allowed", keys: [...sessionAllowed] });
 }
-/// What each waiting permission prompt would add to `sessionAllowed`, nothing for a tool that is asked about every time.
+/// What each waiting permission prompt would add to `sessionAllowed`, nothing for a tool that cannot be allowed for the session.
 const sessionKeys = new Map<string, string | undefined>();
 const resultLimit = 4000;
 const authErrors = ["authentication_failed", "oauth_org_not_allowed"];

@@ -22,7 +22,7 @@ test("a delegate rule matches Main of that workspace and that resolved target on
 test("delegate rules are parsed, never offered and never matched as a tool or command", () => {
   assert.deepEqual(parseRules([{ kind: "delegate", value: rule }]), rules);
   assert.deepEqual(suggestRules(tool, { agent: "Reviewer" }, "/repo"), []);
-  assert.equal(matchRules([{ kind: "tool", value: tool }, ...rules], tool, { agent: "Reviewer" }, "/repo"), undefined);
+  assert.equal(matchRules(rules, tool, { agent: "Reviewer" }, "/repo"), undefined, "a delegate rule is not a tool rule");
 });
 
 test("send_to_agent runs without asking only with a delegate rule, in every mode, marked as a rule", () => {

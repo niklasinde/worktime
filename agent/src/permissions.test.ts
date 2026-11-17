@@ -21,6 +21,20 @@ test("send_to_agent, complete_reminder and the routine and assistant changes are
   }
 });
 
+test("a tool the user opted out of asking runs in every mode but Plan, one for this session too, and send_to_agent only by rule", () => {
+  const update = "mcp__worktime__update_routine", create = "mcp__worktime__create_routine", send = "mcp__worktime__send_to_agent";
+  const optOut = [{ kind: "tool" as const, value: update }, { kind: "tool" as const, value: send }];
+  for (const mode of ["default", "auto", "acceptEdits"] as const) {
+    assert.deepEqual(preToolDecision(update, {}, cwd, optOut, mode), { kind: "allow", rule: update }, mode);
+    assert.deepEqual(preToolDecision(send, { text: "x" }, cwd, optOut, mode), { kind: "allow", rule: send }, mode);
+    assert.deepEqual(preToolDecision(create, {}, cwd, optOut, mode), { kind: "ask" }, `another tool ${mode}`);
+    assert.deepEqual(preToolDecision(create, {}, cwd, [], mode, undefined, undefined, new Set([create])), { kind: "allow", rule: "this session" }, mode);
+  }
+  assert.deepEqual(preToolDecision(update, {}, cwd, optOut, "plan"), { kind: "ask" });
+  assert.deepEqual(preToolDecision(create, {}, cwd, [], "plan", undefined, undefined, new Set([create])), { kind: "ask" });
+  assert.equal(preToolDecision(update, {}, cwd, optOut, "default", ["mcp__worktime__time_report"]).kind, "deny", "an assistant's allowlist still applies");
+});
+
 test("the read-only list and saved rules apply first in every mode but Plan, which keeps only the read-only list", () => {
   for (const mode of modes) {
     assert.deepEqual(preToolDecision("Read", {}, cwd, [], mode), { kind: "allow" }, mode);

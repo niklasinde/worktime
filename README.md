@@ -562,11 +562,11 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   Reminders page) through the running app: `due` reads like notify's `at` and sets an alarm, a date alone is all-day; `link` is the
   source (pull request, Jira key, Slack message, meeting or url) the reminder opens; the notes name the sender, and an open one with the
   same title and due is returned instead of a duplicate. It runs without asking, like notify. `reminders(…)` lists open ones with
-  filters; `complete_reminder(id)` always asks.
+  filters; `complete_reminder(id)` asks.
 - **Routines.** `create_routine(name, prompt, schedule, minutes?, time?, weekday?, workspace?, assistant?, folder?, model?, run_missed?)`
   adds a routine (a prompt that runs on a schedule in an agent of its own, only while the app is open) to the asking agent's
   workspace, or the one named; an existing one with the same name, prompt and schedule is returned instead. `routines` lists them
-  and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)` and `delete_routine(id)` always ask.
+  and runs without asking; `create_routine`, `update_routine(id, …)` (only the fields passed change), `set_routine_enabled(id, enabled)` and `delete_routine(id)` ask.
 - **Automations.** A routine started by an event instead of a schedule (the sidebar's Automations section, next to Routines).
   `create_automation(name, event, place?, contains?, status?, from_status?, jql?, pattern?, needs_pull_request?, prompt?, notify?, remind?,
   workspace?, assistant?, folder?, model?)` with `event` one of: Slack `slack_message` (a mention or direct message waiting on the user),
@@ -583,13 +583,17 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   them off; turned on again they start from what is there. The run is unattended like a routine's and its answer is a draft, never an
   approval. A finished run notifies (the notification about someone else's pull request offers Approve and Request changes, which open
   the page's own confirmation) and can make a reminder linked to the source. `automations` lists them and runs without asking;
-  `create_automation`, `update_automation(id, …)` and `delete_automation(id)` always ask.
+  `create_automation`, `update_automation(id, …)` and `delete_automation(id)` ask.
 - **Assistants.** `assistants(assistant?)` lists every workspace's assistants (key, name, when to use it, model, permissions, tools,
   folder), with one's instructions when it is named, and runs without asking. `create_assistant(name, description, instructions,
   icon?, model?, permission_mode?, tools?, folder?, workspace?)` writes a role file in the asking agent's workspace, or the one
   named, and refuses a name that exists; `update_assistant(assistant, …)` changes only the fields passed and `delete_assistant(assistant)`
   removes the file (its sessions and own folder stay). The file is checked like one written by hand, `tools` must be WorkTime tools,
-  and all three always ask. Main's prompt and the MCP instructions tell agents to list first and change what exists.
+  and all three ask. Main's prompt and the MCP instructions tell agents to list first and change what exists.
+- **Tools that ask.** `send_to_agent`, `complete_reminder` and the routine, automation and assistant changes ask the user, and their permission
+  card offers Allow for this session and Always allow (send to agent only per agent, as above), with a warning for the ones that create or delete
+  what runs on its own or send prompts. Settings > Agent > Tools that ask has a Don't ask switch per tool, with a confirmation for those; it is
+  saved as a rule like any Always allow. Plan mode still asks, and routines and automations never skip the question, as nobody is there to see it.
 - **Meeting briefs.** Settings > Meetings > Meeting briefs (on by default only once calendar access is given, from there or from
   Help during calls): 5, 10 or 15 minutes before a calendar meeting that is not all-day, declined or cancelled and has someone else
   invited or a call link, WorkTime posts a notification ("<title> in 10 min", click opens the notch bar) and keeps a card there

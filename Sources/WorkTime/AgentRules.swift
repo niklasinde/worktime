@@ -86,10 +86,35 @@ enum AgentRules {
     static let builtIn = AgentBuiltIn.load(sidecars: AgentLogic.sidecarCandidates(
         environment: ProcessInfo.processInfo.environment, resources: Bundle.main.resourceURL, sourceFile: #filePath))
 
-    /// Whether a permission card offers Allow for this session: MCP tools, but never the ones asked about every time.
-    static func sessionOffered(tool: String, builtIn: AgentBuiltIn? = builtIn) -> Bool {
-        tool.hasPrefix("mcp__") && !(builtIn?.alwaysAsk.contains(tool) ?? true)
+    /// Whether a permission card offers Allow for this session: MCP tools, but send to agent only per agent or in Settings.
+    static func sessionOffered(tool: String) -> Bool {
+        tool.hasPrefix("mcp__") && tool != AgentDelegation.tool
     }
+
+    /// Whether a tool that asks by default changes what runs on its own or sends prompts, so that not asking about it gets a warning.
+    static func isRisky(_ tool: String, builtIn: AgentBuiltIn? = builtIn) -> Bool {
+        builtIn?.alwaysAskRisky?.contains(tool) ?? false
+    }
+
+    /// What a tool that asks by default does, shown beside its Don't ask switch and on the permission card.
+    static func riskNote(_ tool: String) -> String {
+        let name = tool.replacingOccurrences(of: "mcp__worktime__", with: "")
+        if name == "send_to_agent" { return "Sends prompts to your other agents without asking, from every agent." }
+        if name == "compile_routine" { return "Replaces what a routine runs with a script, without asking." }
+        if name.hasPrefix("create_") { return "Creates routines, assistants or automations that then run on their own, without asking." }
+        if name.hasPrefix("delete_") { return "Deletes routines, assistants or automations without asking." }
+        return "Runs without asking."
+    }
+
+    /// The rules an agent is sent: an unattended run (a routine or automation) never skips the question for a tool that asks by
+    /// default, as nobody is there to see what it changes.
+    static func sent(_ rules: [AgentRule], unattended: Bool, builtIn: AgentBuiltIn? = builtIn) -> [AgentRule] {
+        guard unattended, let asked = builtIn?.alwaysAsk else { return rules }
+        return rules.filter { !($0.kind == .tool && asked.contains($0.value)) }
+    }
+
+    /// The rule that stops a tool asking.
+    static func dontAsk(_ tool: String) -> AgentRule { AgentRule(kind: .tool, value: tool) }
 
     /// The Always allow button of a permission card.
     static func offerButton(_ rules: [AgentRule]) -> String {
@@ -111,8 +136,11 @@ enum AgentRules {
     private static let dangerousCommands: Set<String> = ["rm", "sudo", "sh", "bash", "zsh", "eval", "xargs", "curl", "wget"]
     private static let dangerousPrefixes: Set<String> = ["git", "git push", "git reset", "git clean", "git checkout"]
 
-    /// A warning for rules that would let a command delete work or run anything, with any arguments.
-    static func warning(_ rules: [AgentRule]) -> String? {
+    /// A warning for rules that would let a command delete work or run anything, with any arguments, or a tool change what runs on its own.
+    static func warning(_ rules: [AgentRule], builtIn: AgentBuiltIn? = builtIn) -> String? {
+        if let tool = rules.first(where: { $0.kind == .tool && isRisky($0.value, builtIn: builtIn) }) {
+            return AgentLogic.displayName(tool.value) + " will then run without asking. " + riskNote(tool.value)
+        }
         let risky = rules.filter { rule in
             rule.kind == .bash && (dangerousPrefixes.contains(rule.value)
                                    || rule.value.split(separator: " ").first.map { dangerousCommands.contains(String($0)) } == true)
@@ -135,7 +163,7 @@ enum AgentRules {
         return .success(AgentRule(kind: .bash, value: words.joined(separator: " ")))
     }
 
-    /// The WorkTime MCP tools a rule can name: all but those that always ask.
+    /// The WorkTime MCP tools the add menu offers: all but those that ask by default, which have their own list in Settings.
     static func toolChoices(_ names: [String], builtIn: AgentBuiltIn) -> [String] {
         names.map { builtIn.mcpPrefix + $0 }.filter { !builtIn.alwaysAsk.contains($0) }
     }
@@ -178,6 +206,7 @@ struct AgentBuiltIn: Decodable, Equatable {
     let tools: [String]
     let mcpPrefix: String
     let alwaysAsk: [String]
+    var alwaysAskRisky: [String]?
     let commands: [Command]
 
     static let fileName = "builtin-allowed.json"

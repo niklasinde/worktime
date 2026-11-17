@@ -33,7 +33,7 @@ struct MCPServer {
         that runs on a schedule in an agent of its own); create_automation, update_automation and delete_automation manage automations (the same, \
         started by a Slack message, a pull request or a Jira ticket event instead); create_assistant, update_assistant and delete_assistant manage the role agents \
         under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
-        second. send_to_agent, complete_reminder and every routine, automation and assistant change ask the user to approve.
+        second. send_to_agent, complete_reminder and every routine, automation and assistant change ask the user to approve, unless the user switched that tool to not ask.
         """
 
     let tools: [MCPTool]

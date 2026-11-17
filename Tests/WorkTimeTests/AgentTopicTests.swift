@@ -228,6 +228,21 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
         check(choices.contains("mcp__worktime__jira_issue") && !choices.contains("mcp__worktime__send_to_agent"), "\(choices)")
     }),
 
+    ("rules: a tool that asks by default can be switched to not ask, with a warning for the risky ones, and never for an unattended run", {
+        let prefix = "mcp__worktime__"
+        let builtIn = AgentBuiltIn(tools: [], mcpPrefix: prefix, alwaysAsk: [prefix + "update_routine", prefix + "create_routine", prefix + "send_to_agent"],
+                                   alwaysAskRisky: [prefix + "create_routine", prefix + "send_to_agent"], commands: [])
+        check(!AgentRules.isRisky(prefix + "update_routine", builtIn: builtIn) && AgentRules.isRisky(prefix + "create_routine", builtIn: builtIn), "risky ones")
+        check(AgentRules.warning([AgentRules.dontAsk(prefix + "update_routine")], builtIn: builtIn) == nil, "a plain tool has no warning")
+        let warning = AgentRules.warning([AgentRules.dontAsk(prefix + "create_routine")], builtIn: builtIn)
+        check(warning?.contains("without asking") == true && warning?.contains("run on their own") == true, "\(warning ?? "none")")
+        check(AgentRules.riskNote(prefix + "send_to_agent").contains("prompts") && AgentRules.riskNote(prefix + "delete_assistant").contains("Deletes"), "notes")
+        let other = AgentRule(kind: .tool, value: prefix + "jira_issue"), bash = AgentRule(kind: .bash, value: "npm test")
+        let rules = [AgentRules.dontAsk(prefix + "update_routine"), other, bash]
+        check(AgentRules.sent(rules, unattended: false, builtIn: builtIn) == rules, "an attended agent gets them all")
+        check(AgentRules.sent(rules, unattended: true, builtIn: builtIn) == [other, bash], "an unattended run keeps asking")
+    }),
+
     ("rules: the built-in list is the sidecar's own file, and agrees with the app's tool names", {
         let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("agent/src/\(AgentBuiltIn.fileName)")
@@ -235,6 +250,9 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
         let alwaysAsk = ["send_to_agent", "complete_reminder", "create_routine", "update_routine", "set_routine_enabled", "delete_routine",
                          "create_automation", "update_automation", "delete_automation", "create_assistant", "update_assistant", "delete_assistant"]
         check(builtIn.alwaysAsk == alwaysAsk.map { builtIn.mcpPrefix + $0 } && alwaysAsk.allSatisfy(MCPServer.toolNames.contains), "\(builtIn.alwaysAsk) always ask")
+        let risky = builtIn.alwaysAskRisky ?? []
+        check(risky.contains(builtIn.mcpPrefix + "send_to_agent") && risky.contains(builtIn.mcpPrefix + "create_routine") && Set(risky).count == risky.count
+              && risky.filter { !builtIn.alwaysAsk.contains($0) } == [builtIn.mcpPrefix + "compile_routine"].filter(risky.contains), "\(risky) are risky")
         check(builtIn.tools == ["Read", "Grep", "Glob", "Agent", "Task"], "\(builtIn.tools)")
         check(builtIn.lines.contains("ls") && builtIn.lines.contains { $0.hasPrefix("sed \u{2014} no -i") }, "\(builtIn.lines)")
         check(builtIn.commands.allSatisfy { $0.anyArgs == true || $0.note != nil }, "every limited command explains its limit")

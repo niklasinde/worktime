@@ -1,12 +1,10 @@
 import { dirname, resolve, sep } from "node:path";
 import { isChromeRead, isChromeTool } from "./chrome.js";
-import { builtInAllowed, commandParts } from "./readonly.js";
+import { commandParts } from "./readonly.js";
 
 export type Rule = { kind: "bash" | "edits" | "tool" | "delegate"; value: string };
 
 const editTools = ["Edit", "Write"];
-/// Tools that are asked about every time, so they are never offered or matched as a rule.
-const alwaysAsk = new Set(builtInAllowed.alwaysAsk);
 export const delegateTool = "mcp__worktime__send_to_agent";
 
 export function parseRules(value: unknown): Rule[] {
@@ -34,7 +32,7 @@ function isInside(path: string, folder: string): boolean {
 /// a file outside the scratchpad, which no rule covers), the project folder
 /// (or the file's folder outside it) for edits, the tool itself otherwise (a Chrome action by its `sessionKey`). Empty when nothing can be offered.
 export function suggestRules(tool: string, input: Record<string, unknown>, cwd: string): Rule[] {
-  if (alwaysAsk.has(tool)) return [];
+  if (tool === delegateTool) return [];
   if (isChromeTool(tool)) return isChromeRead(tool, input) ? [] : [{ kind: "tool", value: sessionKey(tool, input) }];
   if (tool === "Bash") {
     const parts = typeof input.command === "string" ? commandParts(input.command) : undefined;
@@ -50,8 +48,8 @@ export function suggestRules(tool: string, input: Record<string, unknown>, cwd: 
   return [{ kind: "tool", value: tool }];
 }
 
-/// Whether the user may allow this tool for the rest of the session: MCP tools, but never those asked about every time.
-export const isSessionAllowable = (tool: string) => tool.startsWith("mcp__") && !alwaysAsk.has(tool);
+/// Whether the user may allow this tool for the rest of the session: MCP tools, but send_to_agent only per agent or in Settings.
+export const isSessionAllowable = (tool: string) => tool.startsWith("mcp__") && tool !== delegateTool;
 
 /// What "Allow for this session" remembers: the tool, and for Chrome's computer tool the action too, so allowing a screenshot
 /// does not allow a click.
@@ -80,7 +78,6 @@ function startsWith(words: string[], prefix: string): boolean {
 /// The rules that allow a call, joined for the transcript; undefined unless every part that is not read-only matches one.
 /// Parts are the simple commands of the parsed line, so a rule never reaches across `;`, `&&` or `|`.
 export function matchRules(rules: Rule[], tool: string, input: Record<string, unknown>, cwd: string): string | undefined {
-  if (alwaysAsk.has(tool)) return undefined;
   if (isChromeTool(tool)) return rules.find((r) => r.kind === "tool" && r.value === sessionKey(tool, input))?.value;
   if (tool === "Bash") {
     const parts = typeof input.command === "string" ? commandParts(input.command) : undefined;

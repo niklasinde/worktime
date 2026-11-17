@@ -10,7 +10,8 @@ export function parseMode(value: unknown): Mode {
   return modes.find((m) => m === value) ?? "default";
 }
 
-/// What happens to a call before the mode decides: asked of the user in every mode, allowed by the read-only list or a
+/// What happens to a call before the mode decides: asked of the user in every mode (the tools in `alwaysAsk` unless the user opted
+/// that tool out of asking, and never in plan mode), allowed by the read-only list or a
 /// saved rule (`rule` names it; undefined for a read-only command, absent for an allowed tool), or left to the mode.
 export type Decision = { kind: "ask" } | { kind: "allow"; rule?: string; readOnly?: boolean } | { kind: "defer" } | { kind: "deny"; reason: string };
 
@@ -36,7 +37,13 @@ export function preToolDecision(tool: string, input: Record<string, unknown>, cw
     const rule = matchRules(rules, tool, input, cwd);
     return rule ? { kind: "allow", rule } : { kind: "ask" };
   }
-  if (builtInAllowed.alwaysAsk.includes(tool)) return delegated ? { kind: "allow", rule: delegated } : { kind: "ask" };
+  if (builtInAllowed.alwaysAsk.includes(tool)) {
+    if (delegated) return { kind: "allow", rule: delegated };
+    if (mode === "plan") return { kind: "ask" };
+    if (session) return { kind: "allow", rule: sessionRule };
+    const rule = matchRules(rules, tool, input, cwd);
+    return rule ? { kind: "allow", rule } : { kind: "ask" };
+  }
   if (isAutoAllowedTool(tool)) return { kind: "allow" };
   if (tool === "Bash" && typeof input.command === "string" && isReadOnlyCommand(input.command)) return { kind: "allow", readOnly: true };
   if (mode === "plan") return { kind: "defer" };

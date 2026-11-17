@@ -56,11 +56,15 @@ test("edit rules cover their folder and nothing outside it", () => {
   assert.equal(matchRules(rules, "Bash", { command: "touch /work/repo/x" }, cwd), undefined);
 });
 
-test("tool rules match the tool, never send_to_agent", () => {
+test("tool rules match the tool, also one that asks by default, and are offered for it except send_to_agent", () => {
   assert.equal(matchRules([{ kind: "tool", value: "mcp__x__y" }], "mcp__x__y", {}, cwd), "mcp__x__y");
   assert.equal(matchRules([{ kind: "tool", value: "mcp__x__y" }], "mcp__x__z", {}, cwd), undefined);
+  const update = "mcp__worktime__update_routine";
+  assert.equal(matchRules([{ kind: "tool", value: update }], update, {}, cwd), update);
+  assert.deepEqual(suggestRules(update, {}, cwd), [{ kind: "tool", value: update }]);
   const send = "mcp__worktime__send_to_agent";
-  assert.equal(matchRules([{ kind: "tool", value: send }], send, {}, cwd), undefined);
+  assert.equal(matchRules([{ kind: "tool", value: send }], send, {}, cwd), send, "a rule saved in Settings");
+  assert.deepEqual(suggestRules(send, { text: "x" }, cwd), [], "offered per agent by the app, not here");
 });
 
 test("rules from the app are checked", () => {

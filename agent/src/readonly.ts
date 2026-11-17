@@ -2,7 +2,7 @@ import builtIn from "./builtin-allowed.json" with { type: "json" };
 import { scratchCommands, scratchPath } from "./scratch.js";
 
 /// What runs without asking, also listed in WorkTime's Settings, which reads this file from the build.
-export const builtInAllowed: { tools: string[]; mcpPrefix: string; alwaysAsk: string[]; everyAgent: string[]; commands: { name: string; anyArgs?: boolean; note?: string }[] } = builtIn;
+export const builtInAllowed: { tools: string[]; mcpPrefix: string; alwaysAsk: string[]; alwaysAskRisky: string[]; everyAgent: string[]; commands: { name: string; anyArgs?: boolean; note?: string }[] } = builtIn;
 
 type Token = { word: string; start: number; end: number } | { op: string } | { redirect: string; start: number; end: number };
 type Word = { word: string; start: number; end: number };
@@ -342,8 +342,8 @@ export function isReadOnlyCommand(command: string): boolean {
   return nonReadOnlyParts(command).length === 0;
 }
 
-/// Tools that run without asking: reading files and the WorkTime MCP tools, except send_to_agent, which hands a prompt to
-/// another agent and so is asked about every time.
+/// Tools that run without asking: reading files and the WorkTime MCP tools, except those in `alwaysAsk` (messaging another
+/// agent, changing routines, assistants and automations), which are asked about until the user opts a tool out of asking.
 export function isAutoAllowedTool(tool: string): boolean {
   if (builtInAllowed.tools.includes(tool)) return true;
   return tool.startsWith(builtInAllowed.mcpPrefix) && !builtInAllowed.alwaysAsk.includes(tool);

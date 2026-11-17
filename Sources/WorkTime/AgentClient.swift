@@ -153,7 +153,7 @@ final class AgentModel: ObservableObject {
             ?? defaults.string(forKey: AgentLogic.folderKey) ?? NSHomeDirectory()
         history = AgentSessionStore.list(for: historyKey)
         loadMode()
-        rulesChanged = AgentRuleStore.shared.$rules.dropFirst().sink { [weak self] in self?.client?.send(.rules($0)) }
+        rulesChanged = AgentRuleStore.shared.$rules.dropFirst().sink { [weak self] in self?.sendRules($0) }
         if let main, let session = WorkspaceDefaults.session(main.id) {
             sessionID = session
             remember(session)
@@ -195,6 +195,10 @@ final class AgentModel: ObservableObject {
     var attentionID: String { isMain ? Workspaces.mainKey(workspace ?? Workspaces.defaultID) : agentKey ?? historyKey }
 
     private var isInFront: Bool { visiblePanes > 0 && NSApp.isActive }
+
+    private func sendRules(_ rules: [AgentRule], to target: AgentClient? = nil) {
+        (target ?? client)?.send(.rules(AgentRules.sent(rules, unattended: routine != nil)))
+    }
 
     private func announce(permission id: String, tool: String, summary: String) {
         guard AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront),
@@ -715,7 +719,7 @@ final class AgentModel: ObservableObject {
                 Task { @MainActor [weak self] in self?.exited(status: status, errors: SecretRedaction.redact(errors, key: nil)) }
             })
             self.client = client
-            client.send(.rules(AgentRuleStore.shared.rules))
+            sendRules(AgentRuleStore.shared.rules, to: client)
             return client
         } catch {
             problem = "The agent could not start: \(error.localizedDescription)"

@@ -999,6 +999,7 @@ struct AgentSettingsSection: View {
     @AppStorage(AgentLogic.chromeDefaultKey) private var chromeByDefault = false
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
     @AppStorage(Automations.enabledKey) private var automationsOn = true
+    @State private var confirming: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -1029,13 +1030,13 @@ struct AgentSettingsSection: View {
             SettingsRow("Run automations") { Toggle("Run automations", isOn: $automationsOn).labelsHidden() }
         }
         SettingsSection("Always allowed", footer: "Saved with Always allow on a permission prompt and used by every agent. A command is "
-                        + "allowed when each part that is not read-only starts with one of these. Claude in Chrome\u{2019}s actions are allowed one tool at a time (a click, typing and the like one computer action at a time), and send to agent is always asked, unless you allowed Main to message that agent.") {
+                        + "allowed when each part that is not read-only starts with one of these. Claude in Chrome\u{2019}s actions are allowed one tool at a time (a click, typing and the like one computer action at a time). Tools that ask by default are listed below; Main\u{2019}s send to agent asks unless you allowed it to message that agent.") {
             if store.rules.isEmpty {
                 SettingsRow("Nothing yet", detail: "Choose Always allow when an agent asks to run something") {}
             }
             ForEach(Array(store.rules.enumerated()), id: \.element) { index, rule in
                 if index > 0 { Divider().padding(.leading, 14) }
-                SettingsRow(AgentRules.label(rule), detail: AgentRules.warning([rule]).map { _ in "Runs with any arguments, also destructive ones" }) {
+                SettingsRow(AgentRules.label(rule), detail: AgentRules.warning([rule]).map { _ in rule.kind == .tool ? AgentRules.riskNote(rule.value) : "Runs with any arguments, also destructive ones" }) {
                     if AgentRules.warning([rule]) != nil {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     }
@@ -1051,12 +1052,13 @@ struct AgentSettingsSection: View {
             Divider().padding(.leading, 14)
             AgentAddRuleRow(store: store, builtIn: builtIn)
         }
+        askedTools
         SettingsSection("Always allowed (built in)", footer: "What every agent runs without asking. Commands only when every part of the "
                         + "line is one of these, also with output redirected (> or >>) into the agent\u{2019}s own scratchpad; anything the check is unsure about is asked.") {
             if let builtIn {
                 DisclosureGroup("\(builtIn.tools.count + 1) tools, \(builtIn.commands.count) commands") {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Tools: " + (builtIn.tools + ["WorkTime\u{2019}s MCP tools except " + builtIn.alwaysAsk.map(AgentLogic.displayName)
+                        Text("Tools: " + (builtIn.tools + ["WorkTime\u{2019}s MCP tools except the ones that ask: " + builtIn.alwaysAsk.map(AgentLogic.displayName)
                             .joined(separator: ", ")]).joined(separator: ", "))
                         ForEach(builtIn.lines, id: \.self) { Text($0) }
                     }
@@ -1075,6 +1077,33 @@ struct AgentSettingsSection: View {
     }
 
     var builtIn = AgentRules.builtIn
+
+    @ViewBuilder private var askedTools: some View {
+        if let builtIn, !builtIn.alwaysAsk.isEmpty {
+            SettingsSection("Tools that ask", footer: "These ask every time until you switch Don\u{2019}t ask on for one. Routines and automations still never skip the question, "
+                            + "and Plan mode still asks.") {
+                ForEach(Array(builtIn.alwaysAsk.enumerated()), id: \.element) { index, tool in
+                    let risky = AgentRules.isRisky(tool, builtIn: builtIn)
+                    if index > 0 { Divider().padding(.leading, 14) }
+                    SettingsRow(AgentLogic.displayName(tool), detail: risky ? AgentRules.riskNote(tool) : nil) {
+                        if risky { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                        Toggle("Don\u{2019}t ask", isOn: dontAsk(tool, risky: risky)).fixedSize()
+                    }
+                }
+            }
+            .confirmationDialog("Stop asking before this tool runs?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                                titleVisibility: .visible, presenting: confirming) { tool in
+                Button("Don\u{2019}t Ask for \(AgentLogic.displayName(tool))", role: .destructive) { store.add([AgentRules.dontAsk(tool)]) }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text(AgentRules.riskNote($0)) }
+        }
+    }
+
+    private func dontAsk(_ tool: String, risky: Bool) -> Binding<Bool> {
+        Binding(get: { store.rules.contains(AgentRules.dontAsk(tool)) }, set: { on in
+            if !on { store.remove(AgentRules.dontAsk(tool)) } else if risky { confirming = tool } else { store.add([AgentRules.dontAsk(tool)]) }
+        })
+    }
 }
 
 /// Adds a rule by hand: a command prefix typed in, edits in a folder, or one of WorkTime's tools.
