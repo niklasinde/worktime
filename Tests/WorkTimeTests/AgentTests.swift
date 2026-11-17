@@ -164,6 +164,10 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
     ("agent: Claude in Chrome is off unless saved for the agent, sent with the prompt, and its connection decoded", {
         check(!AgentLogic.chromeEnabled(nil, key: "a") && !AgentLogic.chromeEnabled(["b": true], key: "a"), "off by default")
         check(AgentLogic.chromeEnabled(["a": true], key: "a"), "saved per agent")
+        check(AgentLogic.chromeEnabled(nil, key: "a", fallback: true), "the default applies when nothing is saved")
+        check(!AgentLogic.chromeEnabled(["a": false], key: "a", fallback: true), "a saved off beats the default")
+        check(AgentLogic.chromeSaved(false, byDefault: true) == false && AgentLogic.chromeSaved(false, byDefault: false) == nil
+              && AgentLogic.chromeSaved(true, byDefault: false) == true, "an off is kept only against an on default")
         check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, chrome: true).line.contains(#""chrome":true"#), "sent when on")
         check(!AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil).line.contains("chrome"), "left out when off")
         check(AgentEvent.decode(#"{"type":"chrome","connected":true}"#, cwd: "/") == .chrome(problem: nil), "connected")

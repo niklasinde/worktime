@@ -996,6 +996,7 @@ private struct AgentPermissionRow: View {
 struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
+    @AppStorage(AgentLogic.chromeDefaultKey) private var chromeByDefault = false
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
     @AppStorage(Automations.enabledKey) private var automationsOn = true
 
@@ -1014,6 +1015,9 @@ struct AgentSettingsSection: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+            }
+            SettingsRow("Claude in Chrome", detail: "Start new agents with the browser tools on. Switch it per agent with the Chrome button.") {
+                Toggle("Claude in Chrome", isOn: $chromeByDefault).labelsHidden()
             }
         }
         SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "

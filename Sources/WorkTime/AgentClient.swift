@@ -111,10 +111,14 @@ final class AgentModel: ObservableObject {
         didSet {
             guard oldValue != chrome else { return }
             var enabled = Self.defaults.dictionary(forKey: AgentLogic.chromeKey) ?? [:]
-            enabled[historyKey] = chrome ? true : nil
+            enabled[historyKey] = AgentLogic.chromeSaved(chrome, byDefault: startsWithChrome)
             Self.defaults.set(enabled, forKey: AgentLogic.chromeKey)
             if !chrome { chromeProblem = nil }
         }
+    }
+    /// Whether a new agent starts with Chrome on: the setting, except for assistants and routines.
+    private var startsWithChrome: Bool {
+        assistant == nil && routine == nil && Self.defaults.bool(forKey: AgentLogic.chromeDefaultKey)
     }
     /// Why the Chrome tools failed last, usually the extension not being connected; cleared when one works.
     @Published private(set) var chromeProblem: String?
@@ -453,7 +457,7 @@ final class AgentModel: ObservableObject {
         } else if let routine {
             model = routine.model.map { AgentLogic.storedModel($0) } ?? actingAs.map { Assistants.modelID($0.role.model) } ?? AgentLogic.defaultModel
         }
-        chrome = AgentLogic.chromeEnabled(Self.defaults.dictionary(forKey: AgentLogic.chromeKey), key: historyKey)
+        chrome = AgentLogic.chromeEnabled(Self.defaults.dictionary(forKey: AgentLogic.chromeKey), key: historyKey, fallback: startsWithChrome)
         chromeProblem = nil
     }
 

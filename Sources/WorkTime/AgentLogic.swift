@@ -231,11 +231,17 @@ struct AgentItem: Identifiable, Equatable {
 enum AgentLogic {
     static let folderKey = "agentFolder"
     static let chromeKey = "agentChrome"
+    static let chromeDefaultKey = "agentChromeByDefault"
     static let movedFoldersKey = "agentMovedFolders"
 
-    /// Whether an agent has Claude in Chrome switched on, by its history key; off unless saved.
-    static func chromeEnabled(_ saved: [String: Any]?, key: String) -> Bool {
-        saved?[key] as? Bool ?? false
+    /// Whether an agent has Claude in Chrome switched on, by its history key; `fallback` when nothing was saved for it.
+    static func chromeEnabled(_ saved: [String: Any]?, key: String, fallback: Bool = false) -> Bool {
+        saved?[key] as? Bool ?? fallback
+    }
+
+    /// What is saved for an agent's Chrome switch: nothing when it matches the plain off, so only a choice against the default is kept.
+    static func chromeSaved(_ enabled: Bool, byDefault: Bool) -> Bool? {
+        enabled || byDefault ? enabled : nil
     }
     static let summaryLimit = 100
 
