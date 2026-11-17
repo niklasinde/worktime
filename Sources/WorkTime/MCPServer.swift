@@ -28,7 +28,7 @@ struct MCPServer {
         Access to WorkTime on this Mac. Reading: the user's meetings (summaries, action items, notes, transcripts with speakers), tracked \
         activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull requests, the app's Claude agents, \
         routines, automations and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
-        one of the app's agents (pr_urls: one agent for several pull requests that belong together) and send_to_main reports back to a workspace's Main; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
+        one of the app's agents (pr_urls: one agent for several pull requests that belong together; ticket: an assistant's own session for one Jira ticket, one call per ticket) and send_to_main reports back to a workspace's Main; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
         the user's WorkTime reminders; create_routine, update_routine, set_routine_enabled and delete_routine manage routines (a prompt \
         that runs on a schedule in an agent of its own); analyze_routine and compile_routine turn the fixed parts of a routine's or automation's run into a read-only script, \
         so the model only does the judgement; create_automation, update_automation and delete_automation manage automations (the same, \

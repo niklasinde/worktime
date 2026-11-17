@@ -295,7 +295,8 @@ enum Assistants {
         return "Your assistants are role agents under you, each with its own conversation:\n"
             + usable.map { "- \($0.name): \($0.summary)" }.joined(separator: "\n")
             + "\nWhen the user asks for one, or the task clearly matches one, hand it over with send_to_agent, giving the role name as agent "
-            + "(the user approves each message), and say that you did. Check back with agent_session. Do the rest yourself."
+            + "(the user approves each message), and say that you did. For work on a Jira ticket add the ticket: the assistant then has a session of its own for it. "
+            + "Check back with agent_session. Do the rest yourself."
     }
 
     /// The assistant's prompt: what it is, then its own instructions; the workspace's MAIN.md follows through `WorkspaceInstructions`.
@@ -356,7 +357,7 @@ extension Assistants {
                 could not run them, say so.
                 - Edit and Bash calls ask the user as usual. Ask before you commit or push, and never push to main.
                 - Finish with what changed, what you checked, and what is left. When the user may not be watching, also report it to Main \
-                with send_to_main.
+                with send_to_main; in a session for a ticket, one line that starts with the ticket key and the outcome.
                 """)),
         AssistantTemplate(role: AssistantRole(
             slug: "time-reporter", name: "Time reporter", icon: "clock",
@@ -397,7 +398,8 @@ extension Assistants {
                 with each other: contracts, migrations, permissions and tests that must match across them.
 
                 You never post, approve or comment on GitHub. The user posts the review themselves. When the user may not be watching, \
-                also report the verdict to Main with send_to_main.
+                also report the verdict to Main with send_to_main; in a session for a ticket, one line that starts with the ticket key \
+                and the verdict.
 
                 \(ReviewDrafts.instructions)
                 """)),

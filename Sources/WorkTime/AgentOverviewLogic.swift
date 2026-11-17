@@ -193,7 +193,7 @@ enum AgentOverview {
             let kind = state.roleKey != nil ? "\(state.role ?? "assistant") session for the ticket" : state.pullRequests != nil ? "pull request set"
                 : state.jiraKey == nil ? "topic" : "ticket"
             let links = [state.jiraKey.map { "Jira \($0)" }, state.slackURL.map { "Slack \($0)" }, state.pullRequests.map { "PRs " + $0.joined(separator: ", ") }]
-            lines.append("  \(kind) agent \(state.key)" + links.compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
+            lines.append("  \(kind) \(state.roleKey != nil ? "key" : "agent") \(state.key)" + links.compactMap { $0 }.map { " \u{00B7} " + $0 }.joined())
         }
         if let folder = state.folder { lines.append("  folder: \(folder)") }
         if let session = state.sessionID { lines.append("  session: \(session)") }

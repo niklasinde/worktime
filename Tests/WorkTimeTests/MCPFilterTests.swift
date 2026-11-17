@@ -129,7 +129,7 @@ let mcpFilterTests: [(name: String, run: () throws -> Void)] = [
         check(try kept(["status": "waiting"]) == [pr], "status")
         check(try kept(["needs_me": true]).count == 2 && kept(["needs_me": false]).count == 3, "needs me: waiting or unseen result")
         check(try kept(["kind": "pr", "needs_me": true, "query": "BUILD"]) == ["https://github.com/acme/api/pull/8"], "combined with text")
-        check(failure { try AgentFilter(["kind": "robot"]) } == "kind must be one of main, pr, ticket, topic, assistant, not robot.", "kinds named")
+        check(failure { try AgentFilter(["kind": "robot"]) } == "kind must be one of main, pr, ticket, ticket_session, topic, assistant, not robot.", "kinds named")
         check(try AgentFilter(["kind": "pr", "workspace": "work"], names: ["status"]).applied == [], "only the named arguments")
     }),
 

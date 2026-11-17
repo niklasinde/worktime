@@ -221,6 +221,14 @@ private struct SessionLinkRow: View {
         if let url = browserURL {
             Button("Open in Browser") { NSWorkspace.shared.open(url) }
         }
+        if let key = ref.key {
+            let sessions = TicketSessions.sessions(ticket: key, in: TopicAgentStore.shared.topics)
+            if !sessions.isEmpty {
+                Menu("Sessions for \(key)") {
+                    ForEach(sessions) { topic in Button(topic.name) { AgentHub.shared.show(topic.key) } }
+                }
+            }
+        }
         Divider()
         if let linkedPR {
             if let topic = model.topic {
@@ -243,7 +251,7 @@ private struct SessionLinkRow: View {
 }
 
 /// A ticket's status, small, in the colour of its kind.
-private struct StatusChip: View {
+struct StatusChip: View {
     let text: String
     let kind: JiraStatusCategory?
 

@@ -2,23 +2,31 @@ import SwiftUI
 
 /// A workspace's pull request, ticket and set agents under their own collapsible "Agents" header, with a button to make one
 /// and chips to show only one kind.
-struct AgentsSection<Row: View>: View {
+struct AgentsSection<Row: View, TicketRow: View>: View {
     let workspace: Workspace
     let agents: [AgentState]
     let onNew: () -> Void
     @ViewBuilder let row: (AgentState) -> Row
+    /// A ticket's sessions gathered under one row.
+    @ViewBuilder let group: (TicketGroup) -> TicketRow
     @AppStorage(AgentListFilter.collapsedKey) private var collapsed = ""
     @AppStorage(AgentListFilter.storageKey) private var chosen = AgentListFilter.all.rawValue
 
     var body: some View {
         let isCollapsed = AgentListFilter.contains(workspace.id, in: collapsed)
+        let projects = Set(workspace.jiraProjects.map { $0.uppercased() })
         let counts = AgentListFilter.counts(agents)
         let filter = AgentListFilter.effective(AgentListFilter(rawValue: chosen) ?? .all, counts: counts)
         header(isCollapsed: isCollapsed)
         if !isCollapsed {
             let chips = AgentListFilter.chips(counts: counts)
             if !chips.isEmpty { chipRow(chips, counts: counts, selected: filter) }
-            ForEach(AgentListFilter.shown(agents, filter: filter), id: \.key) { row($0) }
+            ForEach(TicketGrouping.rows(AgentListFilter.shown(agents, filter: filter), projects: projects)) { entry in
+                switch entry {
+                case .agent(let state): row(state)
+                case .ticket(let ticket): group(ticket)
+                }
+            }
         }
     }
 

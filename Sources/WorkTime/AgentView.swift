@@ -104,7 +104,7 @@ struct AgentList: View {
                             assistantSection(group, now: now)
                             RoutineSection(workspace: group.workspace, hub: hub)
                             RoutineSection(workspace: group.workspace, hub: hub, automations: true)
-                            AgentsSection(workspace: group.workspace, agents: group.agents, onNew: { creating = true }) { rowButton($0, now: now) }
+                            AgentsSection(workspace: group.workspace, agents: group.agents, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0) }
                         }
                     }
                 }
@@ -129,10 +129,21 @@ struct AgentList: View {
         } message: {
             if deleting?.importedSession != nil {
                 Text("Removes the agent from the list. Its folder and Claude Code\u{2019}s session transcripts are kept.")
+            } else if deleting?.assistant != nil {
+                Text("Removes the session from the list. The assistant\u{2019}s folder and Claude Code\u{2019}s session transcripts are kept.")
             } else {
                 Text("Removes the agent from the list and deletes its folder \((deleting?.folder ?? "") as NSString).abbreviatingWithTildeInPath). "
                      + "Claude Code keeps its session transcripts.")
             }
+        }
+    }
+
+    /// A ticket's sessions under one row for the ticket.
+    private func ticketGroup(_ ticket: TicketGroup) -> some View {
+        TicketGroupView(group: ticket) { state in
+            Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: hub.selected == state.key) }
+                .buttonStyle(.plain)
+                .contextMenu { menu(state) }
         }
     }
 
@@ -693,6 +704,7 @@ struct AgentPanel: View {
                         case .refused(_, let items, let label): AgentToolGroup(label: label, items: items, row: row, icon: "xmark.circle")
                         }
                     }
+                    if isMain { TicketAskCards(workspace: model.workspace) }
                     if !model.busy, !model.blocked.isEmpty {
                         BlockedCard(calls: model.blocked, fixed: model.blockedFixed, apply: { model.apply($0, to: $1) },
                                     fixAndContinue: model.fixAndContinue, dismiss: model.dismissBlocked)
@@ -1131,6 +1143,7 @@ struct AgentSettingsSection: View {
     }
 
     @ViewBuilder private var sections: some View {
+        AssistantSessionSettings()
         SettingsSection("Permissions", footer: "How new agents start. An agent you already changed keeps its own, and assistants and routines keep theirs.") {
             SettingsRow("Default mode", detail: defaultMode.help) {
                 Picker("Default mode", selection: $defaultMode) {

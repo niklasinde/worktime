@@ -323,6 +323,11 @@ struct AgentTopicHeader: View {
     var body: some View {
         Label { Text(topic.name).lineLimit(1) } icon: { AgentTopicIcon(kind: topic.kind) }
             .font(.system(size: 15, weight: .medium))
+        if let role = topic.assistant.flatMap({ AssistantStore.shared.entry($0)?.role.name }) {
+            Text(role).font(.caption.weight(.medium)).padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Color.purple.opacity(0.14), in: Capsule()).foregroundStyle(.purple)
+                .help("This session works as the \(role) assistant, for \(topic.jiraKey ?? "this ticket") only")
+        }
         if let key = topic.jiraKey {
             Button { jira.site.flatMap { JiraLogic.browseURL(site: $0, key: key) }.map { _ = NSWorkspace.shared.open($0) } } label: { Text(key) }
                 .disabled(jira.site == nil)
