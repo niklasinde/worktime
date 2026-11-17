@@ -23,6 +23,8 @@ enum AgentEvent: Equatable {
     case delivered(id: String)
     /// A message sent while the agent worked was taken back, by the user or because the turn ended.
     case cancelled(id: String)
+    /// An unattended run's wait for the user's answer about a tool its assistant's list leaves out ended unanswered.
+    case roleTimeout(id: String)
 
     static func decode(_ line: String, cwd: String) -> AgentEvent? {
         guard let data = line.data(using: .utf8),
@@ -42,9 +44,11 @@ enum AgentEvent: Equatable {
             return .toolResult(id: string("id"), content: string("content"), isError: object["isError"] as? Bool ?? false,
                                auto: object["auto"] as? Bool ?? false, rule: object["rule"] as? String)
         case "permission_request":
+            let role = object["roleTool"] as? Bool == true
+                ? [RoleTools.offer(tool: string("tool"), tier: RoleTools.Tier(rawValue: string("tier")) ?? .read)] : []
             return .permissionRequest(id: string("id"), tool: string("tool"), summary: AgentLogic.summary(tool: string("tool"), input: input, cwd: cwd),
                                       detail: AgentLogic.detail(tool: string("tool"), input: input),
-                                      offer: (object["offer"] as? [Any] ?? []).compactMap(AgentRule.init),
+                                      offer: role + (object["offer"] as? [Any] ?? []).compactMap(AgentRule.init),
                                       toolUse: (object["toolUseId"] as? String).flatMap { $0.isEmpty ? nil : $0 })
         case "result":
             return .result(sessionID: object["sessionId"] as? String, isError: object["isError"] as? Bool ?? false, text: string("text"),
@@ -56,6 +60,7 @@ enum AgentEvent: Equatable {
         case "session_allowed": return .sessionAllowed(object["keys"] as? [String] ?? [])
         case "delivered": return .delivered(id: string("id"))
         case "cancelled": return .cancelled(id: string("id"))
+        case "role_timeout": return .roleTimeout(id: string("id"))
         case "chrome": return .chrome(problem: object["connected"] as? Bool == true ? nil : string("message").isEmpty ? "Not connected" : string("message"))
         default: return nil
         }
@@ -125,12 +130,15 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
 enum AgentRequest {
     case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
                 chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
-                instructions: [String: String]? = nil)
+                instructions: [String: String]? = nil, roleWaitSeconds: Int? = nil)
     /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
     case message(id: String, text: String, images: [AgentImage] = [])
     case cancelMessage(id: String)
     /// `session` also allows the same call for the rest of the session.
-    case permission(id: String, allow: Bool, session: Bool = false)
+    /// `add` also puts a tool the assistant's list left out on the list of the running session; `message` is what the agent reads on a denial.
+    case permission(id: String, allow: Bool, session: Bool = false, add: Bool = false, message: String? = nil)
+    /// Lets the agent use a tool for the rest of the session without a question on the screen, as the Blocked card's fix does.
+    case allowSession(key: String)
     /// The answer to the sidecar's `resolve_target`: the key send_to_agent would deliver to, nil when it is unclear.
     case target(id: String, key: String?)
     case mode(AgentPermissionMode)
@@ -142,8 +150,9 @@ enum AgentRequest {
     var line: String {
         var object: [String: Any]
         switch self {
-        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom, let images, let instructions):
+        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
             object = ["type": "prompt", "text": text, "cwd": cwd, "permissionMode": mode.rawValue]
+            if let roleWaitSeconds { object["roleWaitSeconds"] = roleWaitSeconds }
             if let allowedTools { object["allowedMcpTools"] = allowedTools }
             if let delegateFrom { object["delegateFrom"] = delegateFrom }
             if !images.isEmpty { object["images"] = images.map(\.json) }
@@ -160,9 +169,12 @@ enum AgentRequest {
             if !images.isEmpty { object["images"] = images.map(\.json) }
         case .cancelMessage(let id): object = ["type": "cancel_message", "id": id]
         case .mode(let mode): object = ["type": "mode", "mode": mode.rawValue]
-        case .permission(let id, let allow, let session):
+        case .permission(let id, let allow, let session, let add, let message):
             object = ["type": "permission", "id": id, "allow": allow]
             if session { object["session"] = true }
+            if add { object["add"] = true }
+            if let message { object["message"] = message }
+        case .allowSession(let key): object = ["type": "allow_session", "key": key]
         case .target(let id, let key):
             object = ["type": "target", "id": id]
             if let key { object["key"] = key }
@@ -260,7 +272,7 @@ enum AgentLogic {
     @discardableResult
     static func apply(_ event: AgentEvent, to items: inout [AgentItem]) -> String? {
         switch event {
-        case .ready, .chrome, .sessionAllowed, .delivered, .cancelled: return nil
+        case .ready, .chrome, .sessionAllowed, .delivered, .cancelled, .roleTimeout: return nil
         case .idle:
             settleStreaming(in: &items)
             return nil

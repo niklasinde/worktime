@@ -13,7 +13,21 @@ export function parseMode(value: unknown): Mode {
 /// What happens to a call before the mode decides: asked of the user in every mode (the tools in `alwaysAsk` unless the user opted
 /// that tool out of asking, and never in plan mode), allowed by the read-only list or a
 /// saved rule (`rule` names it; undefined for a read-only command, absent for an allowed tool), or left to the mode.
-export type Decision = { kind: "ask" } | { kind: "allow"; rule?: string; readOnly?: boolean } | { kind: "defer" } | { kind: "deny"; reason: string };
+export type Decision = { kind: "ask" } | { kind: "allow"; rule?: string; readOnly?: boolean } | { kind: "defer" } | { kind: "deny"; reason: string }
+  | { kind: "missing"; tier: RoleTier };
+
+/// How much asking a WorkTime tool needs once it is on an assistant's list: `read` runs without asking, `ask` asks each time, `risky` asks each
+/// time and changes what runs on its own or sends prompts, so adding it to a list carries a warning.
+export type RoleTier = "read" | "ask" | "risky";
+
+export function roleTier(tool: string): RoleTier {
+  return builtInAllowed.alwaysAskRisky.includes(tool) ? "risky" : builtInAllowed.alwaysAsk.includes(tool) ? "ask" : "read";
+}
+
+/// A tool the assistant's list leaves out that the user may add to it: WorkTime's own tools only. Tools of other servers are never added this way.
+export function addableToRole(tool: string, allowed: string[] | undefined): boolean {
+  return mcpDenied(tool, allowed) && tool.startsWith(builtInAllowed.mcpPrefix);
+}
 
 /// An assistant's MCP allowlist: tools of other servers and unlisted ones are refused, whatever the mode or the rules. Claude in
 /// Chrome keeps its own rules, notify, its scheduling tools and add_reminder are open to every agent, and tools that are not MCP tools follow
@@ -39,7 +53,8 @@ export function selfReport(tool: string, input: Record<string, unknown>, delegat
 export function preToolDecision(tool: string, input: Record<string, unknown>, cwd: string, rules: Rule[], mode: Mode, allowedMcp?: string[], delegated?: string,
                                 sessionAllowed: ReadonlySet<string> = new Set()): Decision {
   const session = isSessionAllowable(tool) && sessionAllowed.has(sessionKey(tool, input));
-  if (mcpDenied(tool, allowedMcp)) return { kind: "deny", reason: `${tool} is not one of this assistant's tools. Its role file lists the tools it may use.` };
+  if (addableToRole(tool, allowedMcp)) return { kind: "missing", tier: roleTier(tool) };
+  if (mcpDenied(tool, allowedMcp)) return { kind: "deny", reason: `${tool} is not one of this assistant's tools, and tools of other servers cannot be added to its list. Its role file lists the tools it may use.` };
   if (isChromeTool(tool)) {
     if (isChromeRead(tool, input)) return { kind: "allow", readOnly: true };
     if (session) return { kind: "allow", rule: sessionRule };

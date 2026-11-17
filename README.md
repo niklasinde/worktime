@@ -684,6 +684,20 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   what runs on its own or send prompts. Settings > Agent > Tools that ask has a Don't ask switch per tool, with a confirmation for those; it is
   saved as a rule like any Always allow. Plan mode still asks, and routines and automations never skip the question, as nobody is there to see it
   (except `send_to_main`, which they may use once you switch it to not ask).
+- **A tool an assistant's file leaves out.** An assistant may only call the WorkTime tools its role file lists under `tools:` (plus the ones every
+  agent has). Calling another WorkTime tool no longer fails: the call **waits** inside the turn, the agent keeps its place, and the user is asked
+  on the card ("<Assistant> wants to use <tool>, which is not in its tools"), in a notification and in the notch bar's "Waiting for you":
+  **Add to its tools** writes the name into the file's `tools:` list (the rest of the file is left as it is) and runs the call; **Allow once**
+  runs this call only; **Allow for this session** also runs the later ones until the agent restarts; **Deny** refuses it. A tool that asks by
+  default, or that changes what runs on its own, still asks about every call once it is on the list, and the card carries its warning. Tools of
+  other servers are never added this way and keep their refusal; Bash, Edit and the like follow the permission mode, not the list.
+  A routine or automation waits too, for the time set in Settings > Agent > Notifications (30 minutes by default), with its session open and its
+  row saying "waiting for you: <tool>"; on Deny or timeout it goes on without the tool, is told the user will be asked, and after the run a
+  notification asks "Add <tool> to <assistant>?" (Add / Dismiss), once for each assistant and tool.
+- **Blocked.** When a turn ends after refusals (a denied call, a tool outside the assistant's list, Claude in Chrome off), the transcript, a
+  notification and the notch bar show a Blocked card that lists each refused call once with its fixes (Add to its tools, Allow for this
+  session, Turn Chrome on for this session, or a saved Always allow). **Fix and continue** applies the fixes that save no rule and sends "Continue:
+  the blocked tools are now available" as the next message of the same session.
 - **Meeting briefs.** Settings > Meetings > Meeting briefs (on by default only once calendar access is given, from there or from
   Help during calls): 5, 10 or 15 minutes before a calendar meeting that is not all-day, declined or cancelled and has someone else
   invited or a call link, WorkTime posts a notification ("<title> in 10 min", click opens the notch bar) and keeps a card there

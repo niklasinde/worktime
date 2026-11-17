@@ -1,6 +1,6 @@
-import { test } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { modes, parseMode, preToolDecision, selfReport } from "./permissions.js";
+import { addableToRole, modes, parseMode, preToolDecision, roleTier, selfReport } from "./permissions.js";
 import { builtInAllowed } from "./readonly.js";
 
 const cwd = "/repo";
@@ -33,7 +33,7 @@ test("a tool the user opted out of asking runs in every mode but Plan, one for t
   }
   assert.deepEqual(preToolDecision(update, {}, cwd, optOut, "plan"), { kind: "ask" });
   assert.deepEqual(preToolDecision(create, {}, cwd, [], "plan", undefined, undefined, new Set([create])), { kind: "ask" });
-  assert.equal(preToolDecision(update, {}, cwd, optOut, "default", ["mcp__worktime__time_report"]).kind, "deny", "an assistant's allowlist still applies");
+  assert.equal(preToolDecision(update, {}, cwd, optOut, "default", ["mcp__worktime__time_report"]).kind, "missing", "an assistant's allowlist still applies: the user is asked");
 });
 
 test("the read-only list and saved rules apply first in every mode but Plan, which keeps only the read-only list", () => {
@@ -60,9 +60,9 @@ test("the rest is left to the mode: canUseTool asks in Ask, the classifier decid
 test("an assistant's allowlist refuses unlisted MCP tools in every mode and leaves the other tools to the mode", () => {
   const allowed = ["mcp__worktime__time_report", "mcp__worktime__jira_issue"];
   for (const mode of modes) {
-    assert.equal(preToolDecision("mcp__worktime__slack_thread", {}, cwd, rules, mode, allowed).kind, "deny", mode);
-    assert.equal(preToolDecision("mcp__worktime__send_to_agent", {}, cwd, rules, mode, allowed).kind, "deny", mode);
-    assert.equal(preToolDecision("mcp__worktime__complete_reminder", {}, cwd, rules, mode, allowed).kind, "deny", mode);
+    assert.deepEqual(preToolDecision("mcp__worktime__slack_thread", {}, cwd, rules, mode, allowed), { kind: "missing", tier: "read" }, mode);
+    assert.deepEqual(preToolDecision("mcp__worktime__send_to_agent", {}, cwd, rules, mode, allowed), { kind: "missing", tier: "risky" }, mode);
+    assert.deepEqual(preToolDecision("mcp__worktime__complete_reminder", {}, cwd, rules, mode, allowed), { kind: "missing", tier: "ask" }, mode);
     assert.equal(preToolDecision("mcp__other__thing", {}, cwd, rules, mode, allowed).kind, "deny", mode);
     assert.deepEqual(preToolDecision("mcp__worktime__time_report", {}, cwd, [], mode, allowed), { kind: "allow" }, mode);
     assert.deepEqual(preToolDecision("Read", {}, cwd, [], mode, allowed), { kind: "allow" }, mode);
@@ -73,7 +73,7 @@ test("an assistant's allowlist refuses unlisted MCP tools in every mode and leav
     assert.deepEqual(preToolDecision("Bash", { command: "rm -rf build" }, cwd, [], mode, allowed), { kind: "defer" }, mode);
   }
   assert.deepEqual(preToolDecision("mcp__worktime__send_to_agent", {}, cwd, [], "default", ["mcp__worktime__send_to_agent"]), { kind: "ask" });
-  assert.equal(preToolDecision("mcp__worktime__slack_thread", {}, cwd, [], "default", []).kind, "deny");
+  assert.deepEqual(preToolDecision("mcp__worktime__slack_thread", {}, cwd, [], "default", []), { kind: "missing", tier: "read" });
 });
 
 test("without an allowlist every MCP tool is decided as before", () => {
@@ -120,4 +120,22 @@ test("a Main reporting to its own workspace's Main is refused before anyone is a
   assert.equal(selfReport(send, { text: "x", workspace: "reviews" }, "work"), undefined);
   assert.equal(selfReport(send, { text: "x" }, undefined), undefined, "an assistant is not a Main");
   assert.equal(selfReport("mcp__worktime__send_to_agent", { text: "x" }, "work"), undefined);
+});
+
+test("a tool the list leaves out can be added only when it is one of WorkTime's, and each tier is told apart", () => {
+  const allowed = ["mcp__worktime__jira_issue"];
+  assert.equal(addableToRole("mcp__worktime__jira_search", allowed), true);
+  assert.equal(addableToRole("mcp__worktime__jira_issue", allowed), false, "listed");
+  assert.equal(addableToRole("mcp__other__thing", allowed), false, "another server is never added");
+  assert.equal(addableToRole("Bash", allowed), false, "not an MCP tool");
+  assert.equal(addableToRole("mcp__worktime__jira_search", undefined), false, "no list, no question");
+  assert.equal(roleTier("mcp__worktime__jira_search"), "read");
+  assert.equal(roleTier("mcp__worktime__update_routine"), "ask");
+  assert.equal(roleTier("mcp__worktime__create_routine"), "risky");
+});
+
+test("once the tool is on the list a tool that asks by default still asks for each call", () => {
+  const allowed = ["mcp__worktime__update_routine"];
+  assert.deepEqual(preToolDecision("mcp__worktime__update_routine", {}, cwd, [], "default", allowed), { kind: "ask" });
+  assert.deepEqual(preToolDecision("mcp__worktime__jira_search", {}, cwd, [], "default", [...allowed, "mcp__worktime__jira_search"]), { kind: "allow" });
 });

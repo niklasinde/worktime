@@ -10,7 +10,9 @@ export const tools = ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Agent"];
 /// The texts the app resolves from the user's template files for this prompt; a missing one falls back to the sidecar's own copy.
 export type Instructions = { actions?: string; review?: string; report?: string };
 
-export type PromptOptions = { cwd: string; sessionId?: string; forkSession?: boolean; appendSystemPrompt?: string; instructions?: Instructions; chrome?: boolean; allowedMcpTools?: string[]; delegateFrom?: string };
+export type PromptOptions = { cwd: string; sessionId?: string; forkSession?: boolean; appendSystemPrompt?: string; instructions?: Instructions; chrome?: boolean; allowedMcpTools?: string[]; delegateFrom?: string;
+  /** How long an unattended run waits for the user to answer about a tool its assistant's list leaves out; interactive runs wait for as long as it takes. */
+  roleWaitSeconds?: number };
 
 /// The session options that come from the prompt; the sidecar adds its environment, MCP servers, hooks and permission callback.
 export function sessionOptions(input: PromptOptions, model: string, mode: Mode): Options {

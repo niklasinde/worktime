@@ -94,6 +94,8 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/AgentRules.swift \
     Sources/WorkTime/AgentOverviewLogic.swift \
     Sources/WorkTime/AgentAttentionLogic.swift \
+    Sources/WorkTime/RoleToolLogic.swift \
+    Sources/WorkTime/BlockedLogic.swift \
     Sources/WorkTime/DecisionLogic.swift \
     Sources/WorkTime/AgentSessionLogic.swift \
     Sources/WorkTime/AgentToolGroupLogic.swift \
@@ -227,6 +229,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/SessionLinksTests.swift \
     Tests/WorkTimeTests/SessionRefLookupTests.swift \
     Tests/WorkTimeTests/PromptTemplateTests.swift \
+    Tests/WorkTimeTests/RoleToolTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

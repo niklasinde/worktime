@@ -660,6 +660,7 @@ struct AgentPanel: View {
 
     private func row(_ item: AgentItem) -> AgentItemRow {
         AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1, session: $2) },
+                     addTool: { model.answer(item, allow: true, add: true) },
                      move: { if let folder = $0 { model.move(to: folder) } else { model.changeFolder() } })
     }
 
@@ -690,6 +691,10 @@ struct AgentPanel: View {
                         case .tools(_, let items, let label): AgentToolGroup(label: label, items: items, row: row)
                         case .refused(_, let items, let label): AgentToolGroup(label: label, items: items, row: row, icon: "xmark.circle")
                         }
+                    }
+                    if !model.busy, !model.blocked.isEmpty {
+                        BlockedCard(calls: model.blocked, fixed: model.blockedFixed, apply: { model.apply($0, to: $1) },
+                                    fixAndContinue: model.fixAndContinue, dismiss: model.dismissBlocked)
                     }
                     if model.busy {
                         HStack(spacing: 8) {
@@ -814,6 +819,8 @@ struct AgentItemRow: View {
     let item: AgentItem
     let folder: String
     let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
+    /// Puts the tool a permission card asks about on the assistant's list.
+    var addTool: () -> Void = {}
     /// Moves the agent to the folder, or asks for one when nil.
     let move: (String?) -> Void
     @Environment(\.transcriptTypography) private var typography
@@ -865,7 +872,7 @@ struct AgentItemRow: View {
             AgentToolRow(name: name, summary: summary, detail: detail, result: result, isError: isError, auto: auto, rule: rule,
                          decision: item.decision, repeats: item.repeats)
         case .permission(let tool, let summary, let detail, let offer, let allowed):
-            AgentPermissionRow(tool: tool, summary: summary, detail: detail, offer: offer, allowed: allowed, answer: answer)
+            AgentPermissionRow(tool: tool, summary: summary, detail: detail, offer: offer, allowed: allowed, answer: answer, addTool: addTool)
         case .status(let text):
             Text(text).font(.caption).foregroundStyle(.secondary)
         case .error(let text):
@@ -980,10 +987,14 @@ private struct AgentPermissionRow: View {
     let offer: [AgentRule]
     let allowed: Bool?
     let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
+    let addTool: () -> Void
+
+    private var role: AgentRule? { RoleTools.role(in: offer) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Allow \(AgentLogic.displayName(tool))?", systemImage: "hand.raised").font(.callout.weight(.medium))
+            Label(role.map { RoleTools.title(tool: tool, assistant: $0.workspaceName) } ?? "Allow \(AgentLogic.displayName(tool))?", systemImage: "hand.raised")
+                .font(.callout.weight(.medium))
             if tool == "Bash" {
                 AgentCode(text: detail, font: .callout, maxHeight: AgentCode.lines(10, font: .callout), collapsedLines: AgentCode.previewLines)
             } else {
@@ -998,19 +1009,24 @@ private struct AgentPermissionRow: View {
                 if let always = AgentRules.offer(offer) {
                     Text(always).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                if let warning = AgentRules.warning(offer) {
+                if let warning = role.flatMap({ RoleTools.note(tool: tool, tier: RoleTools.tier(of: $0)) }) ?? AgentRules.warning(offer) {
                     Label(warning, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
+                    if role != nil {
+                        Button("Add to its tools") { addTool() }
+                            .buttonStyle(.borderedProminent)
+                            .help("Puts the tool on the list in the assistant\u{2019}s file, so it may use it from now on")
+                    }
                     Button("Allow once") { answer(true, false, false) }
                     if AgentRules.sessionOffered(tool: tool) {
                         Button("Allow for this session") { answer(true, false, true) }
                             .help("Runs this tool without asking until the agent is restarted")
                     }
-                    if !offer.isEmpty {
+                    if role == nil, !offer.isEmpty {
                         Button(AgentRules.offerButton(offer)) { answer(true, true, false) }
                             .help("Saved in Settings \u{203A} Agent, for every agent")
                     }
@@ -1032,6 +1048,7 @@ struct AgentSettingsSection: View {
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
     @AppStorage(Decisions.keepKey) private var keepDecisions = true
     @AppStorage(Decisions.dropDownKey) private var dropDownDecisions = true
+    @AppStorage(RoleTools.waitKey) private var roleWaitMinutes = RoleTools.defaultWaitMinutes
     @State private var alertWarning: String?
     @AppStorage(Automations.enabledKey) private var automationsOn = true
     @State private var confirming: String?
@@ -1127,7 +1144,7 @@ struct AgentSettingsSection: View {
         }
         transcriptSection
         SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "
-                        + "Allow once, Deny and Reply work from the notification. Routines never ask. A decision, such as an automation\u{2019}s question or "
+                        + "Allow once, Deny and Reply work from the notification, and so do Add to its tools, for a tool an assistant\u{2019}s file leaves out, and Fix and continue, after refusals. Routines never ask, except about a missing tool. A decision, such as an automation\u{2019}s question or "
                         + "an approval, stays until you answer: macOS must show WorkTime\u{2019}s notifications as Alerts for one to stay on screen.") {
             SettingsRow("Notify when an agent needs me") { Toggle("Notify when an agent needs me", isOn: $notifyAttention).labelsHidden() }
             SettingsRow("Keep decisions on screen", detail: "A decision whose notification was swept away comes back quietly after 10 and 30 minutes and an hour.") {
@@ -1135,6 +1152,13 @@ struct AgentSettingsSection: View {
             }
             SettingsRow("Drop down the notch for decisions", detail: "When one starts waiting and you are in none of WorkTime\u{2019}s windows, the notch bar opens on it and stays open until you have answered or closed it.") {
                 Toggle("Drop down the notch for decisions", isOn: $dropDownDecisions).labelsHidden()
+            }
+            SettingsRow("Routines wait for a missing tool", detail: "A routine whose assistant calls a tool its file leaves out waits this long for your answer (Add to its tools, Allow once or Deny) with its session open, then goes on without the tool and asks again after the run. An agent you work with waits for as long as you take.") {
+                Picker("Routines wait for a missing tool", selection: $roleWaitMinutes) {
+                    ForEach([5, 15, 30, 60, 120], id: \.self) { Text("\($0) min").tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
             }
             SettingsRow("Notification style", detail: alertWarning ?? "Alerts: a decision stays on screen until you answer.") {
                 Button("Open Notification Settings") { Permissions.openNotificationSettings() }

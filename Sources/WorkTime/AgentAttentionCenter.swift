@@ -16,6 +16,10 @@ final class AgentAttentionCenter: ObservableObject {
         let body: String
         let sessionOffered: Bool
         let created: Date
+        /// A tool the assistant's list leaves out: Add to its tools, Allow once, Deny.
+        var roleTool = false
+        /// The turn ended after refusals: Fix and continue.
+        var blocked = false
     }
 
     @Published private(set) var approvals: [Approval] = []
@@ -35,10 +39,22 @@ final class AgentAttentionCenter: ObservableObject {
 
     /// A button or reply of a notification; an agent no longer there (the app was restarted since) is opened instead.
     func respond(agent: String, request: String?, action: String, text: String?) {
+        if agent == RoleToolSuggestionStore.agentKey {
+            guard let request else { return }
+            switch AgentAttention.response(action: action, text: text) {
+            case .addTool: RoleToolSuggestionStore.shared.respond(request, add: true)
+            case .dismiss: RoleToolSuggestionStore.shared.respond(request, add: false)
+            default: break
+            }
+            return
+        }
         guard let model = models[agent]?.model else { return AgentHub.shared.show(agent) }
         switch AgentAttention.response(action: action, text: text) {
         case .allow: if let request { model.answer(permission: request, allow: true) }
         case .allowSession: if let request { model.answer(permission: request, allow: true, session: true) }
+        case .addTool: if let request { model.answer(permission: request, allow: true, add: true) }
+        case .fixAndContinue: model.fixAndContinue()
+        case .dismiss: break
         case .deny: if let request { model.answer(permission: request, allow: false) }
         case .answer(let reply): model.reply(reply)
         case .stop: model.cancelFromMain()

@@ -116,6 +116,7 @@ private struct QuickChatContent: View {
 
     private func row(_ item: AgentItem) -> AgentItemRow {
         AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1, session: $2) },
+                     addTool: { model.answer(item, allow: true, add: true) },
                      move: { if let folder = $0 { model.move(to: folder) } else { model.changeFolder() } })
     }
 

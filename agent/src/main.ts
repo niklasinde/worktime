@@ -3,23 +3,25 @@ import { missingFolderError } from "./folder.js";
 import { query, type HookCallback, type PermissionResult, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { chromeResultStatus, chromeServerStatus, isChromeTool } from "./chrome.js";
 import { mcpServers, sessionOptions, type PromptOptions } from "./options.js";
-import { parseMode, preToolDecision, selfReport, type Decision, type Mode } from "./permissions.js";
+import { parseMode, preToolDecision, selfReport, type Decision, type Mode, type RoleTier } from "./permissions.js";
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
 import { TextStream } from "./stream.js";
 import { userMessage, type PromptImage } from "./images.js";
 import { PromptQueue } from "./promptqueue.js";
+import { RoleWaits } from "./rolewait.js";
 import { delegateTool, hasDelegateRules, isSessionAllowable, matchDelegate, parseRules, sessionKey, suggestRules, type Rule } from "./rules.js";
 
 type Input =
   | ({ type: "prompt"; text: string; model?: string; permissionMode?: string; images?: PromptImage[] } & PromptOptions)
   | { type: "message"; id: string; text: string; images?: PromptImage[] }
   | { type: "cancel_message"; id: string }
-  | { type: "permission"; id: string; allow: boolean; session?: boolean }
+  | { type: "permission"; id: string; allow: boolean; session?: boolean; add?: boolean; message?: string }
   | { type: "target"; id: string; key?: string }
   | { type: "mode"; mode: string }
   | { type: "interrupt" }
   | { type: "rules"; rules: unknown }
-  | { type: "revoke_session"; key?: string };
+  | { type: "revoke_session"; key?: string }
+  | { type: "allow_session"; key: string };
 
 const model = process.env.WORKTIME_AGENT_MODEL ?? "claude-opus-5-5";
 /// Tool calls allowed without asking, with the rule that allowed them when it was one of the user's.
@@ -35,6 +37,10 @@ function reportSessionAllowed() {
 }
 /// What each waiting permission prompt would add to `sessionAllowed`, nothing for a tool that cannot be allowed for the session.
 const sessionKeys = new Map<string, string | undefined>();
+/// WorkTime tools the user added to the assistant's list, or allowed it to use for the rest of this session, after the list left them out.
+const roleAdded = new Set<string>();
+/// The questions about a tool the assistant's list leaves out that wait for the user.
+const roleWaits = new RoleWaits();
 const resultLimit = 4000;
 const authErrors = ["authentication_failed", "oauth_org_not_allowed"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"].includes(key)));
@@ -79,7 +85,17 @@ async function decide(tool: string, input: Record<string, unknown>, options: Pro
   if (own) return { kind: "deny", reason: own } as Decision;
   const check = tool === delegateTool && hasDelegateRules(rules, options.delegateFrom);
   const delegated = check ? matchDelegate(rules, options.delegateFrom, await resolveTarget(input)) : undefined;
-  return preToolDecision(tool, input, options.cwd, rules, mode, options.allowedMcpTools, delegated, sessionAllowed);
+  const listed = options.allowedMcpTools && [...options.allowedMcpTools, ...roleAdded];
+  return preToolDecision(tool, input, options.cwd, rules, mode, listed, delegated, sessionAllowed);
+}
+
+/// Asks the user about a tool the assistant's list leaves out, and waits: the turn goes on as soon as the answer comes.
+function askRole(tool: string, input: Record<string, unknown>, tier: RoleTier, options: PromptOptions, toolUseId?: string) {
+  const id = String(++nextPermission);
+  const limit = options.roleWaitSeconds ? options.roleWaitSeconds * 1000 : undefined;
+  const answer = roleWaits.ask(id, tool, limit, () => send({ type: "role_timeout", id }));
+  send({ type: "permission_request", id, toolUseId, tool, input, roleTool: true, tier, offer: [], waitSeconds: options.roleWaitSeconds });
+  return answer;
 }
 
 function ask(tool: string, input: Record<string, unknown>, cwd: string, toolUseId?: string): Promise<PermissionResult> {
@@ -104,7 +120,20 @@ function preToolUse(options: PromptOptions): HookCallback {
     if (hook.hook_event_name !== "PreToolUse") return {};
     const input = (hook.tool_input ?? {}) as Record<string, unknown>;
     const cwd = options.cwd;
-    const decision = await decide(hook.tool_name, input, options);
+    let decision = await decide(hook.tool_name, input, options);
+    if (decision.kind === "missing") {
+      const answer = await askRole(hook.tool_name, input, decision.tier, options, hook.tool_use_id);
+      if (!answer.allow) {
+        return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: answer.message ?? "The user denied this tool call." } };
+      }
+      if (answer.add || answer.session) {
+        roleAdded.add(hook.tool_name);
+        decision = await decide(hook.tool_name, input, options);
+      } else {
+        hookAllowed.add(hook.tool_use_id);
+        return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } };
+      }
+    }
     if (decision.kind === "defer") return {};
     if (decision.kind === "deny") {
       return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: decision.reason } };
@@ -192,6 +221,7 @@ function report(type: "delivered" | "cancelled", ids: string[]) {
 
 function denyPending(reason: string) {
   for (const resolve of pending.values()) resolve({ behavior: "deny", message: reason, interrupt: true });
+  roleWaits.denyAll(reason);
   pending.clear();
   sessionKeys.clear();
 }
@@ -223,6 +253,7 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
         if (hookAllowed.delete(toolUseID)) return { behavior: "allow" };
         const decision = await decide(tool, toolInput, input);
         if (decision.kind === "deny") return { behavior: "deny", message: decision.reason };
+        if (decision.kind === "missing") return { behavior: "deny", message: `${tool} is not one of this assistant's tools.` };
         return decision.kind === "allow" ? allowed(decision, toolUseID) : ask(tool, toolInput, input.cwd, toolUseID);
       },
     },
@@ -276,6 +307,7 @@ function handle(line: string) {
       if (running?.queue.cancel(input.id)) send({ type: "cancelled", id: input.id });
       break;
     case "permission": {
+      if (roleWaits.answer(input.id, { allow: input.allow, add: input.add === true, session: input.session === true, message: input.message })) return;
       const resolve = pending.get(input.id);
       pending.delete(input.id);
       const key = sessionKeys.get(input.id);
@@ -284,7 +316,7 @@ function handle(line: string) {
         sessionAllowed.add(key);
         reportSessionAllowed();
       }
-      resolve?.(input.allow ? { behavior: "allow" } : { behavior: "deny", message: "The user denied this tool call." });
+      resolve?.(input.allow ? { behavior: "allow" } : { behavior: "deny", message: input.message ?? "The user denied this tool call." });
       break;
     }
     case "target": {
@@ -299,6 +331,12 @@ function handle(line: string) {
       break;
     case "rules":
       rules = parseRules(input.rules);
+      break;
+    case "allow_session":
+      if (isSessionAllowable(input.key) && !sessionAllowed.has(input.key)) {
+        sessionAllowed.add(input.key);
+        reportSessionAllowed();
+      }
       break;
     case "revoke_session":
       if (input.key === undefined) sessionAllowed.clear();

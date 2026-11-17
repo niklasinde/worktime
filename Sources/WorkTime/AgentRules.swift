@@ -4,6 +4,8 @@ import Foundation
 struct AgentRule: Codable, Hashable {
     enum Kind: String, Codable {
         case bash, edits, tool, delegate
+        /// Not a saved rule: the question about a tool the assistant's list leaves out. `value` is the tool, `title` its tier.
+        case role
     }
 
     let kind: Kind
@@ -65,6 +67,7 @@ enum AgentRules {
         case .edits: return "Edits in " + abbreviated(rule.value)
         case .tool: return toolLabel(rule.value)
         case .delegate: return rule.delegateLabel
+        case .role: return "Add " + toolLabel(rule.value) + " to the assistant\u{2019}s tools"
         }
     }
 
@@ -132,6 +135,7 @@ enum AgentRules {
         case .edits: return "Always allow edits in " + abbreviated(first.value)
         case .tool: return "Always allow " + toolLabel(first.value)
         case .delegate: return first.delegateLabel + " without asking"
+        case .role: return nil
         }
     }
 

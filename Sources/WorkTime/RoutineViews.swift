@@ -77,7 +77,7 @@ struct RoutineSection: View {
             Image(systemName: routine.isAutomation ? "bolt.fill" : "clock.arrow.2.circlepath").font(.callout).foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(routine.name).font(.callout).lineLimit(1)
-                Text(Routines.detail(routine, now: now, waiting: notices.waitingAsks(routine: routine.id), answer: store.lastAnswer(routine))).font(.caption2).foregroundStyle(running ? Color.orange : .secondary).lineLimit(1)
+                Text(Routines.detail(routine, now: now, waiting: notices.waitingAsks(routine: routine.id), answer: store.lastAnswer(routine), toolWait: store.roleWaiting[routine.id])).font(.caption2).foregroundStyle(running ? Color.orange : .secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
         }

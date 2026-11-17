@@ -428,9 +428,18 @@ private struct ApprovalRow: View {
                 Text(approval.title).lineLimit(2)
                 Text(approval.body).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 HStack(spacing: 6) {
-                    Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.borderedProminent)
-                    if approval.sessionOffered { Button("Allow for this session") { answer(AgentAttention.allowSessionAction) }.buttonStyle(.bordered) }
-                    Button("Deny") { answer(AgentAttention.denyAction) }.buttonStyle(.bordered)
+                    if approval.blocked {
+                        Button("Fix and continue") { answer(AgentAttention.fixAction) }.buttonStyle(.borderedProminent)
+                    } else {
+                        if approval.roleTool {
+                            Button("Add to its tools") { answer(AgentAttention.addToolAction) }.buttonStyle(.borderedProminent)
+                            Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.bordered)
+                        } else {
+                            Button("Allow once") { answer(AgentAttention.allowAction) }.buttonStyle(.borderedProminent)
+                        }
+                        if approval.sessionOffered { Button("Allow for this session") { answer(AgentAttention.allowSessionAction) }.buttonStyle(.bordered) }
+                        Button("Deny") { answer(AgentAttention.denyAction) }.buttonStyle(.bordered)
+                    }
                     Button("Open") { onOpen(); answer(UNNotificationDefaultActionIdentifier) }.buttonStyle(.plain).foregroundStyle(.secondary)
                 }
                 .controlSize(.small)

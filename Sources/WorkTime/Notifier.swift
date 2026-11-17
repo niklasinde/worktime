@@ -40,6 +40,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let allow = UNNotificationAction(identifier: AgentAttention.allowAction, title: "Allow once", options: [])
         let allowSession = UNNotificationAction(identifier: AgentAttention.allowSessionAction, title: "Allow for this session", options: [])
         let deny = UNNotificationAction(identifier: AgentAttention.denyAction, title: "Deny", options: [.destructive])
+        let addTool = UNNotificationAction(identifier: AgentAttention.addToolAction, title: "Add to its tools", options: [])
+        let fix = UNNotificationAction(identifier: AgentAttention.fixAction, title: "Fix and continue", options: [])
+        let dismissSuggestion = UNNotificationAction(identifier: AgentAttention.dismissAction, title: "Dismiss", options: [])
         let reply = UNTextInputNotificationAction(identifier: AgentAttention.replyAction, title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Answer the agent")
         let stopAgent = UNNotificationAction(identifier: AgentAttention.stopAction, title: "Stop", options: [.destructive])
@@ -58,6 +61,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: endedCategory, actions: [stop, keep], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.approvalCategory, actions: [allow, deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.sessionApprovalCategory, actions: [allow, allowSession, deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.roleToolCategory, actions: [addTool, allow, deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.blockedCategory, actions: [fix], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: AgentAttention.roleSuggestionCategory, actions: [addTool, dismissSuggestion], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.questionCategory, actions: [reply], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: AgentAttention.handoffCategory, actions: [stopAgent], intentIdentifiers: [], options: []),
         ]
@@ -155,9 +161,20 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// An agent stopped on a permission prompt; Allow once, Allow for this session (where offered) and Deny answer it without opening the app, a click opens the agent.
-    static func postApproval(agent: String, permission: String, text: (title: String, body: String), sessionOffered: Bool = false, quiet: Bool = false) {
-        post(text, category: AgentAttention.approvalCategory(sessionOffered: sessionOffered), agent: agent, request: permission,
+    static func postApproval(agent: String, permission: String, text: (title: String, body: String), sessionOffered: Bool = false, roleTool: Bool = false,
+                             quiet: Bool = false) {
+        post(text, category: AgentAttention.approvalCategory(sessionOffered: sessionOffered, roleTool: roleTool), agent: agent, request: permission,
              identifier: AgentAttention.approvalIdentifier(agent: agent, permission: permission), quiet: quiet)
+    }
+
+    /// An unattended run needed a tool its assistant's list leaves out; Add puts it on the list, Dismiss forgets it.
+    static func postRoleSuggestion(id: String, text: (title: String, body: String), identifier: String, quiet: Bool = false) {
+        post(text, category: AgentAttention.roleSuggestionCategory, agent: RoleToolSuggestionStore.agentKey, request: id, identifier: identifier, quiet: quiet)
+    }
+
+    /// A turn ended after refusals; Fix and continue applies the fixes and goes on in the same session.
+    static func postBlocked(agent: String, text: (title: String, body: String), quiet: Bool = false) {
+        post(text, category: AgentAttention.blockedCategory, agent: agent, request: nil, identifier: Blocked.identifier(agent: agent), quiet: quiet)
     }
 
     /// An agent finished a turn on a question; Reply sends what is typed to it as the next prompt.

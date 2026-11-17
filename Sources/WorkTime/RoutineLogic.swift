@@ -208,12 +208,13 @@ enum Routines {
     }
 
     /// The row's second line: the schedule, and what is next or how the last run went.
-    static func detail(_ routine: Routine, now: Date, waiting: Int = 0, answer: AskAnswer? = nil) -> String {
+    static func detail(_ routine: Routine, now: Date, waiting: Int = 0, answer: AskAnswer? = nil, toolWait: String? = nil) -> String {
         let when = routine.trigger.map(Automations.label) ?? routine.schedule.label()
         guard routine.enabled else { return "\(when) \u{00B7} off" }
         let recompile = routine.determinism?.needsRecompile == true ? " \u{00B7} script needs recompiling" : ""
         let asked = (AutomationAsks.waiting(waiting) ?? AutomationAsks.answered(answer, now: now)).map { " \u{00B7} " + $0 } ?? ""
-        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))" + asked + recompile
+        let tool = toolWait.map { " \u{00B7} " + $0 } ?? ""
+        return "\(when) \u{00B7} \(lastRunText(routine.lastRun, now: now))" + asked + tool + recompile
     }
 
     static func lastRunText(_ run: RoutineRun?, now: Date) -> String {

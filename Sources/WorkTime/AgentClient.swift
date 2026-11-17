@@ -88,6 +88,13 @@ final class AgentModel: ObservableObject {
     /// The permission prompts a notification was sent for, so one is not sent twice and each is taken back when answered.
     private var notifiedApprovals: Set<String> = []
     private var notifiedQuestion = false
+    private var notifiedBlocked = false
+    /// The calls of the last turn that were refused, with what would let them through; empty while the agent works.
+    @Published private(set) var blocked: [BlockedCall] = []
+    /// The blocked calls whose fix was applied one at a time.
+    @Published private(set) var blockedFixed: Set<String> = []
+    /// The tool a routine's run waits on, by the sidecar's question id.
+    private var roleWaits: [String: String] = [:]
     /// The overview session of the Agent window, kept across launches.
     let isMain: Bool
     /// The workspace a Main is for.
@@ -229,6 +236,33 @@ final class AgentModel: ObservableObject {
         }
     }
 
+    /// A tool the assistant's list leaves out: the user answers from a notification, which stays until the question is answered. A routine
+    /// waits for it too.
+    private func announceRoleTool(permission id: String, tool: String, tier: RoleTools.Tier) {
+        guard AgentAttention.shouldNotifyRoleTool(enabled: AgentAttention.enabled(), isShown: isInFront),
+              notifiedApprovals.insert(id).inserted else { return }
+        AgentAttentionCenter.shared.register(self, id: attentionID)
+        let text = RoleTools.approval(agent: attentionTitle, tool: tool, tier: tier)
+        let agent = attentionID
+        Notifier.postApproval(agent: agent, permission: id, text: text, roleTool: true)
+        AgentAttentionCenter.shared.add(.init(agent: agent, permission: id, title: text.title, body: text.body, sessionOffered: true, created: Date(), roleTool: true))
+        DecisionKeeper.shared.keep(AgentAttention.approvalIdentifier(agent: agent, permission: id)) {
+            Notifier.postApproval(agent: agent, permission: id, text: text, roleTool: true, quiet: true)
+        }
+    }
+
+    /// The turn ended after refusals: one notification whose Fix and continue applies the fixes and goes on in the same session.
+    private func announceBlocked() {
+        guard !blocked.isEmpty, AgentAttention.shouldNotify(enabled: AgentAttention.enabled(), isRoutine: routine != nil, isShown: isInFront) else { return }
+        AgentAttentionCenter.shared.register(self, id: attentionID)
+        notifiedBlocked = true
+        let agent = attentionID
+        let text = Blocked.notice(agent: attentionTitle, calls: blocked)
+        Notifier.postBlocked(agent: agent, text: text)
+        AgentAttentionCenter.shared.add(.init(agent: agent, permission: "blocked", title: text.title, body: text.body, sessionOffered: false, created: Date(), blocked: true))
+        DecisionKeeper.shared.keep(Blocked.identifier(agent: agent)) { Notifier.postBlocked(agent: agent, text: text, quiet: true) }
+    }
+
     /// The reviews the turn ended with, drafted and not posted: one notification whose buttons post them with the user's click.
     @discardableResult
     private func announceReviews() -> Bool {
@@ -252,9 +286,11 @@ final class AgentModel: ObservableObject {
 
     /// Takes this agent's notifications back: its prompts were answered, or it moved on.
     private func withdrawAttention() {
-        guard !notifiedApprovals.isEmpty || notifiedQuestion else { return }
+        guard !notifiedApprovals.isEmpty || notifiedQuestion || notifiedBlocked else { return }
         var identifiers = notifiedApprovals.map { AgentAttention.approvalIdentifier(agent: attentionID, permission: $0) }
         if notifiedQuestion { identifiers.append(AgentAttention.questionIdentifier(agent: attentionID)) }
+        if notifiedBlocked { identifiers.append(Blocked.identifier(agent: attentionID)) }
+        notifiedBlocked = false
         Notifier.withdraw(identifiers: identifiers)
         AgentAttentionCenter.shared.remove(agent: attentionID)
         notifiedApprovals = []
@@ -726,6 +762,7 @@ final class AgentModel: ObservableObject {
         }
         guard refreshAssistant(), let client = runningClient() else { return false }
         problem = nil
+        clearBlocked()
         withdrawAttention()
         items.append(AgentItem(id: "user-\(items.count)", kind: .user(text), images: images.map(\.path)))
         workMap.prompt(model: model, at: Date())
@@ -736,17 +773,30 @@ final class AgentModel: ObservableObject {
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
-                            delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace)))
+                            delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace),
+                            roleWaitSeconds: routine != nil ? RoleTools.waitSeconds() : nil))
         return true
     }
 
     /// `always` first saves the rules the card offers, so this and later calls of every agent that match them run without asking.
     /// `session` allows the same tool for the rest of this session only.
-    func answer(_ item: AgentItem, allow: Bool, always: Bool = false, session: Bool = false) {
+    func answer(_ item: AgentItem, allow: Bool, always: Bool = false, session: Bool = false, add: Bool = false) {
         guard let id = AgentLogic.permissionID(of: item.id) else { return }
-        if always, case .permission(_, _, _, let offer, nil) = item.kind { AgentRuleStore.shared.add(offer) }
+        var role: AgentRule?
+        if case .permission(_, _, _, let offer, nil) = item.kind {
+            role = RoleTools.role(in: offer)
+            if always, role == nil { AgentRuleStore.shared.add(offer) }
+        }
+        var added = false
+        if add, let role {
+            added = addRoleTool(role.value)
+            if !added { problem = "The tool could not be added: the file of \(actingAs?.role.name ?? "the assistant") has no front matter to put it in. Allowed this once." }
+        }
         AgentLogic.answer(item.id, allow: allow, in: &items)
-        client?.send(.permission(id: id, allow: allow, session: session))
+        if let role, !allow, routine != nil { suggest(role.value) }
+        let message = allow ? nil : role.map { RoleTools.refusal(tool: $0.value, waited: false, unattended: routine != nil) }
+        client?.send(.permission(id: id, allow: allow, session: session, add: added, message: message))
+        if roleWaits.removeValue(forKey: id) != nil, let routine { RoutineStore.shared.setRoleWaiting(nil, for: routine.id) }
         if notifiedApprovals.remove(id) != nil {
             Notifier.withdraw(identifiers: [AgentAttention.approvalIdentifier(agent: attentionID, permission: id)])
             AgentAttentionCenter.shared.remove(agent: attentionID, permission: id)
@@ -759,12 +809,76 @@ final class AgentModel: ObservableObject {
     }
 
     /// The answer of a notification's Allow once or Deny to the prompt with the sidecar's `id`, if it still waits.
-    func answer(permission id: String, allow: Bool, session: Bool = false) {
+    func answer(permission id: String, allow: Bool, session: Bool = false, add: Bool = false) {
         let waiting = items.first { item in
             guard AgentLogic.permissionID(of: item.id) == id, case .permission(_, _, _, _, nil) = item.kind else { return false }
             return true
         }
-        if let waiting { answer(waiting, allow: allow, session: session) }
+        if let waiting { answer(waiting, allow: allow, session: session, add: add) }
+    }
+
+    // MARK: Tools the assistant's list leaves out
+
+    /// Puts the tool on the assistant's `tools:` list in its role file, so this call and every later run may use it.
+    private func addRoleTool(_ tool: String) -> Bool {
+        guard let entry = actingAs else { return false }
+        return AssistantStore.shared.addTool(tool, to: entry)
+    }
+
+    /// An unattended run needed a tool its assistant's list leaves out: kept, once for each assistant and tool, to ask the user after the run.
+    private func suggest(_ tool: String) {
+        guard let routine, let entry = actingAs else { return }
+        RoleToolSuggestionStore.shared.record(RoleToolSuggestion(assistant: entry.key, assistantName: entry.role.name, tool: tool, routine: routine.name, created: Date()))
+    }
+
+    /// A routine's wait for the user's answer ended unanswered: the call is refused as before, and the suggestion kept.
+    private func roleWaitEnded(_ id: String) {
+        guard let item = items.first(where: { AgentLogic.permissionID(of: $0.id) == id }), case .permission(_, _, _, let offer, nil) = item.kind,
+              let role = RoleTools.role(in: offer) else { return }
+        AgentLogic.answer(item.id, allow: false, in: &items)
+        suggest(role.value)
+        if roleWaits.removeValue(forKey: id) != nil, let routine { RoutineStore.shared.setRoleWaiting(nil, for: routine.id) }
+        if notifiedApprovals.remove(id) != nil {
+            Notifier.withdraw(identifiers: [AgentAttention.approvalIdentifier(agent: attentionID, permission: id)])
+            AgentAttentionCenter.shared.remove(agent: attentionID, permission: id)
+        }
+    }
+
+    // MARK: Blocked
+
+    /// One fix of the Blocked card.
+    func apply(_ fix: BlockedCall.Fix) {
+        switch fix {
+        case .addTool(let tool): _ = addRoleTool(tool)
+        case .allowSession(let tool): client?.send(.allowSession(key: tool))
+        case .alwaysAllow(let rules): AgentRuleStore.shared.add(rules)
+        case .chromeOn: chrome = true
+        }
+    }
+
+    /// Applies the fixes that need no saved rule and has the same session go on, through the path a message sent while the agent works takes.
+    func fixAndContinue() {
+        let calls = blocked
+        guard !calls.isEmpty else { return }
+        for fix in Blocked.defaultFixes(calls) { apply(fix) }
+        clearBlocked()
+        reply(Blocked.continueText(calls))
+    }
+
+    func apply(_ fix: BlockedCall.Fix, to call: BlockedCall) {
+        apply(fix)
+        blockedFixed.insert(call.id)
+    }
+
+    func dismissBlocked() { clearBlocked() }
+
+    private func clearBlocked() {
+        blocked = []
+        blockedFixed = []
+        guard notifiedBlocked else { return }
+        notifiedBlocked = false
+        Notifier.withdraw(identifiers: [Blocked.identifier(agent: attentionID)])
+        AgentAttentionCenter.shared.remove(agent: attentionID, permission: "blocked")
     }
 
     /// What was typed into a notification's Reply: the next prompt, or the one after the current turn.
@@ -873,13 +987,25 @@ final class AgentModel: ObservableObject {
            let rule = AgentDelegation.rule(tool: tool, input: object?["input"] as? [String: Any] ?? [:], workspace: workspace) {
             event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [rule], toolUse: toolUse)
         }
+        if case .permissionRequest(let id, let tool, let summary, let detail, let offer, let toolUse) = event, var role = RoleTools.role(in: offer) {
+            role.workspaceName = actingAs?.role.name
+            event = .permissionRequest(id: id, tool: tool, summary: summary, detail: detail, offer: [role] + offer.filter { $0.kind != .role }, toolUse: toolUse)
+        }
+        if case .roleTimeout(let id) = event { return roleWaitEnded(id) }
         if case .chrome(let problem) = event { return chromeProblem = chrome ? problem : nil }
         if case .sessionAllowed(let keys) = event { return sessionAllowed = keys }
         if case .delivered(let id) = event { return AgentPending.deliver(id, queue: &pending, items: &items) }
         if case .cancelled(let id) = event { return restore(AgentPending.take([id], from: &pending)) }
         if let session = AgentLogic.apply(event, to: &items) { adopt(session) }
-        if case .permissionRequest(let id, let tool, let summary, _, _, _) = event { announce(permission: id, tool: tool, summary: summary) }
-        if routine != nil, case .permissionRequest = event, let asked = items.last { answer(asked, allow: false) }
+        if case .permissionRequest(let id, let tool, let summary, _, let offer, _) = event {
+            if let role = RoleTools.role(in: offer) {
+                announceRoleTool(permission: id, tool: tool, tier: RoleTools.tier(of: role))
+                if let routine { roleWaits[id] = tool; RoutineStore.shared.setRoleWaiting(RoleToolWait.rowText(tool: tool), for: routine.id) }
+            } else {
+                announce(permission: id, tool: tool, summary: summary)
+                if routine != nil, let asked = items.last { answer(asked, allow: false) }
+            }
+        }
         if case .idle = event { finishTurn() }
     }
 
@@ -898,7 +1024,12 @@ final class AgentModel: ObservableObject {
         if let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
         resultSeen = visiblePanes > 0
         withdrawAttention()
-        if queued.isEmpty { if !announceReviews() { announceQuestion() } } else { start(queued.removeFirst()) }
+        blocked = routine == nil ? Blocked.calls(in: items, chromeOn: chrome, assistant: actingAs?.role.name) : []
+        if let routine {
+            RoutineStore.shared.setRoleWaiting(nil, for: routine.id)
+            RoleToolSuggestionStore.shared.announceNew()
+        }
+        if queued.isEmpty { if !announceReviews() { if blocked.isEmpty { announceQuestion() } else { announceBlocked() } } } else { start(queued.removeFirst()) }
     }
 
     private func exited(status: Int32, errors: String) {

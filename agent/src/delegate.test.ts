@@ -30,5 +30,5 @@ test("send_to_agent runs without asking only with a delegate rule, in every mode
     assert.deepEqual(preToolDecision(tool, { text: "x" }, "/repo", rules, mode, undefined, rule), { kind: "allow", rule }, mode);
     assert.deepEqual(preToolDecision(tool, { text: "x" }, "/repo", rules, mode, undefined, undefined), { kind: "ask" }, mode);
   }
-  assert.equal(preToolDecision(tool, {}, "/repo", rules, "default", ["mcp__worktime__time_report"], rule).kind, "deny", "an assistant's allowlist still applies");
+  assert.equal(preToolDecision(tool, {}, "/repo", rules, "default", ["mcp__worktime__time_report"], rule).kind, "missing", "an assistant's allowlist still applies: the user is asked");
 });

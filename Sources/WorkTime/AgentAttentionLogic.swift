@@ -5,10 +5,16 @@ enum AgentAttention {
     static let settingKey = "agentNotifyAttention"
     static let approvalCategory = "agent-approval"
     static let sessionApprovalCategory = "agent-approval-session"
+    static let roleToolCategory = "agent-role-tool"
+    static let roleSuggestionCategory = "agent-role-suggestion"
+    static let dismissAction = "agent-dismiss"
+    static let blockedCategory = "agent-blocked"
     static let questionCategory = "agent-question"
     static let handoffCategory = "agent-handoff"
     static let allowAction = "agent-allow"
     static let allowSessionAction = "agent-allow-session"
+    static let addToolAction = "agent-add-tool"
+    static let fixAction = "agent-fix-continue"
     static let denyAction = "agent-deny"
     static let replyAction = "agent-reply"
     static let stopAction = "agent-stop"
@@ -19,7 +25,7 @@ enum AgentAttention {
     static let questionLimit = 200
 
     enum Response: Equatable {
-        case allow, allowSession, deny, answer(String), stop, open
+        case allow, allowSession, deny, answer(String), stop, open, addTool, fixAndContinue, dismiss
     }
 
     static func enabled(defaults: UserDefaults = .standard) -> Bool {
@@ -29,8 +35,13 @@ enum AgentAttention {
     /// Routines run unattended and deny what needs approval; an agent the user is looking at asks in its own window.
     static func shouldNotify(enabled: Bool, isRoutine: Bool, isShown: Bool) -> Bool { enabled && !isRoutine && !isShown }
 
+    /// A question about a tool the assistant's list leaves out is also asked of the user while a routine waits for the answer.
+    static func shouldNotifyRoleTool(enabled: Bool, isShown: Bool) -> Bool { enabled && !isShown }
+
     /// The buttons of an approval: Allow for this session only where the prompt offers it.
-    static func approvalCategory(sessionOffered: Bool) -> String { sessionOffered ? sessionApprovalCategory : approvalCategory }
+    static func approvalCategory(sessionOffered: Bool, roleTool: Bool = false) -> String {
+        roleTool ? roleToolCategory : sessionOffered ? sessionApprovalCategory : approvalCategory
+    }
 
     static func approvalIdentifier(agent: String, permission: String) -> String { "agent-approval:\(agent):\(permission)" }
 
@@ -51,6 +62,9 @@ enum AgentAttention {
         case allowAction: return .allow
         case allowSessionAction: return .allowSession
         case denyAction: return .deny
+        case addToolAction: return .addTool
+        case fixAction: return .fixAndContinue
+        case dismissAction: return .dismiss
         case stopAction: return .stop
         case replyAction:
             let answer = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

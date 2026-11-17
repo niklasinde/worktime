@@ -8,10 +8,16 @@ final class RoutineStore: ObservableObject {
     static let shared = RoutineStore()
     static let pollInterval: TimeInterval = 30
 
+    func setRoleWaiting(_ text: String?, for routine: String) {
+        if roleWaiting[routine] != text { roleWaiting[routine] = text }
+    }
+
     @Published private(set) var routines: [Routine]
     @Published private(set) var models: [String: AgentModel] = [:]
     @Published private(set) var analyses: [String: Analysis] = [:]
     @Published private(set) var pending: [String: PendingProposal] = [:]
+    /// What a running routine waits for the user to answer, by routine id: a tool its assistant's list leaves out.
+    @Published private(set) var roleWaiting: [String: String] = [:]
     private var file: URL
     private var stateFile: URL
     private var timer: Timer?

@@ -151,6 +151,17 @@ final class AssistantStore: ObservableObject {
         return result.reply
     }
 
+    /// Puts a tool on the assistant's `tools:` list in its file, leaving the rest of the file as it is. False when the file cannot take it.
+    @discardableResult
+    func addTool(_ tool: String, to entry: AssistantEntry) -> Bool {
+        guard let text = files.text(entry.workspace, slug: entry.role.slug), let updated = RoleTools.adding(tool, to: text) else { return false }
+        if updated != text {
+            files.write(updated, workspace: entry.workspace, slug: entry.role.slug)
+            refresh(force: true)
+        }
+        return true
+    }
+
     func save(_ text: String, for entry: AssistantEntry) {
         files.write(text, workspace: entry.workspace, slug: entry.role.slug)
         refresh(force: true)
