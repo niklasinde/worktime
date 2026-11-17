@@ -29,7 +29,7 @@ enum GitHubPreview {
         window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
         window.orderBack(nil)
         var directory = TicketDirectory()
-        directory.sites["QDLY"] = "quiddly.atlassian.net"
+        directory.sites["ACME"] = "acme.atlassian.net"
         if CommandLine.arguments.contains("--agent-embed") {
             Task { @MainActor in
                 await AgentPreview.embedded(window: window, model: model, directory: directory, output: output)
@@ -77,14 +77,14 @@ enum GitHubPreview {
             model.kind = .created
             model.filter.state = .all
             await shot("all-states", appearances: [.aqua])
-            model.filter = GitHubLogic.Filter(state: .open, repo: "acme/finq.api", query: "zzz")
+            model.filter = GitHubLogic.Filter(state: .open, repo: "acme/orbit.api", query: "zzz")
             await shot("no-match", appearances: [.aqua])
             let sample = detailSamples[0]
             let selected = samples[.created]?[1]
             model.showSample(prs: samples, directory: directory)
             model.showSample(selecting: selected, detail: sample.detail)
             await shot("split-selected")
-            model.filter = GitHubLogic.Filter(state: .all, repo: "acme/finq.api", quick: [.unresolved], hideBotOnly: true, sort: .needsAttention)
+            model.filter = GitHubLogic.Filter(state: .all, repo: "acme/orbit.api", quick: [.unresolved], hideBotOnly: true, sort: .needsAttention)
             await shot("split-many-filters", appearances: [.aqua])
             model.filter = GitHubLogic.Filter()
             window.setContentSize(NSSize(width: 800, height: 700))
@@ -165,7 +165,7 @@ enum GitHubPreview {
                                             diffs: GitHubDiffModel(sample: [diffPatch], expanded: [diffPatch.path]), source: .commit(repo: "", sha: ""), url: "",
                                             threads: [diffThread], comments: GitHubCommentsModel(pr: commentPR, sample: nil)),
                              appearance: appearance, to: output.appendingPathComponent("diff-\(appearance == .aqua ? "light" : "dark").png"))
-                let python = GitHubFilePatch(path: "finq/jobs/sending.py", change: .modified, additions: 6, deletions: 2,
+                let python = GitHubFilePatch(path: "orbit/jobs/sending.py", change: .modified, additions: 6, deletions: 2,
                                              patch: "@@ -40,6 +40,10 @@ class Sender:\n     @staticmethod\n-    def order_to_pay(order, retries=3):\n-        \"\"\"Send one order.\"\"\"\n+    def order_to_pay(order: Order, retries: int = 3) -> bool:\n+        \"\"\"Send one order.\n+\n+        Returns False when the API refuses it.\n+        \"\"\"\n+        log.info(f\"sending {order.id!r} ({len(order.lines)} lines)\")  # once\n         return self.client.post('/orders', json=order, timeout=2.5) is not None")
                 await render(GitHubFileDiff(file: GitHubPRDetail.File(path: python.path, additions: 6, deletions: 2, change: .modified),
                                             diffs: GitHubDiffModel(sample: [python], expanded: [python.path]), source: .commit(repo: "", sha: ""), url: ""),
@@ -241,7 +241,7 @@ enum GitHubPreview {
     private static func mergeDraft(_ pr: GitHubPR, conflicts: Bool = false, failing: Bool = false) -> GitHubActionDraft {
         var target = GitHubActionTarget(pr: pr)
         target.base = "develop"
-        target.head = "NI/QDLY-8315-strawbay-send-guard"
+        target.head = "NI/ACME-8315-strawbay-send-guard"
         target.mergeMethods = [.squash, .merge, .rebase]
         target.mergeable = conflicts ? .conflicting : .mergeable
         target.mergeState = conflicts ? .dirty : failing ? .blocked : .clean
@@ -267,7 +267,7 @@ enum GitHubPreview {
                                         pr: failing, target: GitHubActionTarget(pr: failing))
         let closing = samples[.created]![0]
         var closeTarget = GitHubActionTarget(pr: closing)
-        closeTarget.head = "NI/QDLY-8315-strawbay-send-guard"
+        closeTarget.head = "NI/ACME-8315-strawbay-send-guard"
         closeTarget.base = "develop"
         let close = GitHubActionDraft(request: GitHubActionRequest(.close, pr: closing).with(comment: "Superseded by the new batch sender.", deleteBranch: true),
                                       pr: closing, target: closeTarget)
@@ -361,7 +361,7 @@ enum GitHubPreview {
             let parts = GitHubLogic.commentParts(body)
             let author = who(login)
             return GitHubComment(id: id, author: author, body: body, parts: parts, digest: author.isBot ? GitHubLogic.digest(parts, body: body) : nil,
-                                 created: now.addingTimeInterval(-ago), url: "https://github.com/acme/finq.api/pull/2462#discussion_\(id)", review: review)
+                                 created: now.addingTimeInterval(-ago), url: "https://github.com/acme/orbit.api/pull/2462#discussion_\(id)", review: review)
         }
         let guardDiff = GitHubLogic.diffLines("""
             @@ -38,7 +38,12 @@ def order_to_pay(case):
@@ -401,7 +401,7 @@ enum GitHubPreview {
             <summary>\u{1F916} Prompt for AI Agents</summary>
 
             ```
-            In finq/jobs/enforcement/delivery_api/strawbay/sending.py around lines 41 to 44, log before returning.
+            In orbit/jobs/enforcement/delivery_api/strawbay/sending.py around lines 41 to 44, log before returning.
             ```
 
             </details>
@@ -409,14 +409,14 @@ enum GitHubPreview {
             <!-- fingerprinting:phantom:triton:hamster -->
             """
         let threads: [GitHubThread] = [
-            GitHubThread(id: "T1", path: "finq/jobs/enforcement/delivery_api/strawbay/sending.py", line: 44, startLine: 41, diff: guardDiff,
+            GitHubThread(id: "T1", path: "orbit/jobs/enforcement/delivery_api/strawbay/sending.py", line: 44, startLine: 41, diff: guardDiff,
                          comments: [said("a1", "sara", 7_200, "Can the guard live in `order_to_pay` instead? Then the batch builder stays pure.\n\n```suggestion\nif not setting(\"strawbay_send_to_kronofogden\"):\n    return\n```"),
                                     said("a2", "niklas", 3_600, "Moved it, thanks. I kept the log line.")], commentCount: 2),
-            GitHubThread(id: "T2", path: "finq/jobs/enforcement/delivery_api/strawbay/sending.py", line: 52, isResolved: true, resolvedBy: "sara", diff: guardDiff,
+            GitHubThread(id: "T2", path: "orbit/jobs/enforcement/delivery_api/strawbay/sending.py", line: 52, isResolved: true, resolvedBy: "sara", diff: guardDiff,
                          comments: [said("b0", "sara", 9_000, "Nit: name this `batch`, not `b`."), said("b1", "niklas", 8_000, "Done.")], commentCount: 2),
-            GitHubThread(id: "T3", path: "finq/jobs/enforcement/delivery_api/strawbay/sending.py", line: nil, originalLine: 61, isOutdated: true, diff: guardDiff,
+            GitHubThread(id: "T3", path: "orbit/jobs/enforcement/delivery_api/strawbay/sending.py", line: nil, originalLine: 61, isOutdated: true, diff: guardDiff,
                          comments: [said("c1", "elin", 90_000, "This branch never runs with the new setting, can it go?", review: .changesRequested)], commentCount: 1),
-            GitHubThread(id: "T4", path: "finq/api/resources/engine_rule/engine_rule.py", line: 17, diff: guardDiff,
+            GitHubThread(id: "T4", path: "orbit/api/resources/engine_rule/engine_rule.py", line: 17, diff: guardDiff,
                          comments: [said("B1", "coderabbitai[bot]", 5_000, longBot),
                                     said("d2", "elin", 600, "Agreed with the bot, the guard should log.")], commentCount: 2),
             GitHubThread(id: "T5", path: "README.md", line: nil, isFile: true,
@@ -438,14 +438,14 @@ enum GitHubPreview {
         func detail(_ name: String, _ number: Int, _ title: String, state: GitHubPR.State = .open, draft: Bool = false, review: GitHubPR.Review? = nil,
                     mergeable: GitHubPRDetail.Mergeable = .mergeable, body: String, checks: [GitHubPRDetail.Check] = [],
                     reviewers: [GitHubPRDetail.Reviewer] = [], files: Int = 7, fileTotal: Int? = nil, commits: Int = 3) -> (name: String, pr: GitHubPR, detail: GitHubPRDetail) {
-            let url = "https://github.com/acme/finq.api/pull/\(number)"
-            let list = GitHubPR(url: url, number: number, title: title, repo: "acme/finq.api", isDraft: draft, state: state, updated: now, checks: .passed, author: "niklas")
-            let paths = ["finq/api/resources/engine_rule/engine_rule.py", "finq/jobs/enforcement/delivery_api/strawbay/sending.py", "tests/fixtures/setting.yaml",
-                         "README.md", "db/migrations/versions/5a248b7f1722_setting.py", "finq/common/constants.py", "docs/old.md"]
+            let url = "https://github.com/acme/orbit.api/pull/\(number)"
+            let list = GitHubPR(url: url, number: number, title: title, repo: "acme/orbit.api", isDraft: draft, state: state, updated: now, checks: .passed, author: "niklas")
+            let paths = ["orbit/api/resources/engine_rule/engine_rule.py", "orbit/jobs/enforcement/delivery_api/strawbay/sending.py", "tests/fixtures/setting.yaml",
+                         "README.md", "db/migrations/versions/5a248b7f1722_setting.py", "orbit/common/constants.py", "docs/old.md"]
             let kinds: [GitHubPRDetail.Change] = [.modified, .added, .modified, .modified, .added, .modified, .removed]
             let rows = (0..<files).map { index -> GitHubPRDetail.File in
                 let base = paths[index % paths.count]
-                return GitHubPRDetail.File(path: index < paths.count ? base : "finq/module\(index)/" + (base.split(separator: "/").last.map(String.init) ?? base),
+                return GitHubPRDetail.File(path: index < paths.count ? base : "orbit/module\(index)/" + (base.split(separator: "/").last.map(String.init) ?? base),
                                            additions: (index * 7) % 60, deletions: (index * 3) % 20, change: kinds[index % kinds.count])
             }
             let log = (0..<commits).map { index in
@@ -453,8 +453,8 @@ enum GitHubPreview {
                                       author: index % 3 == 2 ? "elin" : "niklas", date: now.addingTimeInterval(-Double(index) * 5_400 - 3_000), url: url,
                                       checks: index == commits - 1 ? (checks.contains { $0.status == .failed } ? .failed : checks.contains { $0.status == .running } ? .running : .passed) : .passed)
             }
-            let full = GitHubPRDetail(url: url, repo: "acme/finq.api", number: number, title: title, body: body, author: "niklas", state: state, isDraft: draft,
-                                      mergeable: mergeable, review: review, base: "develop", head: "NI/QDLY-8315-strawbay-send-guard",
+            let full = GitHubPRDetail(url: url, repo: "acme/orbit.api", number: number, title: title, body: body, author: "niklas", state: state, isDraft: draft,
+                                      mergeable: mergeable, review: review, base: "develop", head: "NI/ACME-8315-strawbay-send-guard",
                                       created: now.addingTimeInterval(-26_000), updated: now.addingTimeInterval(-900), additions: 452, deletions: 46,
                                       changedFiles: fileTotal ?? files, labels: ["backend", "needs-review"], assignees: ["niklas"], reviewers: reviewers,
                                       commits: log, commitCount: commits, files: rows, fileCount: fileTotal ?? files, checks: checks, checkCount: checks.count,
@@ -463,11 +463,11 @@ enum GitHubPreview {
         }
         func check(_ name: String, _ status: GitHubPRDetail.CheckStatus, _ seconds: TimeInterval? = nil, workflow: String = "CI") -> GitHubPRDetail.Check {
             GitHubPRDetail.Check(name: name, workflow: workflow, status: status, started: seconds.map { _ in now.addingTimeInterval(-200) },
-                                 completed: seconds.map { now.addingTimeInterval($0 - 200) }, url: "https://github.com/acme/finq.api/actions/runs/1")
+                                 completed: seconds.map { now.addingTimeInterval($0 - 200) }, url: "https://github.com/acme/orbit.api/actions/runs/1")
         }
         let body = """
             ## Summary
-            Only send Strawbay batches to the authority when the **sending** setting is on. See `QDLY-8315` and [the spec](https://example.com/spec).
+            Only send Strawbay batches to the authority when the **sending** setting is on. See `ACME-8315` and [the spec](https://example.com/spec).
 
             - [x] Add the setting and its migration
             - [x] Guard `order_to_pay`
@@ -481,7 +481,7 @@ enum GitHubPreview {
 
             | Tenant | Sending |
             |---|---|
-            | Gaia | on |
+            | Globex | on |
             | Nebula | off |
 
             ![Settings page](https://github.com/user-attachments/assets/1)
@@ -496,11 +496,11 @@ enum GitHubPreview {
                                                     .init(name: "backend", isTeam: true, state: .pending), .init(name: "johan", state: .approved),
                                                     .init(name: "copilot-pull-request-reviewer", state: .commented)]
         return [
-            detail("open-running", 2462, "QDLY-8315: Only send Strawbay batches to Kronofogden when sending is enabled", review: .required, body: body, checks: mixed, reviewers: reviewers),
-            detail("draft-conflicts", 2439, "QDLY-8315: Store the journal number and date", draft: true, mergeable: .conflicting, body: "", checks: [], commits: 1),
-            detail("merged", 2385, "QDLY-8782: Define API models explicitly", state: .merged, review: .approved, body: "Short description.", checks: [check("lint", .passed, 40), check("tests", .passed, 300)], reviewers: [.init(name: "johan", state: .approved)]),
-            detail("checks-failing", 2460, "QDLY-8785: Recall cases at the authority", review: .changesRequested, body: long, checks: [check("tests", .failed, 280), check("lint", .failed, 12), check("build", .passed, 60), check("e2e", .cancelled, 30)], reviewers: reviewers),
-            detail("many-files", 872, "QDLY-8690: Rating conversion table as a grid of tiers", review: .approved, body: body, checks: [check("lint", .passed, 40)], files: 100, fileTotal: 240, commits: 100),
+            detail("open-running", 2462, "ACME-8315: Only send Strawbay batches to Kronofogden when sending is enabled", review: .required, body: body, checks: mixed, reviewers: reviewers),
+            detail("draft-conflicts", 2439, "ACME-8315: Store the journal number and date", draft: true, mergeable: .conflicting, body: "", checks: [], commits: 1),
+            detail("merged", 2385, "ACME-8782: Define API models explicitly", state: .merged, review: .approved, body: "Short description.", checks: [check("lint", .passed, 40), check("tests", .passed, 300)], reviewers: [.init(name: "johan", state: .approved)]),
+            detail("checks-failing", 2460, "ACME-8785: Recall cases at the authority", review: .changesRequested, body: long, checks: [check("tests", .failed, 280), check("lint", .failed, 12), check("build", .passed, 60), check("e2e", .cancelled, 30)], reviewers: reviewers),
+            detail("many-files", 872, "ACME-8690: Rating conversion table as a grid of tiers", review: .approved, body: body, checks: [check("lint", .passed, 40)], files: 100, fileTotal: 240, commits: 100),
         ]
     }
 
@@ -508,11 +508,11 @@ enum GitHubPreview {
     static var watchedSamples: [GitHubPR] {
         let now = Date()
         return [
-            GitHubPR(url: "https://github.com/acme/finq.client-ui/pull/318", number: 318, title: "QDLY-8811: Let the client download the ledger as CSV",
-                     repo: "acme/finq.client-ui", updated: now.addingTimeInterval(-7_200), review: .required, checks: .running, author: "jakob",
+            GitHubPR(url: "https://github.com/acme/orbit.client-ui/pull/318", number: 318, title: "ACME-8811: Let the client download the ledger as CSV",
+                     repo: "acme/orbit.client-ui", updated: now.addingTimeInterval(-7_200), review: .required, checks: .running, author: "jakob",
                      additions: 210, deletions: 14, activity: GitHubActivity(me: "niklas", lastCommit: now.addingTimeInterval(-7_200))),
-            GitHubPR(url: "https://github.com/acme/finq.api/pull/2671", number: 2671, title: "QDLY-8799: Retry the bank file upload on a timeout",
-                     repo: "acme/finq.api", updated: now.addingTimeInterval(-50_000), review: .approved, author: "sara", additions: 58, deletions: 9,
+            GitHubPR(url: "https://github.com/acme/orbit.api/pull/2671", number: 2671, title: "ACME-8799: Retry the bank file upload on a timeout",
+                     repo: "acme/orbit.api", updated: now.addingTimeInterval(-50_000), review: .approved, author: "sara", additions: 58, deletions: 9,
                      activity: GitHubActivity(me: "niklas", lastCommit: now.addingTimeInterval(-60_000))),
         ]
     }
@@ -536,30 +536,30 @@ enum GitHubPreview {
         }
         return [
             .created: [
-                pr(2462, "acme/finq.api", "QDLY-8786: Send enforcement cases to execution", ago: 600, add: 452, del: 46),
-                pr(2442, "acme/finq.api", "QDLY-8785: Report deductions to the authority through the partner", ago: 3_000, checks: .running, add: 1131, del: 36, comments: 4,
+                pr(2462, "acme/orbit.api", "ACME-8786: Send enforcement cases to execution", ago: 600, add: 452, del: 46),
+                pr(2442, "acme/orbit.api", "ACME-8785: Report deductions to the authority through the partner", ago: 3_000, checks: .running, add: 1131, del: 36, comments: 4,
                    activity: activity(threads: 6, open: [said(person("elin"), 3_000), said(person("elin"), 40_000), said(bot("coderabbitai"), 20_000)], comment: said(person("johan"), 9_000), commit: 30_000)),
-                pr(2460, "acme/finq.api", "QDLY-8785: Recall cases at the authority", ago: 5_400, checks: .failed, review: .changesRequested, add: 313, del: 30, comments: 2,
+                pr(2460, "acme/orbit.api", "ACME-8785: Recall cases at the authority", ago: 5_400, checks: .failed, review: .changesRequested, add: 313, del: 30, comments: 2,
                    activity: activity(threads: 4, open: [said(person("sara"), 5_400), said(person("sara"), 6_000)], commit: 20_000)),
-                pr(872, "acme/finq.admin-ui", "QDLY-8690: Rating conversion table as a grid of tiers and risk indicators", ago: 14_000, review: .approved, add: 2661, del: 717, comments: 9,
+                pr(872, "acme/orbit.admin-ui", "ACME-8690: Rating conversion table as a grid of tiers and risk indicators", ago: 14_000, review: .approved, add: 2661, del: 717, comments: 9,
                    activity: activity(threads: 34, open: (0..<20).map { said(person("jakob"), 20_000 + Double($0) * 100) }, comment: said(person("niklas"), 13_000), commit: 15_000)),
-                pr(2439, "acme/finq.api", "QDLY-8315: Store the journal number and date on the fields they belong to", ago: 40_000, draft: true, checks: .none, review: .required, add: 65, del: 2,
+                pr(2439, "acme/orbit.api", "ACME-8315: Store the journal number and date on the fields they belong to", ago: 40_000, draft: true, checks: .none, review: .required, add: 65, del: 2,
                    activity: activity(threads: 3, open: [said(bot("copilot-pull-request-reviewer"), 35_000)], commit: 60_000)),
                 pr(191, "niklas/devops", "Redesign landing page with modern UI and responsive layout", ago: 90_000, draft: true, checks: .none, add: 295, del: 95, activity: activity()),
                 pr(199, "niklas/devops", "[Snyk] Security upgrade cryptography from 45.0.7 to 46.0.5", ago: 120_000, add: 1, del: 1, author: "snyk-bot", activity: activity(botAuthor: true)),
-                pr(2385, "acme/finq.api", "QDLY-8782: Define API models explicitly instead of copy-and-delete", ago: 200_000, state: .merged, review: .approved, add: 113, del: 159),
-                pr(2301, "acme/finq.api", "QDLY-8701: Try the older export format", ago: 400_000, state: .closed, checks: .failed, add: 12, del: 4),
+                pr(2385, "acme/orbit.api", "ACME-8782: Define API models explicitly instead of copy-and-delete", ago: 200_000, state: .merged, review: .approved, add: 113, del: 159),
+                pr(2301, "acme/orbit.api", "ACME-8701: Try the older export format", ago: 400_000, state: .closed, checks: .failed, add: 12, del: 4),
             ],
             .reviewRequested: [
-                pr(2376, "acme/finq.api", "QDLY-8690: Match \"-\" to a rating without risk indicator, accept a tier list", ago: 7_000, review: .required, add: 211, del: 34, comments: 3, author: "elin",
+                pr(2376, "acme/orbit.api", "ACME-8690: Match \"-\" to a rating without risk indicator, accept a tier list", ago: 7_000, review: .required, add: 211, del: 34, comments: 3, author: "elin",
                    activity: activity(threads: 2, open: [said(person("niklas"), 8_000)], requested: ["niklas"])),
-                pr(1746, "acme/finq.api", "FIX(QDLY-7998): align receiver address placement with the print-house templates", ago: 90_000, checks: .failed, review: .required, add: 444, del: 38, author: "johan",
+                pr(1746, "acme/orbit.api", "FIX(ACME-7998): align receiver address placement with the print-house templates", ago: 90_000, checks: .failed, review: .required, add: 444, del: 38, author: "johan",
                    activity: activity(threads: 1, open: [said(person("johan"), 90_000)], reviews: [GitHubActivity.Review(actor: person("niklas"), state: "COMMENTED", date: now.addingTimeInterval(-200_000))], commit: 80_000)),
             ],
             .reviewed: [
-                pr(2682, "acme/finq.api", "QDLY-8801: Book the reminder fee on the invoice's own ledger", ago: 4_000, review: .required, add: 96, del: 12, author: "magnus",
+                pr(2682, "acme/orbit.api", "ACME-8801: Book the reminder fee on the invoice's own ledger", ago: 4_000, review: .required, add: 96, del: 12, author: "magnus",
                    activity: activity(threads: 3, reviews: [GitHubActivity.Review(actor: person("niklas"), state: "APPROVED", date: now.addingTimeInterval(-5_000))], commit: 30_000)),
-                pr(1034, "acme/finq.admin-ui", "QDLY-8790: Show the debtor's payment plan in the case view", ago: 20_000, review: .changesRequested, add: 340, del: 61, author: "katia",
+                pr(1034, "acme/orbit.admin-ui", "ACME-8790: Show the debtor's payment plan in the case view", ago: 20_000, review: .changesRequested, add: 340, del: 61, author: "katia",
                    activity: activity(threads: 5, open: [said(person("niklas"), 25_000)], reviews: [GitHubActivity.Review(actor: person("niklas"), state: "CHANGES_REQUESTED", date: now.addingTimeInterval(-25_000))], commit: 60_000)),
             ],
         ]

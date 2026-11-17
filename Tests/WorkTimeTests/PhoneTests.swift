@@ -71,7 +71,7 @@ private let t0 = Date(timeIntervalSince1970: 1_792_300_000)
 private func activityBlock(_ id: Int64, _ offset: TimeInterval, app: String = "Xcode", title: String? = nil, redaction: ActivityRedaction? = nil,
                            idle: Bool = false, prompt: String? = nil) -> ActivityBlock {
     ActivityBlock(id: id, start: t0.addingTimeInterval(offset), end: t0.addingTimeInterval(offset + 60),
-                  key: ActivityKey(appBundle: "com.\(app)", appName: app, windowTitle: title, url: nil, repo: "api", branch: "QDLY-1-fix",
+                  key: ActivityKey(appBundle: "com.\(app)", appName: app, windowTitle: title, url: nil, repo: "api", branch: "ACME-1-fix",
                                    ticket: nil, claude: [], idle: idle, redaction: redaction),
                   category: .coding, aiDescription: "Fixing a bug", claudePrompt: prompt)
 }
@@ -499,7 +499,7 @@ let phoneTests: [(name: String, run: () throws -> Void)] = [
             check(response.status == 200 && activity?.days.count == 1 && activity?.days.first?.date == day, "one day")
             check(activity?.blocks.count == 4, "idle left out: \(activity?.blocks.count ?? -1)")
             let byID = Dictionary(uniqueKeysWithValues: (activity?.blocks ?? []).map { ($0.id, $0) })
-            check(byID[1]?.title == "Editing" && byID[1]?.branch == "QDLY-1-fix" && byID[1]?.repo == "api" && byID[1]?.summary == "Fixing a bug", "a normal block keeps its details")
+            check(byID[1]?.title == "Editing" && byID[1]?.branch == "ACME-1-fix" && byID[1]?.repo == "api" && byID[1]?.summary == "Fixing a bug", "a normal block keeps its details")
             check(byID[2] == PhoneBlock(id: byID[2]!.id, start: byID[2]!.start, end: byID[2]!.end, app: "1Password", category: "coding", projectGuessed: false, redaction: "private"),
                   "a private block keeps app, times and category")
             check(byID[3]?.app == nil && byID[3]?.title == nil && byID[3]?.redaction == "other" && byID[3]?.category == nil, "an other block keeps only times")
@@ -534,13 +534,13 @@ let phoneTests: [(name: String, run: () throws -> Void)] = [
 
     ("GitHub returns the cached pull requests by kind, nothing when it is off, and refreshes through the client", {
         try withScratch { scratch in
-            let pr = GitHubPR(url: "https://github.com/acme/api/pull/7", number: 7, title: "QDLY-1: Example", repo: "acme/api", state: .open, updated: t0,
+            let pr = GitHubPR(url: "https://github.com/acme/api/pull/7", number: 7, title: "ACME-1: Example", repo: "acme/api", state: .open, updated: t0,
                               review: .approved, checks: .passed, author: "niklas", additions: 10, deletions: 2, comments: 3, labels: ["bug"])
             try scratch.store.saveGitHubPRs([.created: [pr], .mentioned: []], fetched: t0.addingTimeInterval(60))
             let github = scratch.decode(PhoneGitHub.self, scratch.get("/v1/github"))
             check(github?.enabled == true && github?.refreshedAt == t0.addingTimeInterval(60), "enabled and fetched")
             check(github?.prs["created"] == [PhoneEndpoints.pullRequest(pr)] && github?.prs["assigned"]?.isEmpty == true && github?.prs.count == 4, "all four kinds")
-            check(github?.prs["created"]?.first?.ticket == "QDLY-1" && github?.prs["created"]?.first?.review == "approved", "fields")
+            check(github?.prs["created"]?.first?.ticket == "ACME-1" && github?.prs["created"]?.first?.review == "approved", "fields")
             var off = scratch
             off.githubEnabled = false
             let hidden = off.decode(PhoneGitHub.self, off.get("/v1/github"))

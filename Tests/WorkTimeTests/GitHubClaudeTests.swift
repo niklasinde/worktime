@@ -16,8 +16,8 @@ private func script(_ body: String, in folder: URL, name: String = "claude") thr
     return url
 }
 
-private let context = GitHubClaude.Context(url: "https://github.com/acme/api/pull/7", repo: "acme/api", number: 7, title: "QDLY-1: Fix it",
-                                            base: "develop", head: "NI/QDLY-1", ticket: "QDLY-1")
+private let context = GitHubClaude.Context(url: "https://github.com/acme/api/pull/7", repo: "acme/api", number: 7, title: "ACME-1: Fix it",
+                                            base: "develop", head: "NI/ACME-1", ticket: "ACME-1")
 
 private func runProcess(_ cli: URL, directory: URL, cancelAfter: TimeInterval? = nil, timeout: TimeInterval = 20) -> (ClaudeProcess.Outcome, [String]) {
     let process = ClaudeProcess()
@@ -66,7 +66,7 @@ let githubClaudeTests: [(name: String, run: () throws -> Void)] = [
     ("every preset names the pull request, its branches and ticket, and promises to stay read-only", {
         for preset in GitHubClaude.Preset.allCases {
             let prompt = GitHubClaude.prompt(preset, context)
-            for part in ["https://github.com/acme/api/pull/7", "acme/api #7", "QDLY-1: Fix it", "develop \u{2190} NI/QDLY-1", "Ticket: QDLY-1",
+            for part in ["https://github.com/acme/api/pull/7", "acme/api #7", "ACME-1: Fix it", "develop \u{2190} NI/ACME-1", "Ticket: ACME-1",
                          "Do not post comments or reviews, approve, merge, push, commit"] {
                 check(prompt.contains(part), "\(preset): \(part)")
             }
@@ -129,12 +129,12 @@ let githubClaudeTests: [(name: String, run: () throws -> Void)] = [
             try FileManager.default.createDirectory(at: git, withIntermediateDirectories: true)
             if let remote { try "[remote \"origin\"]\n\turl = \(remote)\n".write(to: git.appendingPathComponent("config"), atomically: true, encoding: .utf8) }
         }
-        try repo("quiddly/finq.api", remote: "git@github.com:quiddly-com/finq.api.git")
-        try repo("quiddly/other", remote: "git@bitbucket.org:finqr/finq.api.git")
-        try repo("copy-of-api", remote: "https://github.com/Quiddly-Com/finq.api")
+        try repo("acme/orbit.api", remote: "git@github.com:acme-com/orbit.api.git")
+        try repo("acme/other", remote: "git@bitbucket.org:orbitr/orbit.api.git")
+        try repo("copy-of-api", remote: "https://github.com/Acme-Com/orbit.api")
         try repo("nowhere", remote: nil)
-        check(GitHubClaude.checkout(for: "quiddly-com/finq.api", under: root)?.lastPathComponent == "finq.api", "named like the repository wins")
-        check(GitHubClaude.checkout(for: "Quiddly-Com/FINQ.API", under: root) != nil, "case does not matter")
+        check(GitHubClaude.checkout(for: "acme-com/orbit.api", under: root)?.lastPathComponent == "orbit.api", "named like the repository wins")
+        check(GitHubClaude.checkout(for: "Acme-Com/ORBIT.API", under: root) != nil, "case does not matter")
         check(GitHubClaude.checkout(for: "acme/unknown", under: root) == nil, "no checkout")
         check(GitHubClaude.remotes(inGitConfig: "[remote \"a\"]\n url = ssh://git@github.com/x/y.git\n[remote \"b\"]\n\turl = https://example.com/x/z") == ["x/y"], "only GitHub remotes")
     }),
@@ -163,11 +163,11 @@ let githubClaudeTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a Claude Code link carries the pull request, its folder and where it came from", {
-        let prompt = GitHubClaude.briefing(repo: "quiddly-com/finq.api", number: 2522, title: "QDLY-8959: Add POST & PUT", url: "https://github.com/quiddly-com/finq.api/pull/2522",
-                                           head: "NI/QDLY-8959")
-        check(prompt == "PR quiddly-com/finq.api#2522 QDLY-8959: Add POST & PUT https://github.com/quiddly-com/finq.api/pull/2522 (branch NI/QDLY-8959)", prompt)
+        let prompt = GitHubClaude.briefing(repo: "acme-com/orbit.api", number: 2522, title: "ACME-8959: Add POST & PUT", url: "https://github.com/acme-com/orbit.api/pull/2522",
+                                           head: "NI/ACME-8959")
+        check(prompt == "PR acme-com/orbit.api#2522 ACME-8959: Add POST & PUT https://github.com/acme-com/orbit.api/pull/2522 (branch NI/ACME-8959)", prompt)
         check(!GitHubClaude.briefing(repo: "a/b", number: 1, title: "t", url: "u", head: nil).contains("branch"), "no branch when it is unknown")
-        let link = GitHubClaude.appLink(prompt: prompt, folder: URL(fileURLWithPath: "/Users/x/git/finq.api"))
+        let link = GitHubClaude.appLink(prompt: prompt, folder: URL(fileURLWithPath: "/Users/x/git/orbit.api"))
         let items = link.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems
         check(link?.absoluteString.hasPrefix("claude://code/new?") == true, "a new Code session")
         check(items?.first { $0.name == "q" }?.value == prompt, "prompt round trip")
@@ -175,21 +175,21 @@ let githubClaudeTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a Jira ticket finds its pull request by the title, then by the branch", {
-        let titled = GitHubPR(url: "u1", number: 1, title: "QDLY-1: Fix", repo: "a/b", updated: Date())
+        let titled = GitHubPR(url: "u1", number: 1, title: "ACME-1: Fix", repo: "a/b", updated: Date())
         let branched = GitHubPR(url: "u2", number: 2, title: "Fix the thing", repo: "a/c", updated: Date())
-        let heads = ["u2": "NI/qdly-2"]
-        check(GitHubClaude.pullRequest(for: "QDLY-1", in: [branched, titled]) { heads[$0.url] } == titled, "by title")
-        check(GitHubClaude.pullRequest(for: "QDLY-2", in: [branched, titled]) { heads[$0.url] } == branched, "by branch")
-        check(GitHubClaude.pullRequest(for: "QDLY-3", in: [branched, titled]) { heads[$0.url] } == nil, "none")
+        let heads = ["u2": "NI/acme-2"]
+        check(GitHubClaude.pullRequest(for: "ACME-1", in: [branched, titled]) { heads[$0.url] } == titled, "by title")
+        check(GitHubClaude.pullRequest(for: "ACME-2", in: [branched, titled]) { heads[$0.url] } == branched, "by branch")
+        check(GitHubClaude.pullRequest(for: "ACME-3", in: [branched, titled]) { heads[$0.url] } == nil, "none")
     }),
 
     ("many tickets read each pull request's branch once, however many tickets ask", {
-        let titled = GitHubPR(url: "u1", number: 1, title: "QDLY-1: Fix", repo: "a/b", updated: Date())
+        let titled = GitHubPR(url: "u1", number: 1, title: "ACME-1: Fix", repo: "a/b", updated: Date())
         let branched = GitHubPR(url: "u2", number: 2, title: "Fix the thing", repo: "a/c", updated: Date())
         var reads: [String] = []
-        let heads = ["u2": "NI/qdly-2"]
-        let found = GitHubClaude.pullRequests(for: ["QDLY-1", "QDLY-2", "QDLY-3", "QDLY-4"], in: [titled, branched]) { reads.append($0.url); return heads[$0.url] }
-        check(found == ["QDLY-1": titled, "QDLY-2": branched], "matches by title and by branch")
+        let heads = ["u2": "NI/acme-2"]
+        let found = GitHubClaude.pullRequests(for: ["ACME-1", "ACME-2", "ACME-3", "ACME-4"], in: [titled, branched]) { reads.append($0.url); return heads[$0.url] }
+        check(found == ["ACME-1": titled, "ACME-2": branched], "matches by title and by branch")
         check(reads == ["u1", "u2"], "each read once for three tickets that needed it")
     }),
 

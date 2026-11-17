@@ -44,7 +44,7 @@ private let createFieldsJSON = """
  {"fieldId":"summary","required":true,"name":"Summary","schema":{"type":"string"},"hasDefaultValue":false},
  {"fieldId":"description","required":false,"name":"Description","schema":{"type":"string"}},
  {"fieldId":"assignee","required":false,"name":"Assignee","schema":{"type":"user"}},
- {"fieldId":"customfield_10","required":true,"name":"Customer","schema":{"type":"option"},"allowedValues":[{"id":"7","value":"Quiddly"},{"id":"8","value":"Gaia"}]},
+ {"fieldId":"customfield_10","required":true,"name":"Customer","schema":{"type":"option"},"allowedValues":[{"id":"7","value":"Acme"},{"id":"8","value":"Globex"}]},
  {"fieldId":"fixVersions","required":true,"name":"Fix versions","schema":{"type":"array","items":"version"},"allowedValues":[{"id":"1","name":"2026.11"}]},
  {"fieldId":"priority","required":true,"hasDefaultValue":true,"name":"Priority","schema":{"type":"priority"},"allowedValues":[{"id":"3","name":"Medium"}]},
  {"fieldId":"labels","required":false,"name":"Labels","schema":{"type":"array","items":"string"}}
@@ -102,11 +102,11 @@ let jiraWorkTests: [(name: String, run: () throws -> Void)] = [
         check((body["comment"] as? [String: Any])?["type"] as? String == "doc", "comment is a document")
         check(JiraWorklog.body(seconds: 60, started: Date(), comment: "  ")["comment"] == nil, "no empty comment")
         let sent = Sent()
-        let done = waiting { try await client(sent: sent).logWork(on: "QDLY-1", seconds: 3600, started: Date(), comment: "") }
+        let done = waiting { try await client(sent: sent).logWork(on: "ACME-1", seconds: 3600, started: Date(), comment: "") }
         if case .failure(let error) = done { return check(false, "failed \(error)") }
-        check(sent.requests[0].httpMethod == "POST" && sent.requests[0].url?.path == "/rest/api/3/issue/QDLY-1/worklog", "request")
+        check(sent.requests[0].httpMethod == "POST" && sent.requests[0].url?.path == "/rest/api/3/issue/ACME-1/worklog", "request")
         check(sent.bodies[0]["timeSpentSeconds"] as? Int == 3600, "body")
-        let refused = waiting { try await client(answering: 400, body: #"{"errorMessages":["Time tracking is off."],"errors":{}}"#, sent: sent).logWork(on: "QDLY-1", seconds: 60, started: Date(), comment: "") }
+        let refused = waiting { try await client(answering: 400, body: #"{"errorMessages":["Time tracking is off."],"errors":{}}"#, sent: sent).logWork(on: "ACME-1", seconds: 60, started: Date(), comment: "") }
         if case .failure(let error) = refused { check(error as? JiraError == .refused("Time tracking is off."), "refusal") } else { check(false, "should refuse") }
     }),
 
@@ -127,14 +127,14 @@ let jiraWorkTests: [(name: String, run: () throws -> Void)] = [
         check(JiraCreate.defaultType(among: []) == nil, "none")
         let newer = try JiraCreate.parseTypes(Data(#"{"values":[{"id":"9","name":"Story"}]}"#.utf8))
         check(newer.map(\.id) == ["9"], "the newer shape")
-        check(JiraCreate.typesPath(project: "QDLY").hasPrefix("/rest/api/3/issue/createmeta/QDLY/issuetypes"), "path")
-        check(JiraCreate.fieldsPath(project: "QDLY", type: "2").hasPrefix("/rest/api/3/issue/createmeta/QDLY/issuetypes/2"), "fields path")
+        check(JiraCreate.typesPath(project: "ACME").hasPrefix("/rest/api/3/issue/createmeta/ACME/issuetypes"), "path")
+        check(JiraCreate.fieldsPath(project: "ACME", type: "2").hasPrefix("/rest/api/3/issue/createmeta/ACME/issuetypes/2"), "fields path")
     }),
 
     ("what a type requires is asked for, except what the form has its own control for or Jira fills in", {
         let form = try JiraCreate.parseForm(Data(createFieldsJSON.utf8))
         check(form.fields.map(\.key) == ["customfield_10", "fixVersions"], "required extras by name: \(form.fields.map(\.key))")
-        check(form.fields[0].kind == .choice(multiple: false) && form.fields[0].options.map(\.name) == ["Quiddly", "Gaia"], "a choice by value")
+        check(form.fields[0].kind == .choice(multiple: false) && form.fields[0].options.map(\.name) == ["Acme", "Globex"], "a choice by value")
         check(form.fields[1].kind == .choice(multiple: true), "a list")
         check(form.available.contains("assignee") && form.available.contains("description") && form.available.contains("labels"), "every field on the screen")
         check(!form.needsJira, "all fillable")
@@ -151,27 +151,27 @@ let jiraWorkTests: [(name: String, run: () throws -> Void)] = [
         check(JiraCreate.missing(form, values: ["customfield_10": [" "], "fixVersions": ["1"]]).map(\.key) == ["customfield_10"], "blank is missing")
         let values = ["customfield_10": ["7"], "fixVersions": ["1"]]
         check(JiraCreate.canCreate(summary: "S", form: form, values: values), "all there")
-        let fields = JiraCreate.body(project: "QDLY", type: task, summary: " Do it ", description: "Details", assignee: "557058:abc", form: form, values: values)["fields"] as? [String: Any] ?? [:]
-        check((fields["project"] as? [String: String]) == ["key": "QDLY"] && (fields["issuetype"] as? [String: String]) == ["id": "2"], "project and type")
+        let fields = JiraCreate.body(project: "ACME", type: task, summary: " Do it ", description: "Details", assignee: "557058:abc", form: form, values: values)["fields"] as? [String: Any] ?? [:]
+        check((fields["project"] as? [String: String]) == ["key": "ACME"] && (fields["issuetype"] as? [String: String]) == ["id": "2"], "project and type")
         check(fields["summary"] as? String == "Do it", "summary trimmed")
         check((fields["description"] as? [String: Any])?["type"] as? String == "doc", "description as a document")
         check((fields["assignee"] as? [String: String]) == ["accountId": "557058:abc"], "assignee")
         check((fields["customfield_10"] as? [String: String]) == ["id": "7"] && (fields["fixVersions"] as? [[String: String]]) == [["id": "1"]], "required fields")
-        let bare = JiraCreate.body(project: "QDLY", type: task, summary: "S", description: "", assignee: "x", form: JiraCreateForm(), values: [:])["fields"] as? [String: Any] ?? [:]
+        let bare = JiraCreate.body(project: "ACME", type: task, summary: "S", description: "", assignee: "x", form: JiraCreateForm(), values: [:])["fields"] as? [String: Any] ?? [:]
         check(bare["assignee"] == nil && bare["description"] == nil, "nothing the screen lacks")
     }),
 
     ("the client reads the create metadata and makes the ticket, returning its key", {
         let sent = Sent()
-        let types = waiting { try await client(answering: 200, body: createTypesJSON, sent: sent).issueTypes(in: "QDLY") }
+        let types = waiting { try await client(answering: 200, body: createTypesJSON, sent: sent).issueTypes(in: "ACME") }
         guard case .success(let found) = types else { return check(false, "types failed \(types)") }
-        check(found.count == 2 && sent.requests[0].httpMethod == "GET" && sent.requests[0].url?.path == "/rest/api/3/issue/createmeta/QDLY/issuetypes", "types request")
-        let form = waiting { try await client(answering: 200, body: createFieldsJSON, sent: sent).createForm(in: "QDLY", type: "2") }
+        check(found.count == 2 && sent.requests[0].httpMethod == "GET" && sent.requests[0].url?.path == "/rest/api/3/issue/createmeta/ACME/issuetypes", "types request")
+        let form = waiting { try await client(answering: 200, body: createFieldsJSON, sent: sent).createForm(in: "ACME", type: "2") }
         guard case .success(let loaded) = form else { return check(false, "form failed \(form)") }
-        check(loaded.fields.count == 2 && sent.requests[1].url?.path == "/rest/api/3/issue/createmeta/QDLY/issuetypes/2", "form request")
-        let made = waiting { try await client(body: #"{"id":"10","key":"QDLY-9","self":"x"}"#, sent: sent).create(["fields": ["summary": "S"]]) }
+        check(loaded.fields.count == 2 && sent.requests[1].url?.path == "/rest/api/3/issue/createmeta/ACME/issuetypes/2", "form request")
+        let made = waiting { try await client(body: #"{"id":"10","key":"ACME-9","self":"x"}"#, sent: sent).create(["fields": ["summary": "S"]]) }
         guard case .success(let key) = made else { return check(false, "create failed \(made)") }
-        check(key == "QDLY-9" && sent.requests[2].httpMethod == "POST" && sent.requests[2].url?.path == "/rest/api/3/issue", "create request")
+        check(key == "ACME-9" && sent.requests[2].httpMethod == "POST" && sent.requests[2].url?.path == "/rest/api/3/issue", "create request")
         check((sent.bodies.first?["fields"] as? [String: String]) == ["summary": "S"], "create body, the only request with one so far")
         let refused = waiting { try await client(answering: 400, body: #"{"errorMessages":[],"errors":{"summary":"Summary is required."}}"#, sent: sent).create(["fields": ["summary": "S"]]) }
         if case .failure(let error) = refused { check(error as? JiraError == .refused("Summary is required."), "refusal") } else { check(false, "should refuse") }
@@ -192,30 +192,30 @@ let jiraWorkTests: [(name: String, run: () throws -> Void)] = [
 
     ("once its ticket exists a reminder points at it: a bare one by its source, one with a source in its notes", {
         let bare = Reminder(id: "r1", title: "T", due: nil, created: Date())
-        let linked = JiraCreate.linking(bare, ticket: "QDLY-9", summary: "Do it", jiraSite: "acme.atlassian.net")
-        check(linked.source == .jira(key: "QDLY-9", summary: "Do it") && linked.notes == nil, "source")
+        let linked = JiraCreate.linking(bare, ticket: "ACME-9", summary: "Do it", jiraSite: "acme.atlassian.net")
+        check(linked.source == .jira(key: "ACME-9", summary: "Do it") && linked.notes == nil, "source")
         let slack = ReminderSource(kind: .slack, reference: "https://acme.slack.com/archives/C1/p1", title: "Slack #dev")
-        let kept = JiraCreate.linking(Reminder(id: "r2", title: "T", notes: "Note", due: nil, created: Date(), source: slack), ticket: "QDLY-9", summary: "Do it", jiraSite: "acme.atlassian.net")
-        check(kept.source == slack && kept.notes == "Note\nTicket: https://acme.atlassian.net/browse/QDLY-9", "notes \(String(describing: kept.notes))")
-        let same = Reminder(id: "r3", title: "T", due: nil, created: Date(), source: .jira(key: "QDLY-9"))
-        check(JiraCreate.linking(same, ticket: "QDLY-9", summary: "Do it", jiraSite: nil) == same, "already pointing there")
+        let kept = JiraCreate.linking(Reminder(id: "r2", title: "T", notes: "Note", due: nil, created: Date(), source: slack), ticket: "ACME-9", summary: "Do it", jiraSite: "acme.atlassian.net")
+        check(kept.source == slack && kept.notes == "Note\nTicket: https://acme.atlassian.net/browse/ACME-9", "notes \(String(describing: kept.notes))")
+        let same = Reminder(id: "r3", title: "T", due: nil, created: Date(), source: .jira(key: "ACME-9"))
+        check(JiraCreate.linking(same, ticket: "ACME-9", summary: "Do it", jiraSite: nil) == same, "already pointing there")
     }),
 
     ("a ticket's links are the reminders, Slack messages and meetings that name its key and no longer key that starts alike", {
-        check(JiraLinks.mentions("see qdly-12 now", key: "QDLY-12") && JiraLinks.mentions("QDLY-12", key: "QDLY-12") && JiraLinks.mentions("(QDLY-12).", key: "QDLY-12"), "mentioned")
-        check(!JiraLinks.mentions("QDLY-123", key: "QDLY-12") && !JiraLinks.mentions("XQDLY-12", key: "QDLY-12") && !JiraLinks.mentions("QDLY 12", key: "QDLY-12"), "not mentioned")
+        check(JiraLinks.mentions("see acme-12 now", key: "ACME-12") && JiraLinks.mentions("ACME-12", key: "ACME-12") && JiraLinks.mentions("(ACME-12).", key: "ACME-12"), "mentioned")
+        check(!JiraLinks.mentions("ACME-123", key: "ACME-12") && !JiraLinks.mentions("XACME-12", key: "ACME-12") && !JiraLinks.mentions("ACME 12", key: "ACME-12"), "not mentioned")
         let now = Date()
         let reminders = [
-            Reminder(id: "a", title: "Review", due: nil, created: now, source: .jira(key: "QDLY-12")),
-            Reminder(id: "b", title: "Ask about QDLY-12", due: nil, created: now.addingTimeInterval(1)),
-            Reminder(id: "c", title: "Other", notes: "relates to qdly-12", due: nil, created: now.addingTimeInterval(2)),
-            Reminder(id: "d", title: "Other ticket", due: nil, created: now, source: .jira(key: "QDLY-123")),
-            Reminder(id: "e", title: "Done one QDLY-12", due: nil, created: now, completed: now),
+            Reminder(id: "a", title: "Review", due: nil, created: now, source: .jira(key: "ACME-12")),
+            Reminder(id: "b", title: "Ask about ACME-12", due: nil, created: now.addingTimeInterval(1)),
+            Reminder(id: "c", title: "Other", notes: "relates to acme-12", due: nil, created: now.addingTimeInterval(2)),
+            Reminder(id: "d", title: "Other ticket", due: nil, created: now, source: .jira(key: "ACME-123")),
+            Reminder(id: "e", title: "Done one ACME-12", due: nil, created: now, completed: now),
         ]
-        check(JiraLinks.reminders("QDLY-12", in: reminders).map(\.id) == ["a", "b", "c"], "reminders \(JiraLinks.reminders("QDLY-12", in: reminders).map(\.id))")
-        let messages = [message("about QDLY-12"), message("nothing"), message("QDLY-123 is different")]
-        check(JiraLinks.slack("QDLY-12", in: messages).map(\.text) == ["about QDLY-12"], "slack")
-        check(JiraLinks.confirms(snippet: "\u{2026}the **QDLY**-**12** export\u{2026}", key: "QDLY-12") || JiraLinks.confirms(snippet: "fix **QDLY-12**", key: "QDLY-12"), "a snippet with highlight marks")
-        check(!JiraLinks.confirms(snippet: "**QDLY**-**123**", key: "QDLY-12"), "a longer key")
+        check(JiraLinks.reminders("ACME-12", in: reminders).map(\.id) == ["a", "b", "c"], "reminders \(JiraLinks.reminders("ACME-12", in: reminders).map(\.id))")
+        let messages = [message("about ACME-12"), message("nothing"), message("ACME-123 is different")]
+        check(JiraLinks.slack("ACME-12", in: messages).map(\.text) == ["about ACME-12"], "slack")
+        check(JiraLinks.confirms(snippet: "\u{2026}the **ACME**-**12** export\u{2026}", key: "ACME-12") || JiraLinks.confirms(snippet: "fix **ACME-12**", key: "ACME-12"), "a snippet with highlight marks")
+        check(!JiraLinks.confirms(snippet: "**ACME**-**123**", key: "ACME-12"), "a longer key")
     }),
 ]

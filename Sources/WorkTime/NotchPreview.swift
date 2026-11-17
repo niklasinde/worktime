@@ -66,11 +66,11 @@ enum NotchPreview {
             TodoModel.shared.showSample(
                 reminders: [
                     Reminder(id: "r0", title: "Answer Bj\u{00F6}rn about the debtor balance", due: ReminderDue(date: start.addingTimeInterval(-86400), allDay: true),
-                             created: start, source: .slack(link: URL(string: "https://acme.slack.com/archives/C0ACME1/p1730000000123456")!, place: "#finq-dev")),
+                             created: start, source: .slack(link: URL(string: "https://acme.slack.com/archives/C0ACME1/p1730000000123456")!, place: "#orbit-dev")),
                     Reminder(id: "r1", title: "Review the rule engine optimisation", due: ReminderDue(date: start.addingTimeInterval(3600)), created: start,
-                             source: .pullRequest(GitHubLink.Target(repo: "acme/finq.api", number: 2682))),
+                             source: .pullRequest(GitHubLink.Target(repo: "acme/orbit.api", number: 2682))),
                     Reminder(id: "r2", title: "Verify the remaining ticket", due: ReminderDue(date: start.addingTimeInterval(2 * 86400), allDay: true), created: start,
-                             source: .jira(key: "QDLY-7280"), addedBy: "Main \u{00B7} work"),
+                             source: .jira(key: "ACME-7280"), addedBy: "Main \u{00B7} work"),
                     Reminder(id: "r3", title: "Book the dentist", created: start),
                 ],
                 meeting: (0..<40).map { index in
@@ -122,7 +122,7 @@ enum NotchPreview {
                          text: SlackLogic.clean(text, names: names), ts: String(format: "%.6f", now - minutes * 60), permalink: nil, unread: unread)
         }
         return SlackLogic.merged(mentions: [
-            message(.mention, "C0DEV", "#dev", "Anna Berg", "<@U0ME> can you look at <https://github.com/acme/api/pull/7|finq.api #7> before the release? :eyes:", minutes: 12),
+            message(.mention, "C0DEV", "#dev", "Anna Berg", "<@U0ME> can you look at <https://github.com/acme/api/pull/7|orbit.api #7> before the release? :eyes:", minutes: 12),
             message(.mention, "C0OPS", "#ops-alerts", "Bo Lind", "<!here> deploy of env-d is stuck, <@U0ME> did the migration in <#C0DEV|dev> run?", minutes: 95),
             message(.mention, "G0GRP", "anna, bo, niklas", "Anna Berg", "<@U0ME> Friday works for the retro &amp; planning", minutes: 60 * 26),
         ], direct: [

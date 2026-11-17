@@ -16,7 +16,7 @@ struct CodeHostLink: Equatable {
     let repo: String
     let kind: Kind
 
-    /// `quiddly-com/finq.api · PR #2094`, `· MR !12`, `· Issue #12` or `· commit 6253f44`.
+    /// `acme-com/orbit.api · PR #2094`, `· MR !12`, `· Issue #12` or `· commit 6253f44`.
     var label: String {
         let base = "\(owner)/\(repo)"
         switch kind {
@@ -134,7 +134,7 @@ struct TicketDirectory: Equatable {
         sites[ActivityLogic.ticketPrefix(ticket)].flatMap { URL(string: "https://\($0)/browse/\(ticket)") }
     }
 
-    /// `QDLY-8315 · Add Strawbay (kfm-api)…`, or the key alone when no title is known.
+    /// `ACME-8315 · Add Strawbay (kfm-api)…`, or the key alone when no title is known.
     func label(_ ticket: String, limit: Int = 60) -> String {
         titles[ticket].map { "\(ticket) \u{00B7} \(ActivityLogic.truncate($0, to: limit))" } ?? ticket
     }
@@ -150,7 +150,7 @@ struct TicketDirectory: Equatable {
 struct BranchIndex: Equatable {
     var branches: [String: [String]] = [:]
 
-    /// A branch whose name contains the ticket key as a whole key (`QDLY-83` is not in `QDLY-8315`): in the given
+    /// A branch whose name contains the ticket key as a whole key (`ACME-83` is not in `ACME-8315`): in the given
     /// repository when it is known, else in any; the shortest name wins, then the first by name.
     func branch(for ticket: String, repo: String?) -> (repo: String, branch: String)? {
         let candidates = repo.map { [($0, branches[$0] ?? [])] } ?? branches.map { ($0.key, $0.value) }
@@ -256,8 +256,8 @@ extension ActivityLogic {
                                          with: "", options: .regularExpression)
     }
 
-    /// A ticket's title from a Jira issue page (`[QDLY-1] Title - Jira`, `QDLY-1: Title - Jira`) or a pull request
-    /// whose title starts with the key (`QDLY-1: Title by me · Pull Request #12 · owner/repo`). A title left over from
+    /// A ticket's title from a Jira issue page (`[ACME-1] Title - Jira`, `ACME-1: Title - Jira`) or a pull request
+    /// whose title starts with the key (`ACME-1: Title by me · Pull Request #12 · owner/repo`). A title left over from
     /// another page is not taken: the Jira issue in the address, or the pull request number, has to agree.
     static func ticketTitle(windowTitle: String?, url: String?) -> (ticket: String, title: String)? {
         guard let windowTitle else { return nil }

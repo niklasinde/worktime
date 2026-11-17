@@ -25,8 +25,8 @@ test("read-only commands are allowed", () => {
     "gh pr view 12 2>/dev/null || echo missing",
     "gh pr view 12 --json files | jq '.files[].path'",
     "cd agent && git log -3",
-    "git grep -n -A6 'URL_FETCHER' HEAD -- finq/jobs/pdf/base.py",
-    "git ls-tree -r --name-only HEAD finq/templates",
+    "git grep -n -A6 'URL_FETCHER' HEAD -- orbit/jobs/pdf/base.py",
+    "git ls-tree -r --name-only HEAD orbit/templates",
     "git cat-file -p HEAD:README.md",
     "git cat-file -t HEAD",
     "git show-ref --heads",
@@ -153,8 +153,8 @@ test("anything that writes, runs other code or is unclear asks", () => {
 });
 
 test("nonReadOnlyParts names only the parts that are not read-only", () => {
-  const command = `cd ~/git/quiddly/finq.api 2>/dev/null || { echo "no local repo"; exit 1; }; git fetch -q origin claude/QDLY-9052-escape-pdf-einvoice 2>&1 | tail -2; R=FETCH_HEAD; echo "== x"; git grep -n "FinqExtension\\|jinja_extension" $R -- 'finq/*.py' | grep -v "^.*jinja_extension.py:" ; git grep -n -A6 "URL_FETCHER_INCLUDED =" $R -- finq/jobs/pdf/base.py; git grep -n -o '<img[^>]*src="[^"]*"' $R -- finq/jobs/pdf/templates | sed 's/^[^:]*:\\([^:]*\\):/\\1:/' | sort | uniq -c | sort -rn | head -20; git ls-tree -r --name-only $R finq/templates 2>/dev/null | sed 's/.*\\.//' | sort | uniq -c`;
-  assert.deepEqual(nonReadOnlyParts(command), ["git fetch -q origin claude/QDLY-9052-escape-pdf-einvoice"]);
+  const command = `cd ~/git/acme/orbit.api 2>/dev/null || { echo "no local repo"; exit 1; }; git fetch -q origin claude/ACME-9052-escape-pdf-einvoice 2>&1 | tail -2; R=FETCH_HEAD; echo "== x"; git grep -n "OrbitExtension\\|jinja_extension" $R -- 'orbit/*.py' | grep -v "^.*jinja_extension.py:" ; git grep -n -A6 "URL_FETCHER_INCLUDED =" $R -- orbit/jobs/pdf/base.py; git grep -n -o '<img[^>]*src="[^"]*"' $R -- orbit/jobs/pdf/templates | sed 's/^[^:]*:\\([^:]*\\):/\\1:/' | sort | uniq -c | sort -rn | head -20; git ls-tree -r --name-only $R orbit/templates 2>/dev/null | sed 's/.*\\.//' | sort | uniq -c`;
+  assert.deepEqual(nonReadOnlyParts(command), ["git fetch -q origin claude/ACME-9052-escape-pdf-einvoice"]);
   assert.equal(isReadOnlyCommand(command), false);
   assert.deepEqual(nonReadOnlyParts("git status && rm x | head; npm test"), ["rm x", "npm test"]);
   assert.deepEqual(nonReadOnlyParts("ls; echo `rm x`"), ["ls; echo `rm x`"]);

@@ -5,8 +5,8 @@ import Foundation
 
 private func parsed(_ text: String) -> GitHubLink.Target? { GitHubLink.parse(text) }
 
-private let finqAPI = GitHubLink.Target(repo: "quiddly-com/finq.api", number: 2483)
-private let encodedFinqAPI = "worktime://pr?url=https%3A%2F%2Fgithub.com%2Fquiddly-com%2Ffinq.api%2Fpull%2F2483"
+private let orbitAPI = GitHubLink.Target(repo: "acme-com/orbit.api", number: 2483)
+private let encodedOrbitAPI = "worktime://pr?url=https%3A%2F%2Fgithub.com%2Facme-com%2Forbit.api%2Fpull%2F2483"
 private let schemes = ["worktime", "meetingrecorder"]
 
 private let linkSourceFiles = ["Sources/WorkTime/GitHubLink.swift", "Sources/WorkTime/GitHubLinkHandler.swift"]
@@ -14,16 +14,16 @@ private let linkSourceFiles = ["Sources/WorkTime/GitHubLink.swift", "Sources/Wor
 let githubLinkTests: [(name: String, run: () throws -> Void)] = [
     ("a link with the pull request address in the query opens that pull request", {
         for scheme in schemes {
-            check(parsed("\(scheme)://pr?url=https%3A%2F%2Fgithub.com%2Fquiddly-com%2Ffinq.api%2Fpull%2F2483") == finqAPI, "\(scheme): percent-encoded query")
-            check(parsed("\(scheme)://pr?url=https://github.com/quiddly-com/finq.api/pull/2483") == finqAPI, "\(scheme): unencoded query")
+            check(parsed("\(scheme)://pr?url=https%3A%2F%2Fgithub.com%2Facme-com%2Forbit.api%2Fpull%2F2483") == orbitAPI, "\(scheme): percent-encoded query")
+            check(parsed("\(scheme)://pr?url=https://github.com/acme-com/orbit.api/pull/2483") == orbitAPI, "\(scheme): unencoded query")
         }
     }),
 
     ("a link with owner, repo and number in the path opens that pull request", {
         for scheme in schemes {
-            check(parsed("\(scheme)://pr/quiddly-com/finq.api/2483") == finqAPI, "\(scheme): path form")
-            check(parsed("\(scheme)://pr/quiddly%2Dcom/finq%2Eapi/2483") == finqAPI, "\(scheme): percent-encoded path segments")
-            check(parsed("\(scheme.uppercased())://PR/quiddly-com/finq.api/2483") == finqAPI, "\(scheme): scheme and host are not case sensitive")
+            check(parsed("\(scheme)://pr/acme-com/orbit.api/2483") == orbitAPI, "\(scheme): path form")
+            check(parsed("\(scheme)://pr/acme%2Dcom/orbit%2Eapi/2483") == orbitAPI, "\(scheme): percent-encoded path segments")
+            check(parsed("\(scheme.uppercased())://PR/acme-com/orbit.api/2483") == orbitAPI, "\(scheme): scheme and host are not case sensitive")
         }
     }),
 
@@ -107,25 +107,25 @@ let githubLinkTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a pasted pull request link, tab of it, owner/repo#number or app link names the pull request", {
-        let target = GitHubLink.Target(repo: "quiddly-com/finq.api", number: 2483)
-        let good = ["https://github.com/quiddly-com/finq.api/pull/2483", "  https://github.com/quiddly-com/finq.api/pull/2483/files\n",
-                    "https://github.com/quiddly-com/finq.api/pull/2483#discussion_r1", "https://github.com/quiddly-com/finq.api/pull/2483?w=1",
-                    "http://www.github.com/quiddly-com/finq.api/pull/2483", "github.com/quiddly-com/finq.api/pull/2483",
-                    "quiddly-com/finq.api#2483", GitHubLink.appLink(for: target.url)]
+        let target = GitHubLink.Target(repo: "acme-com/orbit.api", number: 2483)
+        let good = ["https://github.com/acme-com/orbit.api/pull/2483", "  https://github.com/acme-com/orbit.api/pull/2483/files\n",
+                    "https://github.com/acme-com/orbit.api/pull/2483#discussion_r1", "https://github.com/acme-com/orbit.api/pull/2483?w=1",
+                    "http://www.github.com/acme-com/orbit.api/pull/2483", "github.com/acme-com/orbit.api/pull/2483",
+                    "acme-com/orbit.api#2483", GitHubLink.appLink(for: target.url)]
         for text in good { check(GitHubLink.pasted(text) == target, "reads \(text)") }
-        let bad = ["", "finq.api#2483", "https://github.com/quiddly-com/finq.api/issues/2483", "https://gitlab.com/quiddly-com/finq.api/pull/2483",
-                   "https://github.com/quiddly-com/finq.api/pull/0", "https://github.com/quiddly-com/finq.api/pull/12x",
-                   "see https://github.com/quiddly-com/finq.api/pull/2483", "https://evil.example/github.com/o/r/pull/1", "o/r#1 o/r#2"]
+        let bad = ["", "orbit.api#2483", "https://github.com/acme-com/orbit.api/issues/2483", "https://gitlab.com/acme-com/orbit.api/pull/2483",
+                   "https://github.com/acme-com/orbit.api/pull/0", "https://github.com/acme-com/orbit.api/pull/12x",
+                   "see https://github.com/acme-com/orbit.api/pull/2483", "https://evil.example/github.com/o/r/pull/1", "o/r#1 o/r#2"]
         for text in bad { check(GitHubLink.pasted(text) == nil, "rejects \(text)") }
     }),
 
     ("the pull requests a transcript mentions are found in order, once each, as links, addresses or owner/repo#number", {
         let text = "See [niklasinde/papercut#236 Assistant: run](https://github.com/niklasinde/papercut/pull/236), then "
-            + "https://github.com/quiddly-com/finq.api/pull/2483/files and quiddly-com/finq.admin-ui#664.\n"
+            + "https://github.com/acme-com/orbit.api/pull/2483/files and acme-com/orbit.admin-ui#664.\n"
             + "Comment: <https://github.com/o/r/pull/7#discussion_r123>, again o/r#7."
         let found = GitHubLink.mentions(in: text)
-        check(found == [GitHubLink.Target(repo: "niklasinde/papercut", number: 236), finqAPI,
-                        GitHubLink.Target(repo: "quiddly-com/finq.admin-ui", number: 664), GitHubLink.Target(repo: "o/r", number: 7)],
+        check(found == [GitHubLink.Target(repo: "niklasinde/papercut", number: 236), orbitAPI,
+                        GitHubLink.Target(repo: "acme-com/orbit.admin-ui", number: 664), GitHubLink.Target(repo: "o/r", number: 7)],
               "found \(found)")
         let none = ["#236 alone", "https://github.com/o/r/issues/5", "https://github.com/o/r/commit/abc", "https://github.com/o/r/pull/0",
                     "https://example.com/a/b#12", "path/to/file.swift#12x", "https://gitlab.com/o/r/pull/3", "x/o/r#4"]
@@ -134,9 +134,9 @@ let githubLinkTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("the copied app link opens the same pull request it was copied from", {
-        check(GitHubLink.appLink(for: finqAPI.url) == encodedFinqAPI, "copy string uses worktime://")
-        check(GitHubLink.appLink(for: "https://github.com/quiddly-com/finq.api/pull/2483") == encodedFinqAPI, "copy string from the page address")
-        check(parsed(GitHubLink.appLink(for: finqAPI.url)) == finqAPI, "round trip")
+        check(GitHubLink.appLink(for: orbitAPI.url) == encodedOrbitAPI, "copy string uses worktime://")
+        check(GitHubLink.appLink(for: "https://github.com/acme-com/orbit.api/pull/2483") == encodedOrbitAPI, "copy string from the page address")
+        check(parsed(GitHubLink.appLink(for: orbitAPI.url)) == orbitAPI, "round trip")
     }),
 
     ("the link files never mention the write paths", {

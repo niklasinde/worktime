@@ -80,7 +80,7 @@ let syntaxTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("the language comes from the extension, and unknown files stay plain", {
-        check(SyntaxLanguage.forPath("finq/jobs/sending.py")?.extensions == SyntaxLanguage.python.extensions, "python")
+        check(SyntaxLanguage.forPath("orbit/jobs/sending.py")?.extensions == SyntaxLanguage.python.extensions, "python")
         check(SyntaxLanguage.forPath("src/App.TSX")?.extensions == SyntaxLanguage.javaScript.extensions, "tsx")
         check(SyntaxLanguage.forPath("lib/util.mjs") != nil && SyntaxLanguage.forPath("Package.swift") != nil, "mjs and swift")
         check(SyntaxLanguage.forPath("README.md") == nil && SyntaxLanguage.forPath("Makefile") == nil, "plain")

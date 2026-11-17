@@ -49,8 +49,8 @@ private func client(_ transport: @escaping JiraTransport) -> JiraClient {
 
 let jiraTests: [(name: String, run: () throws -> Void)] = [
     ("a search/jql response is parsed into tickets with every field", {
-        let search = try JiraLogic.parseSearch(searchResponse([issue("QDLY-1"), issue("QDLY-2", summary: "Other", status: "To Do", priority: nil)]))
-        check(search.tickets.map(\.key) == ["QDLY-1", "QDLY-2"], "keys")
+        let search = try JiraLogic.parseSearch(searchResponse([issue("ACME-1"), issue("ACME-2", summary: "Other", status: "To Do", priority: nil)]))
+        check(search.tickets.map(\.key) == ["ACME-1", "ACME-2"], "keys")
         check(search.tickets[0].summary == "Fix the thing" && search.tickets[0].status == "In Progress", "summary and status")
         check(search.tickets[0].priority == "High" && search.tickets[1].priority == nil, "priority")
         check(search.tickets[0].updated == Date(timeIntervalSince1970: 1_792_407_501), "updated \(String(describing: search.tickets[0].updated))")
@@ -86,16 +86,16 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a typed site is reduced to its host, and the browse link is built from it", {
-        check(JiraLogic.site("https://Acme.atlassian.net/browse/QDLY-1") == "acme.atlassian.net", "pasted link")
+        check(JiraLogic.site("https://Acme.atlassian.net/browse/ACME-1") == "acme.atlassian.net", "pasted link")
         check(JiraLogic.site(" acme.atlassian.net/ ") == "acme.atlassian.net", "trailing slash")
         check(JiraLogic.site("acme") == "acme.atlassian.net", "bare name")
         check(JiraLogic.site("") == nil && JiraLogic.site("not a site") == nil, "rejected")
-        check(JiraLogic.browseURL(site: "acme.atlassian.net", key: "QDLY-8")?.absoluteString == "https://acme.atlassian.net/browse/QDLY-8", "browse")
+        check(JiraLogic.browseURL(site: "acme.atlassian.net", key: "ACME-8")?.absoluteString == "https://acme.atlassian.net/browse/ACME-8", "browse")
     }),
 
     ("the suggested site is the one most prefixes point at", {
         check(JiraLogic.suggestedSite([:]) == nil, "none known")
-        check(JiraLogic.suggestedSite(["QDLY": "b.atlassian.net", "QPB": "b.atlassian.net", "X": "a.atlassian.net"]) == "b.atlassian.net", "most")
+        check(JiraLogic.suggestedSite(["ACME": "b.atlassian.net", "QPB": "b.atlassian.net", "X": "a.atlassian.net"]) == "b.atlassian.net", "most")
         check(JiraLogic.suggestedSite(["X": "b.atlassian.net", "Y": "a.atlassian.net"]) == "a.atlassian.net", "tie by name")
     }),
 
@@ -154,7 +154,7 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("search results carry the type, assignee, labels and status category the rows need", {
-        let json = #"{"issues":[{"key":"QDLY-9","fields":{"summary":"S","status":{"name":"Review","statusCategory":{"key":"indeterminate"}},"priority":{"name":"High"},"updated":"2026-10-19T12:58:21.000+0200","issuetype":{"name":"Bug"},"assignee":{"displayName":"Niklas Inde"},"labels":["blocked"]}}],"isLast":true}"#
+        let json = #"{"issues":[{"key":"ACME-9","fields":{"summary":"S","status":{"name":"Review","statusCategory":{"key":"indeterminate"}},"priority":{"name":"High"},"updated":"2026-10-19T12:58:21.000+0200","issuetype":{"name":"Bug"},"assignee":{"displayName":"Niklas Inde"},"labels":["blocked"]}}],"isLast":true}"#
         let ticket = try JiraLogic.parseSearch(Data(json.utf8)).tickets[0]
         check(ticket.type == "Bug" && ticket.assignee == "Niklas Inde" && ticket.labels == ["blocked"] && ticket.category == .inProgress, "\(ticket)")
         let bare = try JiraLogic.parseSearch(searchResponse([issue("A-1")])).tickets[0]
@@ -200,40 +200,40 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
         func ticket(_ key: String, type: String, status: String, priority: String?, assignee: String?, summary: String = "Export") -> JiraTicket {
             JiraTicket(key: key, summary: summary, status: status, priority: priority, updated: now, type: type, assignee: assignee, category: .inProgress)
         }
-        let tickets = [ticket("QDLY-1", type: "Bug", status: "Review", priority: "High", assignee: "Niklas Inde"),
+        let tickets = [ticket("ACME-1", type: "Bug", status: "Review", priority: "High", assignee: "Niklas Inde"),
                        ticket("ISD-2", type: "Support", status: "Waiting", priority: nil, assignee: nil, summary: "Login fails"),
-                       ticket("QDLY-3", type: "Task", status: "To Do", priority: "Low", assignee: "Anna Berg")]
+                       ticket("ACME-3", type: "Task", status: "To Do", priority: "Low", assignee: "Anna Berg")]
         func keys(_ filter: JiraFilter) -> [String] { JiraTickets.filter(tickets, filter, mine: [], now: now).map(\.key) }
-        check(keys(JiraFilter(project: "qdly")) == ["QDLY-1", "QDLY-3"] && keys(JiraFilter(project: "isd, qdly")).count == 3, "project")
-        check(keys(JiraFilter(type: "bug,task")) == ["QDLY-1", "QDLY-3"] && keys(JiraFilter(statusName: "review")) == ["QDLY-1"], "type and status")
-        check(keys(JiraFilter(priority: "Low")) == ["QDLY-3"] && keys(JiraFilter(assignee: "unassigned")) == ["ISD-2"], "priority and unassigned")
-        check(keys(JiraFilter(assignee: "anna berg")) == ["QDLY-3"], "assignee")
-        check(keys(JiraFilter(query: "login")) == ["ISD-2"] && keys(JiraFilter(query: "qdly-3 export")) == ["QDLY-3"], "search over key and summary")
-        check(keys(JiraFilter(project: "qdly", type: "Bug")) == ["QDLY-1"], "combined")
-        var filter = JiraFilter(status: .inReview, query: "x", project: "QDLY", priority: "High")
+        check(keys(JiraFilter(project: "acme")) == ["ACME-1", "ACME-3"] && keys(JiraFilter(project: "isd, acme")).count == 3, "project")
+        check(keys(JiraFilter(type: "bug,task")) == ["ACME-1", "ACME-3"] && keys(JiraFilter(statusName: "review")) == ["ACME-1"], "type and status")
+        check(keys(JiraFilter(priority: "Low")) == ["ACME-3"] && keys(JiraFilter(assignee: "unassigned")) == ["ISD-2"], "priority and unassigned")
+        check(keys(JiraFilter(assignee: "anna berg")) == ["ACME-3"], "assignee")
+        check(keys(JiraFilter(query: "login")) == ["ISD-2"] && keys(JiraFilter(query: "acme-3 export")) == ["ACME-3"], "search over key and summary")
+        check(keys(JiraFilter(project: "acme", type: "Bug")) == ["ACME-1"], "combined")
+        var filter = JiraFilter(status: .inReview, query: "x", project: "ACME", priority: "High")
         check(filter.refinements == 2 && filter.withoutRefinements == JiraFilter(status: .inReview, query: "x"), "refinements")
         filter.assignee = "me"
         check(filter.refinements == 3, "assignee counts")
         let options = JiraTickets.options(tickets)
-        check(options == JiraTickets.Options(projects: ["ISD", "QDLY"], types: ["Bug", "Support", "Task"], statuses: ["Review", "To Do", "Waiting"],
+        check(options == JiraTickets.Options(projects: ["ACME", "ISD"], types: ["Bug", "Support", "Task"], statuses: ["Review", "To Do", "Waiting"],
                                              priorities: ["High", "Low"], assignees: ["Anna Berg", "Niklas Inde"]), "\(options)")
     }),
 
     ("the page's refinements compose into the tab's JQL through jira_search's filter, and open in the Jira navigator", {
         check(JiraTickets.jql(.assigned, JiraFilter(query: "x")) == JiraTab.assigned.jql, "no refinements, no change")
-        let jql = JiraTickets.jql(.assigned, JiraFilter(project: "QDLY", type: "Bug,Task"))
-        check(jql == "(assignee = currentUser() AND resolution = Unresolved) AND project = \"QDLY\" AND issuetype in (\"Bug\", \"Task\") ORDER BY updated DESC", jql)
+        let jql = JiraTickets.jql(.assigned, JiraFilter(project: "ACME", type: "Bug,Task"))
+        check(jql == "(assignee = currentUser() AND resolution = Unresolved) AND project = \"ACME\" AND issuetype in (\"Bug\", \"Task\") ORDER BY updated DESC", jql)
         let url = JiraTickets.navigatorURL(site: "acme.atlassian.net", jql: "project = \"A B\"")
         check(url?.absoluteString == "https://acme.atlassian.net/issues/?jql=project%20%3D%20%22A%20B%22", "\(String(describing: url))")
         check(JQLFilter.list(" a, b ,,c") == ["a", "b", "c"] && JQLFilter.list(nil).isEmpty, "list")
     }),
 
     ("a ticket key is typed in any case or pasted as a browse, board or selected-issue link", {
-        check(JiraLogic.issueKey("qdly-8332") == "QDLY-8332", "lower case")
-        check(JiraLogic.issueKey("https://kvidly.atlassian.net/browse/QDLY-8332") == "QDLY-8332", "browse")
-        check(JiraLogic.issueKey("https://kvidly.atlassian.net/jira/software/projects/QDLY/boards/1?selectedIssue=QDLY-8332") == "QDLY-8332", "board")
-        check(JiraLogic.issueKey("  ISD-1\n") == "ISD-1" && JiraLogic.issueKey("QDLY") == nil && JiraLogic.issueKey("hello world") == nil, "trimmed, refused")
-        check(JiraTickets.project(of: "QDLY-8332") == "QDLY", "project of a key")
+        check(JiraLogic.issueKey("acme-8332") == "ACME-8332", "lower case")
+        check(JiraLogic.issueKey("https://akme.atlassian.net/browse/ACME-8332") == "ACME-8332", "browse")
+        check(JiraLogic.issueKey("https://akme.atlassian.net/jira/software/projects/ACME/boards/1?selectedIssue=ACME-8332") == "ACME-8332", "board")
+        check(JiraLogic.issueKey("  ISD-1\n") == "ISD-1" && JiraLogic.issueKey("ACME") == nil && JiraLogic.issueKey("hello world") == nil, "trimmed, refused")
+        check(JiraTickets.project(of: "ACME-8332") == "ACME", "project of a key")
     }),
 
     ("pull requests are linked to tickets by the key in their title or head branch, open ones first", {
@@ -241,9 +241,9 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
             GitHubPR(url: "https://github.com/acme/api/pull/\(number)", number: number, title: title, repo: "acme/api", state: state,
                      updated: Date(timeIntervalSince1970: 1_793_000_000 + Double(number)))
         }
-        let prs = [pr(1, "QDLY-8332: Release note", state: .merged), pr(2, "Fix the thing"), pr(3, "QDLY-8332 again"), pr(4, "No key")]
-        let linked = JiraTickets.pullRequests(prs) { $0.number == 2 ? "NI/QDLY-8332-fix" : $0.number == 4 ? "main" : nil }
-        check(linked["QDLY-8332"]?.map(\.number) == [3, 2, 1], "open first, newest first \(String(describing: linked["QDLY-8332"]?.map(\.number)))")
+        let prs = [pr(1, "ACME-8332: Release note", state: .merged), pr(2, "Fix the thing"), pr(3, "ACME-8332 again"), pr(4, "No key")]
+        let linked = JiraTickets.pullRequests(prs) { $0.number == 2 ? "NI/ACME-8332-fix" : $0.number == 4 ? "main" : nil }
+        check(linked["ACME-8332"]?.map(\.number) == [3, 2, 1], "open first, newest first \(String(describing: linked["ACME-8332"]?.map(\.number)))")
         check(linked.count == 1, "only keyed pull requests")
     }),
 
@@ -270,43 +270,43 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
 
     ("ticket agents are the topic agents with a Jira key: found by key, kind ticket, named with the key", {
         let now = Date(timeIntervalSince1970: 1_793_000_000), root = URL(fileURLWithPath: "/data/Agents")
-        guard case .success(let topic) = TopicAgents.make(name: TopicAgents.name(ticket: "QDLY-8332", summary: "Release note for the export"), jira: "QDLY-8332",
+        guard case .success(let topic) = TopicAgents.make(name: TopicAgents.name(ticket: "ACME-8332", summary: "Release note for the export"), jira: "ACME-8332",
                                                            slack: "", root: root, taken: [], folder: "/Users/me/git/api", now: now),
-              case .success(var old) = TopicAgents.make(name: "Old", jira: "QDLY-1", slack: "", root: root, taken: [], now: now)
+              case .success(var old) = TopicAgents.make(name: "Old", jira: "ACME-1", slack: "", root: root, taken: [], now: now)
         else { return check(false, "fixture") }
-        check(topic.name == "QDLY-8332 \u{00B7} Release note for the export" && topic.kind == .ticket, topic.name)
+        check(topic.name == "ACME-8332 \u{00B7} Release note for the export" && topic.kind == .ticket, topic.name)
         check(topic.folder == "/Users/me/git/api", "the repository folder is kept")
-        check(TopicAgents.existing(jiraKey: "QDLY-8332", in: [old, topic]) == topic, "one agent per ticket")
+        check(TopicAgents.existing(jiraKey: "ACME-8332", in: [old, topic]) == topic, "one agent per ticket")
         let target = AgentTarget(key: topic.key, title: topic.name)
-        check(TopicAgents.resolve("qdly-8332", topics: [old, topic]) == .success(target), "by key")
-        check(TopicAgents.resolve("https://acme.atlassian.net/browse/QDLY-8332", topics: [topic]) == .success(target), "by link")
+        check(TopicAgents.resolve("acme-8332", topics: [old, topic]) == .success(target), "by key")
+        check(TopicAgents.resolve("https://acme.atlassian.net/browse/ACME-8332", topics: [topic]) == .success(target), "by link")
         old.archived = true
-        check(TopicAgents.resolve("QDLY-1", topics: [old]) == .failure(.archived("Old")), "archived")
-        check(TopicAgents.resolve("QDLY-77", topics: [topic]) == .failure(.unknown("QDLY-77")), "no agent for it")
+        check(TopicAgents.resolve("ACME-1", topics: [old]) == .failure(.archived("Old")), "archived")
+        check(TopicAgents.resolve("ACME-77", topics: [topic]) == .failure(.unknown("ACME-77")), "no agent for it")
         let state = AgentState.topic(topic, loaded: nil, sessionID: "s1")
         let other = AgentState(key: "https://github.com/acme/api/pull/7", title: "pr", status: .idle)
-        check(JiraTickets.agents([state, other]) == ["QDLY-8332": state], "agents by ticket key")
+        check(JiraTickets.agents([state, other]) == ["ACME-8332": state], "agents by ticket key")
         check(AgentFilter.kind(of: state) == "ticket", "kind")
     }),
 
     ("the ticket agent's first prompt carries the ticket and its pull requests, and its system prompt forbids writing to Jira", {
         let now = Date(timeIntervalSince1970: 1_793_000_000)
-        let issue = try JiraLogic.parseIssue(Data(#"{"key":"QDLY-8332","fields":{"summary":"Release note","status":{"name":"In Progress"},"description":"Write it.","comment":{"total":0,"comments":[]}}}"#.utf8))
-        let pr = GitHubPR(url: "https://github.com/acme/api/pull/9", number: 9, title: "QDLY-8332: Note", repo: "acme/api", updated: now, checks: .passed)
+        let issue = try JiraLogic.parseIssue(Data(#"{"key":"ACME-8332","fields":{"summary":"Release note","status":{"name":"In Progress"},"description":"Write it.","comment":{"total":0,"comments":[]}}}"#.utf8))
+        let pr = GitHubPR(url: "https://github.com/acme/api/pull/9", number: 9, title: "ACME-8332: Note", repo: "acme/api", updated: now, checks: .passed)
         let context = JiraAgents.context(issue: issue, pullRequests: [pr], site: "acme.atlassian.net", now: now)
-        check(context.contains("# QDLY-8332 Release note") && context.contains("Write it.") && context.contains("https://acme.atlassian.net/browse/QDLY-8332"), context)
-        check(context.contains("- acme/api#9 QDLY-8332: Note (open, checks passed) https://github.com/acme/api/pull/9"), "pull request line")
+        check(context.contains("# ACME-8332 Release note") && context.contains("Write it.") && context.contains("https://acme.atlassian.net/browse/ACME-8332"), context)
+        check(context.contains("- acme/api#9 ACME-8332: Note (open, checks passed) https://github.com/acme/api/pull/9"), "pull request line")
         check(JiraAgents.context(issue: issue, pullRequests: [], site: nil, now: now).contains("No pull request names it yet."), "none linked")
-        let system = JiraAgents.systemPrompt(ticket: "QDLY-8332", name: "n", folder: "/Users/me/git/api")
+        let system = JiraAgents.systemPrompt(ticket: "ACME-8332", name: "n", folder: "/Users/me/git/api")
         check(system.contains("jira_issue") && system.contains("github_pr") && system.contains("/Users/me/git/api") && system.contains("must never claim"), system)
-        let topic = TopicAgent(id: UUID().uuidString, name: "QDLY-8332 \u{00B7} Note", jiraKey: "QDLY-8332", folder: "/Users/me/git/api", created: now)
+        let topic = TopicAgent(id: UUID().uuidString, name: "ACME-8332 \u{00B7} Note", jiraKey: "ACME-8332", folder: "/Users/me/git/api", created: now)
         check(TopicAgents.systemPrompt(topic) == system.replacingOccurrences(of: "\u{201C}n\u{201D}", with: "\u{201C}\(topic.name)\u{201D}"), "a ticket-only topic uses it")
         check(JiraAgents.ticket(issue).summary == "Release note" && JiraAgents.ticket(issue).status == "In Progress", "list entry from an issue")
     }),
 
     ("the detail pane reads labels and fix versions, lists the facts that exist and splits the description into blocks", {
         let now = Date(timeIntervalSince1970: 1_793_000_000)
-        let json = #"{"key":"QDLY-1","fields":{"summary":"S","status":{"name":"Done"},"reporter":{"displayName":"Ann"},"labels":["api","ui"],"fixVersions":[{"name":"202"},{"name":"203"}],"description":"First line\n- one\n- two\n\nLast | ","comment":{"total":7,"comments":[{"author":{"displayName":"Bo"},"body":"hi"}]}}}"#
+        let json = #"{"key":"ACME-1","fields":{"summary":"S","status":{"name":"Done"},"reporter":{"displayName":"Ann"},"labels":["api","ui"],"fixVersions":[{"name":"202"},{"name":"203"}],"description":"First line\n- one\n- two\n\nLast | ","comment":{"total":7,"comments":[{"author":{"displayName":"Bo"},"body":"hi"}]}}}"#
         let issue = try JiraLogic.parseIssue(Data(json.utf8))
         check(issue.labels == ["api", "ui"] && issue.fixVersions == ["202", "203"], "labels and versions")
         check(JiraLogic.issueFields.contains("labels") && JiraLogic.issueFields.contains("fixVersions"), "requested")

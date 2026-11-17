@@ -5,10 +5,10 @@ import Foundation
 
 private let t0 = Date(timeIntervalSince1970: 1_793_000_000)
 private let hour: TimeInterval = 3600
-private let api = ResumeContextKey(repo: "finq.api", branch: "NI/QDLY-1234", ticket: "QDLY-1234")
-private let prURL = "https://github.com/quiddly-com/finq.api/pull/57"
+private let api = ResumeContextKey(repo: "orbit.api", branch: "NI/ACME-1234", ticket: "ACME-1234")
+private let prURL = "https://github.com/acme-com/orbit.api/pull/57"
 
-private func block(_ start: TimeInterval, _ end: TimeInterval, repo: String? = "finq.api", branch: String? = "NI/QDLY-1234",
+private func block(_ start: TimeInterval, _ end: TimeInterval, repo: String? = "orbit.api", branch: String? = "NI/ACME-1234",
                    ticket: String? = nil, url: String? = nil, focus: ClaudeSession? = nil, prompt: String? = nil, idle: Bool = false) -> ActivityBlock {
     var block = ActivityBlock(id: Int64(start), start: t0.addingTimeInterval(start), end: t0.addingTimeInterval(end),
                               key: ActivityKey(appBundle: "com.app", appName: "App", windowTitle: nil, url: url, repo: repo, branch: branch,
@@ -21,7 +21,7 @@ private func at(_ offset: TimeInterval) -> Date { t0.addingTimeInterval(offset) 
 
 private func userLine(_ text: String, _ offset: TimeInterval, meta: Bool = false) -> String {
     let stamp = at(offset).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
-    let object: [String: Any] = ["type": "user", "timestamp": stamp, "isMeta": meta, "cwd": "/Users/me/git/finq.api",
+    let object: [String: Any] = ["type": "user", "timestamp": stamp, "isMeta": meta, "cwd": "/Users/me/git/orbit.api",
                                  "message": ["role": "user", "content": text]]
     return String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
 }
@@ -33,19 +33,19 @@ private func comment(_ id: String, _ author: String, _ body: String, _ offset: T
 let resumeTests: [(name: String, run: () throws -> Void)] = [
     ("resume: a block's context is its branch, else its ticket, and matches the branch or anything on the ticket", {
         let branch = block(0, 60).key
-        check(ResumeContextKey.of(branch) == api && ResumeContextKey.of(branch)?.ticket == "QDLY-1234", "branch with ticket from its name")
-        let jira = block(0, 60, repo: nil, branch: nil, ticket: "QDLY-1234").key
-        check(ResumeContextKey.of(jira)?.id == "QDLY-1234", "ticket alone")
+        check(ResumeContextKey.of(branch) == api && ResumeContextKey.of(branch)?.ticket == "ACME-1234", "branch with ticket from its name")
+        let jira = block(0, 60, repo: nil, branch: nil, ticket: "ACME-1234").key
+        check(ResumeContextKey.of(jira)?.id == "ACME-1234", "ticket alone")
         check(ResumeContextKey.of(block(0, 60, idle: true).key) == nil, "idle has none")
         check(ResumeContextKey.of(block(0, 60, repo: "x", branch: nil).key) == nil, "a repository without branch or ticket has none")
         check(api.matches(jira), "the Jira page counts for the branch")
         check(!api.matches(block(0, 60, branch: "main").key), "another branch does not")
-        check(ResumeContextKey(repo: "finq.api", branch: "NI/QDLY-1234", ticket: nil) == api, "same id with or without ticket")
+        check(ResumeContextKey(repo: "orbit.api", branch: "NI/ACME-1234", ticket: nil) == api, "same id with or without ticket")
     }),
 
     ("resume: the trigger fires once after 30 s in a new context, ignores short flicks and context-less samples", {
         var trigger = ResumeTrigger()
-        let other = ResumeContextKey(repo: "finq.admin-ui", branch: "develop")
+        let other = ResumeContextKey(repo: "orbit.admin-ui", branch: "develop")
         check(trigger.observe(api, at: at(0), gap: 2 * hour) == nil, "not yet")
         check(trigger.observe(api, at: at(25), gap: 2 * hour) == nil, "25 s is not steady")
         check(trigger.observe(nil, at: at(28), gap: 2 * hour) == nil, "another app")
@@ -63,11 +63,11 @@ let resumeTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("resume: the last visit merges nearby blocks, stops at the current visit and keeps sessions and prompts", {
-        let session = ClaudeSession(id: "s1", folder: "/Users/me/git/finq.api", title: "Fix the voucher")
+        let session = ClaudeSession(id: "s1", folder: "/Users/me/git/orbit.api", title: "Fix the voucher")
         let blocks = [
             block(-30 * hour, -29 * hour),
             block(-5 * hour, -4.5 * hour, focus: session, prompt: "add a test for the rounding"),
-            block(-4.4 * hour, -4 * hour, repo: nil, branch: nil, ticket: "QDLY-1234", url: "acme.atlassian.net/browse/QDLY-1234"),
+            block(-4.4 * hour, -4 * hour, repo: nil, branch: nil, ticket: "ACME-1234", url: "acme.atlassian.net/browse/ACME-1234"),
             block(-3 * hour, -2 * hour, branch: "main"),
             block(0, 60, prompt: "now"),
         ]
@@ -83,11 +83,11 @@ let resumeTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("resume: contexts from tool arguments", {
-        let blocks = [block(-hour, -0.5 * hour), block(-0.4 * hour, -0.2 * hour, repo: "finq.admin-ui", branch: "NI/QDLY-77")]
-        check(ResumeLogic.latestContext(blocks)?.id == "finq.admin-ui@NI/QDLY-77", "latest")
-        check(ResumeLogic.context(repo: "quiddly-com/finq.api", branch: nil, ticket: nil, blocks: blocks) == api, "repository's latest branch")
-        check(ResumeLogic.context(repo: nil, branch: "NI/QDLY-1234", ticket: nil, blocks: blocks)?.repo == "finq.api", "branch finds its repository")
-        check(ResumeLogic.context(repo: nil, branch: nil, ticket: "QDLY-5", blocks: blocks)?.id == "QDLY-5", "ticket")
+        let blocks = [block(-hour, -0.5 * hour), block(-0.4 * hour, -0.2 * hour, repo: "orbit.admin-ui", branch: "NI/ACME-77")]
+        check(ResumeLogic.latestContext(blocks)?.id == "orbit.admin-ui@NI/ACME-77", "latest")
+        check(ResumeLogic.context(repo: "acme-com/orbit.api", branch: nil, ticket: nil, blocks: blocks) == api, "repository's latest branch")
+        check(ResumeLogic.context(repo: nil, branch: "NI/ACME-1234", ticket: nil, blocks: blocks)?.repo == "orbit.api", "branch finds its repository")
+        check(ResumeLogic.context(repo: nil, branch: nil, ticket: "ACME-5", blocks: blocks)?.id == "ACME-5", "ticket")
         check(ResumeLogic.context(repo: "nowhere", branch: nil, ticket: nil, blocks: blocks) == nil, "unknown repository")
     }),
 
@@ -99,23 +99,23 @@ let resumeTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("resume: the pull request is found by head branch, else by ticket, and only in the context's repository", {
-        let byHead = GitHubPR(url: prURL, number: 57, title: "Fix rounding", repo: "quiddly-com/finq.api", updated: at(-hour))
-        let byTitle = GitHubPR(url: prURL + "0", number: 570, title: "QDLY-1234: Fix rounding", repo: "quiddly-com/finq.api", updated: at(0))
-        let elsewhere = GitHubPR(url: "https://github.com/quiddly-com/finq.admin-ui/pull/1", number: 1, title: "QDLY-1234: UI",
-                                 repo: "quiddly-com/finq.admin-ui", updated: at(10))
-        let heads = [prURL: "NI/QDLY-1234"]
+        let byHead = GitHubPR(url: prURL, number: 57, title: "Fix rounding", repo: "acme-com/orbit.api", updated: at(-hour))
+        let byTitle = GitHubPR(url: prURL + "0", number: 570, title: "ACME-1234: Fix rounding", repo: "acme-com/orbit.api", updated: at(0))
+        let elsewhere = GitHubPR(url: "https://github.com/acme-com/orbit.admin-ui/pull/1", number: 1, title: "ACME-1234: UI",
+                                 repo: "acme-com/orbit.admin-ui", updated: at(10))
+        let heads = [prURL: "NI/ACME-1234"]
         check(ResumeLogic.pullRequest(for: api, in: [elsewhere, byTitle, byHead], head: { heads[$0] })?.number == 57, "head branch first")
         check(ResumeLogic.pullRequest(for: api, in: [elsewhere, byTitle], head: { _ in nil })?.number == 570, "then the ticket in the title")
-        check(ResumeLogic.pullRequest(for: ResumeContextKey(ticket: "QDLY-1234"), in: [elsewhere, byTitle], head: { _ in nil })?.number == 1,
+        check(ResumeLogic.pullRequest(for: ResumeContextKey(ticket: "ACME-1234"), in: [elsewhere, byTitle], head: { _ in nil })?.number == 1,
               "a ticket alone takes the latest anywhere")
-        check(ResumeLogic.pullRequest(for: ResumeContextKey(repo: "finq.api", branch: "main"), in: [byTitle], head: { _ in nil }) == nil, "none")
+        check(ResumeLogic.pullRequest(for: ResumeContextKey(repo: "orbit.api", branch: "main"), in: [byTitle], head: { _ in nil }) == nil, "none")
     }),
 
     ("resume: pull request changes since the visit: commits, others' comments and finished checks", {
         var activity = GitHubActivity()
         activity.me = "niklas"
-        let pr = GitHubPR(url: prURL, number: 57, title: "Fix", repo: "quiddly-com/finq.api", updated: t0, checks: .running, activity: activity)
-        var detail = GitHubPRDetail(url: prURL, repo: "quiddly-com/finq.api", number: 57, title: "Fix")
+        let pr = GitHubPR(url: prURL, number: 57, title: "Fix", repo: "acme-com/orbit.api", updated: t0, checks: .running, activity: activity)
+        var detail = GitHubPRDetail(url: prURL, repo: "acme-com/orbit.api", number: 57, title: "Fix")
         detail.rollup = .failed
         detail.commits = [GitHubPRDetail.Commit(oid: "a", headline: "Old", author: nil, date: at(-5 * hour), url: nil),
                           GitHubPRDetail.Commit(oid: "b", headline: "Address review", author: nil, date: at(-hour), url: nil)]
@@ -138,7 +138,7 @@ let resumeTests: [(name: String, run: () throws -> Void)] = [
 
     ("resume: Jira status and assignee changes and comments since the visit", {
         let data = Data("""
-            {"key":"QDLY-1234","fields":{"summary":"Rounding","status":{"name":"Review"},"assignee":{"displayName":"Anna Berg"},
+            {"key":"ACME-1234","fields":{"summary":"Rounding","status":{"name":"Review"},"assignee":{"displayName":"Anna Berg"},
              "comment":{"total":2,"comments":[{"author":{"displayName":"Bo"},"created":"2026-10-27T10:00:00.000+0000","body":"Old"},
                                               {"author":{"displayName":"Anna Berg"},"created":"2026-10-27T12:30:00.000+0000","body":"Looks good"}]}},
              "changelog":{"histories":[
@@ -150,32 +150,32 @@ let resumeTests: [(name: String, run: () throws -> Void)] = [
         let changes = ResumeLogic.parseChangelog(data)
         check(changes.count == 3, "labels left out")
         let since = JiraLogic.date("2026-10-27T11:00:00.000+0000")!
-        let ticket = ResumeLogic.ticket(try JiraLogic.parseIssue(data), changes: changes, since: since, url: "https://x/browse/QDLY-1234")
+        let ticket = ResumeLogic.ticket(try JiraLogic.parseIssue(data), changes: changes, since: since, url: "https://x/browse/ACME-1234")
         check(ticket.changes == ["Status: In Progress \u{2192} Review (Anna Berg)", "Assignee: Niklas Inde \u{2192} Anna Berg (Anna Berg)"], "\(ticket.changes)")
         check(ticket.newComments.map(\.text) == ["Looks good"] && ticket.status == "Review" && ticket.assignee == "Anna Berg", "comments since")
-        check(ResumeLogic.issuePath("QDLY-1").hasSuffix("&expand=changelog"), "asks for the changelog")
+        check(ResumeLogic.issuePath("ACME-1").hasSuffix("&expand=changelog"), "asks for the changelog")
     }),
 
     ("resume: meeting lines naming the ticket (also spoken), the pull request or the repository", {
         let text = """
             # Weekly sync
-            We talked about finq.api2 and the release.
+            We talked about orbit.api2 and the release.
             Bo: the PR 57 still fails on tests
-            Anna: QDLY 1234 should go out this week
+            Anna: ACME 1234 should go out this week
             """
-        check(ResumeLogic.mentionLine(in: text, ticket: "QDLY-1234", prNumber: 57, repo: "finq.api") == "Anna: QDLY 1234 should go out this week", "ticket first")
-        check(ResumeLogic.mentionLine(in: text, ticket: "QDLY-9", prNumber: 57, repo: "finq.api") == "Bo: the PR 57 still fails on tests", "then the PR")
-        check(ResumeLogic.mentionLine(in: text, ticket: nil, prNumber: nil, repo: "finq.api") == nil, "finq.api2 is not finq.api")
-        check(ResumeLogic.mentionLine(in: "Deploy finq.api today", ticket: nil, prNumber: nil, repo: "finq.api") == "Deploy finq.api today", "repository")
-        check(ResumeLogic.mentionLine(in: "see QDLY-12345 and #570", ticket: "QDLY-1234", prNumber: 57, repo: nil) == nil, "longer numbers do not match")
+        check(ResumeLogic.mentionLine(in: text, ticket: "ACME-1234", prNumber: 57, repo: "orbit.api") == "Anna: ACME 1234 should go out this week", "ticket first")
+        check(ResumeLogic.mentionLine(in: text, ticket: "ACME-9", prNumber: 57, repo: "orbit.api") == "Bo: the PR 57 still fails on tests", "then the PR")
+        check(ResumeLogic.mentionLine(in: text, ticket: nil, prNumber: nil, repo: "orbit.api") == nil, "orbit.api2 is not orbit.api")
+        check(ResumeLogic.mentionLine(in: "Deploy orbit.api today", ticket: nil, prNumber: nil, repo: "orbit.api") == "Deploy orbit.api today", "repository")
+        check(ResumeLogic.mentionLine(in: "see ACME-12345 and #570", ticket: "ACME-1234", prNumber: 57, repo: nil) == nil, "longer numbers do not match")
         check(ResumeLogic.mentionLine(in: "merged #57.", ticket: nil, prNumber: 57, repo: nil) == "merged #57.", "hash number")
     }),
 
     ("resume: the agent of the pull request, else of the ticket", {
-        let agents = [AgentState(key: "topic:1", title: "Rounding support", status: .idle, jiraKey: "QDLY-1234"),
-                      AgentState(key: prURL, title: "finq.api #57", prURL: prURL, status: .waiting, lastResult: "Fixed the\ntest")]
-        check(ResumeLogic.agent(in: agents, prURL: prURL, ticket: "QDLY-1234")?.lastResult == "Fixed the test", "pull request first")
-        check(ResumeLogic.agent(in: agents, prURL: nil, ticket: "QDLY-1234")?.key == "topic:1", "ticket")
+        let agents = [AgentState(key: "topic:1", title: "Rounding support", status: .idle, jiraKey: "ACME-1234"),
+                      AgentState(key: prURL, title: "orbit.api #57", prURL: prURL, status: .waiting, lastResult: "Fixed the\ntest")]
+        check(ResumeLogic.agent(in: agents, prURL: prURL, ticket: "ACME-1234")?.lastResult == "Fixed the test", "pull request first")
+        check(ResumeLogic.agent(in: agents, prURL: nil, ticket: "ACME-1234")?.key == "topic:1", "ticket")
         check(ResumeLogic.agent(in: agents, prURL: nil, ticket: nil) == nil, "none")
     }),
 
@@ -185,25 +185,25 @@ let resumeTests: [(name: String, run: () throws -> Void)] = [
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try MeetingStore(path: folder.appendingPathComponent("store.sqlite").path)
         let sessionID = "11111111-2222-3333-4444-555555555555"
-        let session = ClaudeSession(id: sessionID, folder: "/Users/me/git/finq.api", title: "Fix the voucher")
+        let session = ClaudeSession(id: sessionID, folder: "/Users/me/git/orbit.api", title: "Fix the voucher")
         let projects = folder.appendingPathComponent("projects")
         let transcript = ClaudeTranscripts.transcript(id: sessionID, cwd: session.folder, root: projects)!
         try FileManager.default.createDirectory(at: transcript.deletingLastPathComponent(), withIntermediateDirectories: true)
         try userLine("make the rounding test pass", -4.5 * hour).write(to: transcript, atomically: true, encoding: .utf8)
-        for var item in [block(-5 * hour, -4 * hour, focus: session), block(-hour, -0.5 * hour, repo: "finq.admin-ui", branch: "develop")] {
+        for var item in [block(-5 * hour, -4 * hour, focus: session), block(-hour, -0.5 * hour, repo: "orbit.admin-ui", branch: "develop")] {
             item.id = 0
             try store.saveBlock(item)
         }
-        try store.saveGitHubPRs([.created: [GitHubPR(url: prURL, number: 57, title: "QDLY-1234: Fix rounding", repo: "quiddly-com/finq.api", updated: t0)]])
+        try store.saveGitHubPRs([.created: [GitHubPR(url: prURL, number: 57, title: "ACME-1234: Fix rounding", repo: "acme-com/orbit.api", updated: t0)]])
         let sources = ResumeSources(store: { store }, jira: { nil }, githubEnabled: { true },
                                     agentState: folder.appendingPathComponent("agents.json"), projects: projects)
         let tool = MCPServer.resumeTools(.success(store), sources: sources, now: { t0 })[0]
-        let text = try tool.run(["branch": "NI/QDLY-1234"])
-        check(text.hasPrefix("# finq.api \u{00B7} NI/QDLY-1234"), text)
+        let text = try tool.run(["branch": "NI/ACME-1234"])
+        check(text.hasPrefix("# orbit.api \u{00B7} NI/ACME-1234"), text)
         check(text.contains("Fix the voucher: make the rounding test pass"), "prompt from the transcript")
-        check(text.contains("quiddly-com/finq.api#57") && text.contains("detail not fetched"), "pull request")
-        check(try tool.run([:]).hasPrefix("# finq.admin-ui \u{00B7} develop"), "latest context without arguments")
-        check(try tool.run(["ticket": "QDLY-77"]).contains("No tracked time here"), "a ticket never worked on")
+        check(text.contains("acme-com/orbit.api#57") && text.contains("detail not fetched"), "pull request")
+        check(try tool.run([:]).hasPrefix("# orbit.admin-ui \u{00B7} develop"), "latest context without arguments")
+        check(try tool.run(["ticket": "ACME-77"]).contains("No tracked time here"), "a ticket never worked on")
         check((try? tool.run(["ticket": "nonsense"])) == nil, "bad ticket")
         check(MCPServer.toolNames.contains("resume_context"), "listed")
     }),

@@ -329,7 +329,7 @@ enum MeetingSourceLogic {
     }
 
     /// A huddle window (`Huddle: general - Slack`, `Huddle with Andy`) as is, else the conversation of a Slack window
-    /// (`Andy Smith (DM) - Quiddly - Slack`, `general (Channel) - Quiddly - Slack`, older `Slack | general | Quiddly`)
+    /// (`Andy Smith (DM) - Acme - Slack`, `general (Channel) - Acme - Slack`, older `Slack | general | Acme`)
     /// as the huddle in it.
     private static func slackTitle(_ text: String) -> String? {
         let parts = text.hasPrefix("Slack | ") ? Array(text.components(separatedBy: " | ").dropFirst())

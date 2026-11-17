@@ -93,17 +93,17 @@ let mcpFilterTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("filters: activity blocks narrow by app, repository, branch, ticket, project and category", {
-        let api = block(repo: "api", branch: "NI/QDLY-8296", ticket: nil, project: 1, category: .coding)
+        let api = block(repo: "api", branch: "NI/ACME-8296", ticket: nil, project: 1, category: .coding)
         let browser = block(app: "Chrome", ticket: "ISD-5", project: nil, category: .research)
-        let projects = [Project(id: 1, name: "Quiddly", color: "#000")]
+        let projects = [Project(id: 1, name: "Acme", color: "#000")]
         func kept(_ args: [String: Any]) throws -> [Bool] {
             let filter = try ActivityFilter(args)
             return [api, browser].map { filter.matches($0, rules: [], projects: projects) }
         }
         check(try kept([:]) == [true, true], "no filter")
         check(try kept(["app": "chrome"]) == [false, true] && kept(["repo": "acme/api"]) == [true, false], "app, repo")
-        check(try kept(["branch": "qdly"]) == [true, false] && kept(["ticket": "QDLY-8296"]) == [true, false] && kept(["ticket": "isd"]) == [false, true], "branch, ticket from the branch")
-        check(try kept(["project": "quid"]) == [true, false] && kept(["project": "unassigned"]) == [false, true], "project")
+        check(try kept(["branch": "acme"]) == [true, false] && kept(["ticket": "ACME-8296"]) == [true, false] && kept(["ticket": "isd"]) == [false, true], "branch, ticket from the branch")
+        check(try kept(["project": "acm"]) == [true, false] && kept(["project": "unassigned"]) == [false, true], "project")
         check(try kept(["category": "CODING"]) == [true, false] && kept(["app": "xcode", "category": "research/browsing"]) == [false, false], "category, combined")
         check(failure { try ActivityFilter(["category": "fun"]) }.contains("code review"), "categories named")
         check(try ActivityFilter(["repo": "api", "category": "coding"]).applied == ["repo \u{201C}api\u{201D}", "category \u{201C}coding\u{201D}"], "applied")
@@ -121,7 +121,7 @@ let mcpFilterTests: [(name: String, run: () throws -> Void)] = [
         check(try kept(["kind": "main"]) == ["main:work"] && kept(["kind": "topic"]) == [topic] && kept(["kind": "assistant"]) == ["assistant:work:dev"], "kinds")
         check(try kept(["kind": "pr"]).count == 2, "pull request agents")
         var ticket = state("topic:\(UUID().uuidString)")
-        ticket.jiraKey = "QDLY-8332"
+        ticket.jiraKey = "ACME-8332"
         let withTicket = agents + [ticket]
         check(try withTicket.filter(AgentFilter(["kind": "ticket"]).matches).map(\.key) == [ticket.key], "ticket agents")
         check(try withTicket.filter(AgentFilter(["kind": "topic"]).matches).map(\.key) == [topic], "a ticket agent is not a plain topic")
@@ -152,15 +152,15 @@ let mcpFilterTests: [(name: String, run: () throws -> Void)] = [
             Reminder(id: title, title: title, notes: notes, due: due.map { ReminderDue(date: utc($0)) }, priority: priority, created: now, source: source)
         }
         let items = [reminder("Merge", due: "2026-11-12T10:00:00Z", priority: .high, source: .pullRequest(GitHubLink.Target(repo: "acme/api", number: 7))),
-                     reminder("Call", due: "2026-11-15T10:00:00Z", notes: "about Merge", source: .jira(key: "QDLY-9")), reminder("Someday", due: nil)]
+                     reminder("Call", due: "2026-11-15T10:00:00Z", notes: "about Merge", source: .jira(key: "ACME-9")), reminder("Someday", due: nil)]
         func open(_ filter: ReminderFilter) -> [String] { ReminderLogic.open(items, filter: filter).map(\.title) }
         check(open(ReminderFilter()) == ["Merge", "Call", "Someday"], "no filter")
         check(open(ReminderFilter(dueBefore: utc("2026-11-13T00:00:00Z"))) == ["Merge"] && open(ReminderFilter(dueAfter: utc("2026-11-13T00:00:00Z"))) == ["Call"], "due window")
         check(open(ReminderFilter(priority: .high)) == ["Merge"] && open(ReminderFilter(query: "merge")) == ["Merge", "Call"], "priority, text in title or notes")
         check(open(ReminderFilter(dueAfter: utc("2026-11-01T00:00:00Z"), priority: .high, query: "merge")) == ["Merge"], "combined")
         check(open(ReminderFilter(sourceKind: "jira")) == ["Call"] && open(ReminderFilter(sourceKind: "none")) == ["Someday"], "source kind, none")
-        check(open(ReminderFilter(sourceQuery: "acme/api#7")) == ["Merge"] && open(ReminderFilter(sourceQuery: "qdly-9")) == ["Call"], "source key")
-        check(open(ReminderFilter(sourceKind: "jira", sourceQuery: "acme")).isEmpty, "kind and key together")
+        check(open(ReminderFilter(sourceQuery: "acme/api#7")) == ["Merge"] && open(ReminderFilter(sourceQuery: "acme-9")) == ["Call"], "source key")
+        check(open(ReminderFilter(sourceKind: "jira", sourceQuery: "acme/api")).isEmpty, "kind and key together")
     }),
 
     ("filters: jira_search composes structured filters into JQL, quoted and escaped, and keeps raw JQL working", {

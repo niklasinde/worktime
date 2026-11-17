@@ -85,7 +85,7 @@ let jiraWriteTests: [(name: String, run: () throws -> Void)] = [
 
     ("a comment becomes a document: paragraphs, line breaks and links, and nothing for an empty text", {
         check(JiraWrite.commentBody("  \n ") == nil, "empty")
-        let document = JiraWrite.document("Hej!\nSe https://acme.atlassian.net/browse/QDLY-1, tack.\n\nNew paragraph")
+        let document = JiraWrite.document("Hej!\nSe https://acme.atlassian.net/browse/ACME-1, tack.\n\nNew paragraph")
         let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
         let json = String(decoding: data, as: UTF8.self)
         check(document["type"] as? String == "doc" && document["version"] as? Int == 1, "doc")
@@ -94,9 +94,9 @@ let jiraWriteTests: [(name: String, run: () throws -> Void)] = [
         let first = paragraphs[0]["content"] as? [[String: Any]] ?? []
         check(first.map { $0["type"] as? String } == ["text", "hardBreak", "text", "text", "text"], "text, break, text, link, text: \(first.map { $0["type"] ?? "" })")
         check(first[2]["text"] as? String == "Se ", "before the link")
-        check(first[3]["text"] as? String == "https://acme.atlassian.net/browse/QDLY-1", "the link without the comma")
+        check(first[3]["text"] as? String == "https://acme.atlassian.net/browse/ACME-1", "the link without the comma")
         let marks = first[3]["marks"] as? [[String: Any]] ?? []
-        check(marks.first?["type"] as? String == "link" && (marks.first?["attrs"] as? [String: String])?["href"] == "https://acme.atlassian.net/browse/QDLY-1", "link mark")
+        check(marks.first?["type"] as? String == "link" && (marks.first?["attrs"] as? [String: String])?["href"] == "https://acme.atlassian.net/browse/ACME-1", "link mark")
         check(first[4]["text"] as? String == ", tack.", "after the link")
         check(json.contains("\"New paragraph\""), json)
         let body = JiraWrite.commentBody("Hello")
@@ -109,8 +109,8 @@ let jiraWriteTests: [(name: String, run: () throws -> Void)] = [
         check((JiraWrite.assigneeBody("557058:abc")["accountId"] as? String) == "557058:abc", "person")
         check(JiraWrite.assigneeBody(nil)["accountId"] is NSNull, "nobody")
         check(JiraWrite.usersPath(query: "anna b") == "/rest/api/3/user/search?query=anna%20b&maxResults=20", JiraWrite.usersPath(query: "anna b"))
-        check(JiraWrite.usersPath(query: "a&b", issueKey: "QDLY-1") == "/rest/api/3/user/assignable/search?issueKey=QDLY-1&query=a%26b&maxResults=20",
-              JiraWrite.usersPath(query: "a&b", issueKey: "QDLY-1"))
+        check(JiraWrite.usersPath(query: "a&b", issueKey: "ACME-1") == "/rest/api/3/user/assignable/search?issueKey=ACME-1&query=a%26b&maxResults=20",
+              JiraWrite.usersPath(query: "a&b", issueKey: "ACME-1"))
         let users = try JiraWrite.parseUsers(Data(#"[{"accountId":"1","displayName":"Anna Berg","active":true,"accountType":"atlassian"},{"accountId":"2","displayName":"Old","active":false},{"accountId":"3","displayName":"Bot","active":true,"accountType":"app"},{"accountId":"4","displayName":"Bo"}]"#.utf8))
         check(users == [JiraPerson(id: "1", name: "Anna Berg"), JiraPerson(id: "4", name: "Bo")], "active people only \(users)")
         let me = try JiraLogic.parseMyself(Data(#"{"accountId":"99","displayName":"Niklas Inde"}"#.utf8))
@@ -132,28 +132,28 @@ let jiraWriteTests: [(name: String, run: () throws -> Void)] = [
     ("the client sends moves, assignments and comments with the right method, path and body, and says what Jira refused", {
         let moves = try JiraWrite.parseTransitions(Data(transitionsJSON.utf8))
         let sent = Sent()
-        let sentMove = waiting { try await writeClient(sent: sent).move("QDLY-1", with: moves[1], values: ["resolution": ["10000"], "fixVersions": ["7"]]) }
+        let sentMove = waiting { try await writeClient(sent: sent).move("ACME-1", with: moves[1], values: ["resolution": ["10000"], "fixVersions": ["7"]]) }
         if case .failure(let error) = sentMove { return check(false, "move failed \(error)") }
-        check(sent.requests[0].httpMethod == "POST" && sent.requests[0].url?.path == "/rest/api/3/issue/QDLY-1/transitions", "move request")
+        check(sent.requests[0].httpMethod == "POST" && sent.requests[0].url?.path == "/rest/api/3/issue/ACME-1/transitions", "move request")
         check(sent.requests[0].value(forHTTPHeaderField: "Authorization") == JiraLogic.authorization(email: "me@acme.com", token: fakeToken), "auth")
         check((sent.bodies[0]["transition"] as? [String: String]) == ["id": "31"], "move body")
 
-        let sentAssign = waiting { try await writeClient(sent: sent).assign("QDLY-1", to: JiraPerson(id: "557058:abc", name: "Anna")) }
+        let sentAssign = waiting { try await writeClient(sent: sent).assign("ACME-1", to: JiraPerson(id: "557058:abc", name: "Anna")) }
         if case .failure(let error) = sentAssign { return check(false, "assign failed \(error)") }
-        check(sent.requests[1].httpMethod == "PUT" && sent.requests[1].url?.path == "/rest/api/3/issue/QDLY-1/assignee", "assign request")
+        check(sent.requests[1].httpMethod == "PUT" && sent.requests[1].url?.path == "/rest/api/3/issue/ACME-1/assignee", "assign request")
         check(sent.bodies[1]["accountId"] as? String == "557058:abc", "assign body")
-        _ = waiting { try await writeClient(sent: sent).assign("QDLY-1", to: nil) }
+        _ = waiting { try await writeClient(sent: sent).assign("ACME-1", to: nil) }
         check(sent.bodies[2]["accountId"] is NSNull, "unassign sends null")
 
-        let posted = waiting { try await writeClient(answering: 201, body: #"{"author":{"displayName":"Niklas"},"created":"2026-11-16T15:00:00.000+0100","body":"ok"}"#, sent: sent).comment(on: "QDLY-1", text: "Hello") }
+        let posted = waiting { try await writeClient(answering: 201, body: #"{"author":{"displayName":"Niklas"},"created":"2026-11-16T15:00:00.000+0100","body":"ok"}"#, sent: sent).comment(on: "ACME-1", text: "Hello") }
         guard case .success(let comment) = posted else { return check(false, "comment failed \(posted)") }
-        check(sent.requests[3].httpMethod == "POST" && sent.requests[3].url?.path == "/rest/api/3/issue/QDLY-1/comment", "comment request")
+        check(sent.requests[3].httpMethod == "POST" && sent.requests[3].url?.path == "/rest/api/3/issue/ACME-1/comment", "comment request")
         check(comment.body == "ok", "comment answer")
-        let empty = waiting { try await writeClient(sent: sent).comment(on: "QDLY-1", text: "  ") }
+        let empty = waiting { try await writeClient(sent: sent).comment(on: "ACME-1", text: "  ") }
         if case .failure(let error) = empty { check(error as? JiraError == .refused("the comment is empty"), "empty refused") } else { check(false, "empty went out") }
         check(sent.requests.count == 4, "an empty comment is not sent")
 
-        let refused = waiting { try await writeClient(answering: 400, body: #"{"errorMessages":[],"errors":{"resolution":"Resolution is required."}}"#, sent: sent).move("QDLY-1", with: moves[0]) }
+        let refused = waiting { try await writeClient(answering: 400, body: #"{"errorMessages":[],"errors":{"resolution":"Resolution is required."}}"#, sent: sent).move("ACME-1", with: moves[0]) }
         if case .failure(let error) = refused { check(error as? JiraError == .refused("Resolution is required."), "refusal \(error)") } else { check(false, "should refuse") }
     }),
 

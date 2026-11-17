@@ -176,6 +176,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/ResumeTests.swift \
     Tests/WorkTimeTests/InCallTests.swift \
     Tests/WorkTimeTests/ClaudeImportTests.swift \
+    Tests/WorkTimeTests/WorkspaceSample.swift \
     Tests/WorkTimeTests/WorkspaceTests.swift \
     Tests/WorkTimeTests/AssistantTests.swift \
     Tests/WorkTimeTests/NoticeTests.swift \

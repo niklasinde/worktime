@@ -172,7 +172,7 @@ struct ActivityFilter: Equatable {
         "app": ["type": "string", "description": "Only time in this app (part of its name or bundle id)."],
         "repo": ["type": "string", "description": "Only time in repositories matching this (part of owner/name)."],
         "branch": ["type": "string", "description": "Only time on branches matching this."],
-        "ticket": ["type": "string", "description": "Only time on tickets matching this, like QDLY-8296 or just QDLY."],
+        "ticket": ["type": "string", "description": "Only time on tickets matching this, like ACME-8296 or just ACME."],
         "project": ["type": "string", "description": "Only time in projects matching this name; Unassigned for time without one."],
         "category": ["type": "string", "enum": ActivityCategory.allCases.map(\.rawValue), "description": "Only time the activity was classified as this."],
     ]

@@ -32,7 +32,7 @@ enum ProjectSuggestionLogic {
         "amazon.com", "svt.se", "aftonbladet.se", "expressen.se", "dn.se", "blocket.se",
     ]
 
-    /// Services whose subdomain is the customer: `quiddly.atlassian.net` is Quiddly's, not Atlassian's.
+    /// Services whose subdomain is the customer: `acme.atlassian.net` is Acme's, not Atlassian's.
     static let tenantDomains: Set<String> = [
         "atlassian.net", "slack.com", "github.io", "vercel.app", "netlify.app", "herokuapp.com", "zendesk.com", "sharepoint.com",
         "notion.site", "web.app", "firebaseapp.com", "azurewebsites.net", "pages.dev", "workers.dev", "sentry.io",
@@ -41,7 +41,7 @@ enum ProjectSuggestionLogic {
     private static let secondLevel: Set<String> = ["co.uk", "org.uk", "com.au", "co.nz", "co.jp", "com.br"]
     private static let repoNoise: Set<String> = ["datagrip", "local", "test", "tests", "api", "ui", "app", "web", "run", "the"]
 
-    /// `www.quiddly.com` and `testadmin.quiddly.com` give `quiddly.com`; `papyrus-se.atlassian.net` stays as it is.
+    /// `www.acme.com` and `admin.acme.com` give `acme.com`; `papyrus-se.atlassian.net` stays as it is.
     static func site(_ host: String) -> String {
         var labels = host.lowercased().split(separator: ".").map(String.init)
         if labels.first == "www" { labels.removeFirst() }
@@ -51,14 +51,14 @@ enum ProjectSuggestionLogic {
         return labels.suffix(keep).joined(separator: ".")
     }
 
-    /// The organisation a site belongs to: `quiddly.dev` and `quiddly.com` are both `quiddly`.
+    /// The organisation a site belongs to: `acme.dev` and `acme.com` are both `acme`.
     static func organisation(site: String) -> String {
         let labels = site.split(separator: ".").map(String.init)
         let tenant = labels.count > 2 && tenantDomains.contains(labels.suffix(2).joined(separator: "."))
         return organisation(owner: tenant ? labels[0] : labels.first ?? site)
     }
 
-    /// The organisation of the browser profile a window belongs to: Chrome ends its titles with `Niklas (quiddly.com)`.
+    /// The organisation of the browser profile a window belongs to: Chrome ends its titles with `Niklas (acme.com)`.
     static func profileOrganisation(title: String?) -> String? {
         guard let title, let match = title.range(of: #"\(([a-z0-9-]+\.)+[a-z]{2,}\)\s*$"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
         let domain = title[match].trimmingCharacters(in: .whitespaces).dropFirst().dropLast()
@@ -84,7 +84,7 @@ enum ProjectSuggestionLogic {
 
     private static let genericOrganisations = Set(genericDomains.map { organisation(site: $0) })
 
-    /// `quiddly-com` is `quiddly`.
+    /// `acme-com` is `acme`.
     static func organisation(owner: String) -> String {
         var name = owner.lowercased()
         for suffix in ["-com", "-se", "-io", "-ab", "-app", "-hq", "-inc", "-org", "-dev"] where name.hasSuffix(suffix) && name.count > suffix.count {
@@ -93,7 +93,7 @@ enum ProjectSuggestionLogic {
         return name
     }
 
-    /// `datagrip_finq.api` is `finq`, `indehouse3` is `indehouse`.
+    /// `datagrip_orbit.api` is `orbit`, `indehouse3` is `indehouse`.
     static func cleanName(repo: String) -> String {
         let words = repo.lowercased().split(whereSeparator: { "._- ".contains($0) }).map { word in
             String(word.reversed().drop { $0.isNumber }.reversed()).replacingOccurrences(of: #"v$"#, with: "", options: .regularExpression)
@@ -104,7 +104,7 @@ enum ProjectSuggestionLogic {
     static func displayName(_ word: String) -> String { word.prefix(1).uppercased() + word.dropFirst() }
 
     /// The owner of a repository without one: from a clone or another block with the same repository, or a known repository
-    /// whose name is a whole part of this one (`datagrip_finq.api` holds `finq.api`).
+    /// whose name is a whole part of this one (`datagrip_orbit.api` holds `orbit.api`).
     static func owner(of repo: String, known: [String: String]) -> String? {
         let repo = repo.lowercased()
         if let owner = known[repo] { return owner }

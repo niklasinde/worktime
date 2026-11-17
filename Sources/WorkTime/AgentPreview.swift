@@ -146,7 +146,7 @@ enum AgentPreview {
         call("mcp__worktime__send_to_agent", ["agent": "Reviewer", "text": "Review the migration"], after: 1.1, took: 0.31)
         call("Bash", ["command": "git status --short", "description": "See what changed"], after: 1.8, took: 0.058)
         map.receive(["type": "context", "tokens": 20_400, "max": 200_000, "percent": 10], cwd: cwd, at: time)
-        call("Bash", ["command": "gh pr view 42", "description": "Check develop for the QDLY-8332 release note"], after: 1.8, took: nil)
+        call("Bash", ["command": "gh pr view 42", "description": "Check develop for the ACME-8332 release note"], after: 1.8, took: nil)
         return map
     }
 
@@ -253,7 +253,7 @@ enum AgentPreview {
             .permissionRequest(id: "4", tool: "Bash", summary: risky, detail: risky, offer: bash(["rm", "git push"])),
             .permissionRequest(id: "5", tool: "Edit", summary: "agent/src/rules.ts",
                                detail: "{\n  \"file_path\" : \"\(repo)/agent/src/rules.ts\"\n}", offer: [AgentRule(kind: .edits, value: repo)]),
-            .permissionRequest(id: "6", tool: "mcp__worktime__send_to_agent", summary: "quiddly-com/finq.api#2591, Push the fix.",
+            .permissionRequest(id: "6", tool: "mcp__worktime__send_to_agent", summary: "acme-com/orbit.api#2591, Push the fix.",
                                detail: "{\n  \"text\" : \"Push the fix.\"\n}"),
         ]
         events.forEach { AgentLogic.apply($0, to: &items) }
@@ -285,20 +285,20 @@ enum AgentPreview {
         let projects = ClaudeTranscripts.folder(cwd: folder)
         try? FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
         try? transcript(folder: folder).write(to: projects.appendingPathComponent(ids[1] + ".jsonl"), atomically: true, encoding: .utf8)
-        let other = #"{"type":"user","cwd":"/Users/me/git","message":{"role":"user","content":"Rename the voucher class to Voucher in finq.api"}}"#
+        let other = #"{"type":"user","cwd":"/Users/me/git","message":{"role":"user","content":"Rename the voucher class to Voucher in orbit.api"}}"#
         try? other.write(to: projects.appendingPathComponent(ids[3] + ".jsonl"), atomically: true, encoding: .utf8)
         let defaults = AgentModel.defaults
         func entry(_ index: Int, _ title: String, hours: Double, model: String?) -> AgentSessionEntry {
             AgentSessionEntry(id: ids[index], folder: folder, created: now.addingTimeInterval(-hours * 3600 - 600),
                               lastUsed: now.addingTimeInterval(-hours * 3600), title: title, model: model)
         }
-        let api = "https://github.com/quiddly-com/finq.api/pull/2591", admin = "https://github.com/quiddly-com/finq.admin-ui/pull/664"
-        let saved = "https://github.com/quiddly-com/finq.client-ui/pull/412"
+        let api = "https://github.com/acme-com/orbit.api/pull/2591", admin = "https://github.com/acme-com/orbit.admin-ui/pull/664"
+        let saved = "https://github.com/acme-com/orbit.client-ui/pull/412"
         let history = [AgentOverview.mainKey: [entry(1, "Why does the VAT test skip on CI?", hours: 0.3, model: "claude-sonnet-5-5"),
                                                entry(0, "Catch up", hours: 5, model: "claude-haiku-5-5"),
                                                entry(2, "Draft the release notes for 3.14", hours: 50, model: "claude-opus-5-5")],
                        saved: [AgentSessionEntry(id: ids[2], folder: folder, created: now.addingTimeInterval(-90_000),
-                                                 lastUsed: now.addingTimeInterval(-86_400), title: "Review quiddly-com/finq.client-ui#412", model: nil)]]
+                                                 lastUsed: now.addingTimeInterval(-86_400), title: "Review acme-com/orbit.client-ui#412", model: nil)]]
         defaults.set(AgentSessions.encode(history), forKey: AgentSessions.historyKey)
         defaults.set(folder, forKey: AgentLogic.legacyMainFolderKey)
         defaults.set(ids[1], forKey: AgentLogic.legacyMainSessionKey)
@@ -344,13 +344,13 @@ enum AgentPreview {
             .toolUse(id: "2", tool: "mcp__worktime__slack_search", summary: "Intrum UAT", detail: ""),
             .toolResult(id: "2", content: "- 2026-11-10 14:03 · #support · anna: UAT is down …", isError: false, auto: false),
             .text("""
-                **What\u{2019}s needed from you:** Intrum can\u{2019}t log in to UAT since Monday\u{2019}s SSO change (blocked by QDLY-9, in Review). \
+                **What\u{2019}s needed from you:** Intrum can\u{2019}t log in to UAT since Monday\u{2019}s SSO change (blocked by ACME-9, in Review). \
                 Anna asked in #support for an ETA.
 
                 Draft reply for ISD-123 (post it yourself):
 
                 ```
-                Hi Anna, the login problem comes from the SSO change in QDLY-9. The fix is in review and should reach UAT on Thursday; \
+                Hi Anna, the login problem comes from the SSO change in ACME-9. The fix is in review and should reach UAT on Thursday; \
                 I'll confirm here once it's deployed.
                 ```
                 """),
@@ -371,7 +371,7 @@ enum AgentPreview {
         await save(AgentsPage(hub: hub), size: size, appearance: .aqua, to: output.appendingPathComponent("topics-free-light.png"))
         let sheets: [(String, NewTopicAgentSheet)] = [
             ("empty", NewTopicAgentSheet { _ in }),
-            ("filled", NewTopicAgentSheet(name: "Support: Gaia invoices", jira: "isd-456", slack: thread) { _ in }),
+            ("filled", NewTopicAgentSheet(name: "Support: Globex invoices", jira: "isd-456", slack: thread) { _ in }),
             ("invalid", NewTopicAgentSheet(name: "Support", jira: "ISD-", slack: "https://example.com/x",
                                            problem: TopicAgentError.badJiraKey("ISD-").message) { _ in }),
         ]
@@ -394,14 +394,14 @@ enum AgentPreview {
         func assistant(_ content: [[String: Any]]) -> String { line(["type": "assistant", "cwd": folder, "message": ["role": "assistant", "content": content]]) }
         return [
             user("Why does the VAT test skip on CI?"),
-            assistant([["type": "tool_use", "id": "toolu_1", "name": "Grep", "input": ["pattern": "skipif", "path": folder + "/finq.api/tests"]]]),
+            assistant([["type": "tool_use", "id": "toolu_1", "name": "Grep", "input": ["pattern": "skipif", "path": folder + "/orbit.api/tests"]]]),
             user([["type": "tool_result", "tool_use_id": "toolu_1", "content": "tests/test_vat.py:12: @pytest.mark.skipif(not VAT_ENABLED)"]]),
-            assistant([["type": "tool_use", "id": "toolu_2", "name": "Read", "input": ["file_path": folder + "/finq.api/tests/test_vat.py"]]]),
+            assistant([["type": "tool_use", "id": "toolu_2", "name": "Read", "input": ["file_path": folder + "/orbit.api/tests/test_vat.py"]]]),
             user([["type": "tool_result", "tool_use_id": "toolu_2", "content": [["type": "text", "text": "import pytest\n…"]]]]),
             assistant([["type": "text", "text": "It skips because `VAT_ENABLED` is read from the environment and CI never sets it "
-                        + "(finq.api/tests/test_vat.py:12). Set it in the test job, or default it to true in `conftest.py`."]]),
+                        + "(orbit.api/tests/test_vat.py:12). Set it in the test job, or default it to true in `conftest.py`."]]),
             user("Fix it in conftest"),
-            assistant([["type": "tool_use", "id": "toolu_3", "name": "Edit", "input": ["file_path": folder + "/finq.api/tests/conftest.py",
+            assistant([["type": "tool_use", "id": "toolu_3", "name": "Edit", "input": ["file_path": folder + "/orbit.api/tests/conftest.py",
                                                                                        "old_string": "", "new_string": "VAT_ENABLED = True"]]]),
             user([["type": "tool_result", "tool_use_id": "toolu_3", "content": "The file was updated.", "is_error": false]]),
             assistant([["type": "text", "text": "Done: `conftest.py` now turns VAT on for every test, so the skip no longer applies."]]),
@@ -410,29 +410,29 @@ enum AgentPreview {
 
     /// Main answering Catch up, then asking to hand a prompt to a pull request's agent.
     private static func catchUp() -> [AgentItem] {
-        let api = "https://github.com/quiddly-com/finq.api/pull/2591", admin = "https://github.com/quiddly-com/finq.admin-ui/pull/664"
-        let review = "https://github.com/quiddly-com/finq.client-ui/pull/412"
+        let api = "https://github.com/acme-com/orbit.api/pull/2591", admin = "https://github.com/acme-com/orbit.admin-ui/pull/664"
+        let review = "https://github.com/acme-com/orbit.client-ui/pull/412"
         var items = [AgentItem(id: "user-0", kind: .user(AgentLogic.catchUpPrompt))]
         let events: [AgentEvent] = [
             .toolUse(id: "1", tool: "mcp__worktime__attention", summary: "", detail: ""),
             .toolResult(id: "1", content: "## Pull requests …", isError: false, auto: false),
-            .toolUse(id: "2", tool: "mcp__worktime__agent_session", summary: "quiddly-com/finq.api#2591", detail: ""),
+            .toolUse(id: "2", tool: "mcp__worktime__agent_session", summary: "acme-com/orbit.api#2591", detail: ""),
             .toolResult(id: "2", content: "Session …", isError: false, auto: false),
             .text("""
                 Most urgent first:
 
-                1. **finq.admin-ui#664** \u{2014} its agent is waiting for you to allow `npm run lint -- --fix`. [Open the agent](\(GitHubLink.agentLink(for: admin)))
-                2. **finq.api#2591** \u{2014} the review finished 12 min ago and you haven't seen it: the migration has no downgrade and the tests skip the VAT path. [PR](\(api)) \u{00B7} [agent](\(GitHubLink.agentLink(for: api)))
-                3. **finq.client-ui#412** \u{2014} Jessica asked for your review 2 h ago. [PR](\(review))
+                1. **orbit.admin-ui#664** \u{2014} its agent is waiting for you to allow `npm run lint -- --fix`. [Open the agent](\(GitHubLink.agentLink(for: admin)))
+                2. **orbit.api#2591** \u{2014} the review finished 12 min ago and you haven't seen it: the migration has no downgrade and the tests skip the VAT path. [PR](\(api)) \u{00B7} [agent](\(GitHubLink.agentLink(for: api)))
+                3. **orbit.client-ui#412** \u{2014} Jessica asked for your review 2 h ago. [PR](\(review))
                 4. **Slack** \u{2014} Anna asked in #release whether 3.14 ships Thursday.
                 5. **Action item** from Tuesday's planning: send the VAT spec to Erik.
                 """),
             .result(sessionID: "preview-main", isError: false, text: "", turns: 3, model: "claude-sonnet-5-5"),
         ]
         events.forEach { AgentLogic.apply($0, to: &items) }
-        items.append(AgentItem(id: "user-\(items.count)", kind: .user("Have the finq.api agent add the downgrade")))
+        items.append(AgentItem(id: "user-\(items.count)", kind: .user("Have the orbit.api agent add the downgrade")))
         AgentLogic.apply(.permissionRequest(id: "9", tool: "mcp__worktime__send_to_agent",
-                                            summary: "quiddly-com/finq.api#2591, Add the missing downgrade to the migration and push.",
+                                            summary: "acme-com/orbit.api#2591, Add the missing downgrade to the migration and push.",
                                             detail: "{\n  \"pr_url\" : \"\(api)\",\n  \"text\" : \"Add the missing downgrade to the migration and push.\"\n}"),
                          to: &items)
         return items
@@ -444,8 +444,8 @@ enum AgentPreview {
             .session("preview-session"),
             .toolUse(id: "1", tool: "Grep", summary: "permission_request in Sources", detail: "{\n  \"pattern\" : \"permission_request\"\n}"),
             .toolResult(id: "1", content: "Sources/WorkTime/AgentLogic.swift\nagent/src/main.ts", isError: false, auto: false),
-            .toolUse(id: "3", tool: "mcp__worktime__github_pr", summary: "quiddly-com/finq.api#2483",
-                     detail: "{\n  \"pr\" : \"https://github.com/quiddly-com/finq.api/pull/2483\"\n}"),
+            .toolUse(id: "3", tool: "mcp__worktime__github_pr", summary: "acme-com/orbit.api#2483",
+                     detail: "{\n  \"pr\" : \"https://github.com/acme-com/orbit.api/pull/2483\"\n}"),
             .toolResult(id: "3", content: "{\"title\": \"Search the fields the count came from\"}", isError: false, auto: false),
             .toolUse(id: "4", tool: "Bash", summary: "git log --oneline -5", detail: "git log --oneline -5"),
             .toolResult(id: "4", content: "d1e2fdb Run the Agent window on the Claude subscription", isError: false, auto: true),

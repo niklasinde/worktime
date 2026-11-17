@@ -41,25 +41,25 @@ enum MeetingBriefPreview {
     }
 
     private static func event(_ now: Date, minutes: Double, title: String, people: [CalendarAttendee]) -> CalendarEventInfo {
-        CalendarEventInfo(id: title, seriesID: "gaia-weekly", title: title, start: now.addingTimeInterval(minutes * 60 + 20),
+        CalendarEventInfo(id: title, seriesID: "globex-weekly", title: title, start: now.addingTimeInterval(minutes * 60 + 20),
                           end: now.addingTimeInterval(minutes * 60 + 1820), attendees: people)
     }
 
     private static func sample(_ now: Date) -> MeetingBrief {
-        var last = PastMeeting(id: 1, title: "Gaia-exporten blir CSV", date: now.addingTimeInterval(-7 * 86400))
+        var last = PastMeeting(id: 1, title: "Globex-exporten blir CSV", date: now.addingTimeInterval(-7 * 86400))
         last.decisions = ["Exporten går som CSV med semikolon.", "Excel-formatet väntar till Q1."]
-        last.openItems = ["Anna: Testa exporten mot Gaias testmiljö"]
+        last.openItems = ["Anna: Testa exporten mot Globexs testmiljö"]
         var older = PastMeeting(id: 2, title: "Release av sökningen", date: now.addingTimeInterval(-14 * 86400))
         older.openItems = ["Skriva release notes"]
-        return MeetingBrief(event: event(now, minutes: 10, title: "Gaia \u{00B7} weekly export sync",
+        return MeetingBrief(event: event(now, minutes: 10, title: "Globex \u{00B7} weekly export sync",
                                          people: [CalendarAttendee(name: "Anna Berg", email: nil), CalendarAttendee(name: "Bo Lind", email: nil),
-                                                  CalendarAttendee(name: nil, email: "elin@gaia.example")]),
+                                                  CalendarAttendee(name: nil, email: "elin@globex.example")]),
                             earlier: [last, older],
-                            tickets: [.init(key: "QDLY-9031", summary: "Export invoices to Gaia as CSV", status: "In Review", assignee: "Niklas Inde")],
-                            pullRequests: [.init(repo: "quiddly-com/finq.api", number: 2688, title: "QDLY-9031: Export invoices as CSV", state: "Open",
+                            tickets: [.init(key: "ACME-9031", summary: "Export invoices to Globex as CSV", status: "In Review", assignee: "Niklas Inde")],
+                            pullRequests: [.init(repo: "acme-com/orbit.api", number: 2688, title: "ACME-9031: Export invoices as CSV", state: "Open",
                                                  checks: "Checks passed", review: "Approved")],
-                            agenda: "1. CSV export status (QDLY-9031)\n2. Search fields",
-                            focus: "Confirm CSV with semicolons and who tests against Gaia's environment.")
+                            agenda: "1. CSV export status (ACME-9031)\n2. Search fields",
+                            focus: "Confirm CSV with semicolons and who tests against Globex's environment.")
     }
 }
 

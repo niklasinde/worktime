@@ -95,41 +95,41 @@ enum InCallPreview {
     }
 
     private static let sampleCall: [LiveLine] = [
-        "Hej allihop, ska vi börja med exporten till Gaia?",
-        "Ja, kvidly 90 31 är nästan klar, PR:en ligger i finq api.",
+        "Hej allihop, ska vi börja med exporten till Globex?",
+        "Ja, akme 90 31 är nästan klar, PR:en ligger i orbit api.",
         "PR 2688, checksen gick igenom i morse.",
-        "Och Q D L Y 8178 om sökningen, den är i review.",
-        "Great, and the admin UI part is finq.admin-ui#664.",
+        "Och A C M E 8178 om sökningen, den är i review.",
+        "Great, and the admin UI part is orbit.admin-ui#664.",
         "Vad bestämde vi förra gången om formatet?",
     ].enumerated().map { LiveLine(speaker: $0.offset.isMultiple(of: 2) ? .you : .others, start: Double($0.offset) * 9, text: $0.element, isFinal: true) }
 
     private static func event(_ now: Date) -> CalendarEventInfo {
-        CalendarEventInfo(id: "e-today", seriesID: "gaia-weekly", title: "Gaia \u{00B7} weekly export sync", start: now.addingTimeInterval(-120),
+        CalendarEventInfo(id: "e-today", seriesID: "globex-weekly", title: "Globex \u{00B7} weekly export sync", start: now.addingTimeInterval(-120),
                           end: now.addingTimeInterval(1680),
-                          attendees: [CalendarAttendee(name: "Anna Berg", email: "anna@gaia.example"), CalendarAttendee(name: "Bo Lind", email: "bo@quiddly.example"),
-                                      CalendarAttendee(name: nil, email: "elin@gaia.example")],
-                          notes: "Agenda:\n1. CSV export status (QDLY-9031)\n2. Search fields\n\nMicrosoft Teams meeting\nJoin on your computer\nhttps://teams.microsoft.com/l/meetup-join/x\nMeeting ID: 123",
+                          attendees: [CalendarAttendee(name: "Anna Berg", email: "anna@globex.example"), CalendarAttendee(name: "Bo Lind", email: "bo@acme.example"),
+                                      CalendarAttendee(name: nil, email: "elin@globex.example")],
+                          notes: "Agenda:\n1. CSV export status (ACME-9031)\n2. Search fields\n\nMicrosoft Teams meeting\nJoin on your computer\nhttps://teams.microsoft.com/l/meetup-join/x\nMeeting ID: 123",
                           url: nil, location: "Microsoft Teams Meeting")
     }
 
     private static func seed(_ store: MeetingStore, now: Date) throws {
         try store.write {
-            try store.db.run("INSERT INTO jira_sites (prefix, site, updated) VALUES ('QDLY', 'quiddly.atlassian.net', 0), ('ISD', 'quiddly.atlassian.net', 0)")
-            try store.db.run("INSERT INTO tickets (key, title, site, updated) VALUES ('QDLY-9031', 'Export invoices to Gaia as CSV', 'quiddly.atlassian.net', 0)")
+            try store.db.run("INSERT INTO jira_sites (prefix, site, updated) VALUES ('ACME', 'acme.atlassian.net', 0), ('ISD', 'acme.atlassian.net', 0)")
+            try store.db.run("INSERT INTO tickets (key, title, site, updated) VALUES ('ACME-9031', 'Export invoices to Globex as CSV', 'acme.atlassian.net', 0)")
         }
-        _ = try store.addProject("Gaia")
+        _ = try store.addProject("Globex")
         let day: TimeInterval = 86400
         let earlier: [(file: String, daysAgo: Double, summary: MeetingSummary, mentions: [SpottedEntity], event: CalendarEventInfo?)] = [
             ("Meeting-2026-11-04-1000.m4a", 7,
-             MeetingSummary(title: "Gaia-exporten blir CSV", actionItems: [.init(task: "Testa exporten mot Gaias testmiljö", owner: "Anna")],
+             MeetingSummary(title: "Globex-exporten blir CSV", actionItems: [.init(task: "Testa exporten mot Globexs testmiljö", owner: "Anna")],
                             topics: [.init(title: "Format", points: ["Exporten går som CSV med semikolon.", "Excel-formatet väntar till Q1."])]),
-             [SpottedEntity(kind: .ticket, key: "QDLY-9031", line: "QDLY 9031, exporten, ska vi köra CSV?", at: 40)],
-             CalendarEventInfo(id: "e-last", seriesID: "gaia-weekly", title: "Gaia \u{00B7} weekly export sync", start: now.addingTimeInterval(-7 * day),
-                               end: now.addingTimeInterval(-7 * day + 1800), attendees: [CalendarAttendee(name: "Anna Berg", email: "anna@gaia.example")])),
+             [SpottedEntity(kind: .ticket, key: "ACME-9031", line: "ACME 9031, exporten, ska vi köra CSV?", at: 40)],
+             CalendarEventInfo(id: "e-last", seriesID: "globex-weekly", title: "Globex \u{00B7} weekly export sync", start: now.addingTimeInterval(-7 * day),
+                               end: now.addingTimeInterval(-7 * day + 1800), attendees: [CalendarAttendee(name: "Anna Berg", email: "anna@globex.example")])),
             ("Meeting-2026-10-28-1400.m4a", 14,
              MeetingSummary(title: "Release av sökningen", actionItems: [.init(task: "Skriva release notes", owner: nil)],
-                            topics: [.init(title: "Sökning", points: ["QDLY-8178 släpps på tisdag."])]),
-             [SpottedEntity(kind: .pullRequest, key: "quiddly-com/finq.api#2688", line: "PR 2688 needs one more review", at: 300)], nil),
+                            topics: [.init(title: "Sökning", points: ["ACME-8178 släpps på tisdag."])]),
+             [SpottedEntity(kind: .pullRequest, key: "acme-com/orbit.api#2688", line: "PR 2688 needs one more review", at: 300)], nil),
         ]
         for meeting in earlier {
             try store.beginRecording(meeting.file, created: now.addingTimeInterval(-meeting.daysAgo * day), audioExpiresAt: nil)
@@ -137,10 +137,10 @@ enum InCallPreview {
             try store.saveMentions(meeting.file, meeting.mentions)
             if let event = meeting.event { try store.saveCalendarEvent(meeting.file, StoredMeetingEvent(event: event, agenda: nil)) }
         }
-        let pr = GitHubPR(url: "https://github.com/quiddly-com/finq.api/pull/2688", number: 2688, title: "QDLY-9031: Export invoices as CSV",
-                          repo: "quiddly-com/finq.api", updated: now, review: .approved, checks: .passed)
-        let ui = GitHubPR(url: "https://github.com/quiddly-com/finq.admin-ui/pull/664", number: 664, title: "QDLY-8178: Search the fields the count came from",
-                          repo: "quiddly-com/finq.admin-ui", updated: now, review: .required, checks: .running)
+        let pr = GitHubPR(url: "https://github.com/acme-com/orbit.api/pull/2688", number: 2688, title: "ACME-9031: Export invoices as CSV",
+                          repo: "acme-com/orbit.api", updated: now, review: .approved, checks: .passed)
+        let ui = GitHubPR(url: "https://github.com/acme-com/orbit.admin-ui/pull/664", number: 664, title: "ACME-8178: Search the fields the count came from",
+                          repo: "acme-com/orbit.admin-ui", updated: now, review: .required, checks: .running)
         try store.saveGitHubPRs([.created: [pr, ui]])
         GitHubModel.shared.showSample(prs: [.created: [pr, ui]], directory: try store.ticketDirectory())
     }
@@ -148,17 +148,17 @@ enum InCallPreview {
     private static func sampleCards(_ now: Date) -> [InCallCard] {
         var about = event(now)
         about.notes = CalendarLogic.agenda(about.notes)
-        var last = PastMeeting(id: 1, title: "Gaia-exporten blir CSV", date: now.addingTimeInterval(-7 * 86400), line: "QDLY 9031, exporten, ska vi köra CSV?")
+        var last = PastMeeting(id: 1, title: "Globex-exporten blir CSV", date: now.addingTimeInterval(-7 * 86400), line: "ACME 9031, exporten, ska vi köra CSV?")
         last.decisions = ["Exporten går som CSV med semikolon.", "Excel-formatet väntar till Q1."]
         return [
             InCallCard(id: "about", kind: .about(about), added: now),
-            InCallCard(id: "ticket:QDLY-9031", kind: .ticket(.init(key: "QDLY-9031", summary: "Export invoices to Gaia as CSV", status: "In Review",
+            InCallCard(id: "ticket:ACME-9031", kind: .ticket(.init(key: "ACME-9031", summary: "Export invoices to Globex as CSV", status: "In Review",
                                                                    assignee: "Niklas Inde")), added: now.addingTimeInterval(10)),
-            InCallCard(id: "pr:quiddly-com/finq.api#2688", kind: .pullRequest(.init(repo: "quiddly-com/finq.api", number: 2688,
-                                                                                      title: "QDLY-9031: Export invoices as CSV", state: "Open",
+            InCallCard(id: "pr:acme-com/orbit.api#2688", kind: .pullRequest(.init(repo: "acme-com/orbit.api", number: 2688,
+                                                                                      title: "ACME-9031: Export invoices as CSV", state: "Open",
                                                                                       checks: "Checks passed", review: "Approved")), added: now.addingTimeInterval(20)),
-            InCallCard(id: "meeting:1", kind: .meeting(last, because: ["QDLY-9031"]), added: now.addingTimeInterval(25)),
-            InCallCard(id: "answer", kind: .answer(InCallAnswer(text: "Ni bestämde CSV med semikolon; Excel väntar till Q1. Anna testar mot Gaias testmiljö.",
+            InCallCard(id: "meeting:1", kind: .meeting(last, because: ["ACME-9031"]), added: now.addingTimeInterval(25)),
+            InCallCard(id: "answer", kind: .answer(InCallAnswer(text: "Ni bestämde CSV med semikolon; Excel väntar till Q1. Anna testar mot Globexs testmiljö.",
                                                                 meetingID: 1, meetingTitle: last.title, date: last.date),
                                                    question: "Vad bestämde vi förra gången om formatet?"), added: now.addingTimeInterval(30)),
         ]

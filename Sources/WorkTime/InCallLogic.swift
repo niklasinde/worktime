@@ -28,7 +28,7 @@ struct SpottedEntity: Equatable, Hashable {
     }
 }
 
-/// What the spotter knows: Jira project keys, how a Jira site's name sounds (`kvidly` for quiddly.atlassian.net),
+/// What the spotter knows: Jira project keys, how a Jira site's name sounds (`akme` for acme.atlassian.net),
 /// repositories (`owner/repo`) and other names such as projects and customers.
 struct InCallVocabulary: Equatable {
     var ticketPrefixes: Set<String> = []
@@ -53,7 +53,7 @@ struct InCallVocabulary: Equatable {
         return repos.first { $0.split(separator: "/").last?.lowercased() == name.lowercased() }
     }
 
-    /// Whether the letters of `prefix` appear in order in `word`: QDLY in quiddly.
+    /// Whether the letters of `prefix` appear in order in `word`: ACME in acme.
     static func spells(_ prefix: String, in word: String) -> Bool {
         var rest = Substring(word.lowercased())
         for letter in prefix.lowercased() {
@@ -120,7 +120,7 @@ enum EntitySpotter {
         return found.sorted { $0.offset < $1.offset }.map(\.entity).filter { seen.insert($0.id).inserted }
     }
 
-    /// A word as it sounds, so spellings Whisper picks for a spoken name meet: quiddly and kvidly are both `kvidli`.
+    /// A word as it sounds, so spellings Whisper picks for a spoken name meet: acme and akme are both `akme`.
     static func phonetic(_ word: String) -> String {
         var text = word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
         for (from, to) in [("qu", "kv"), ("ck", "k"), ("ph", "f"), ("q", "k"), ("c", "k"), ("w", "v"), ("z", "s"), ("y", "i")] {
@@ -150,7 +150,7 @@ enum EntitySpotter {
         let offset: Int
     }
 
-    /// Words and numbers, split where letters meet digits, so `QDLY9031` and `Q-D-L-Y 9031` read alike.
+    /// Words and numbers, split where letters meet digits, so `ACME9031` and `A-C-M-E 9031` read alike.
     private static func tokenize(_ text: String) -> [Token] {
         var tokens: [Token] = [], current = "", start = 0, kind = 0
         for (offset, character) in text.enumerated() {
@@ -283,7 +283,7 @@ enum InCallLogic {
         }.first
     }
 
-    /// `QDLY-9031, finq.api#2688`: the tickets and pull requests, for "Mentioned:".
+    /// `ACME-9031, orbit.api#2688`: the tickets and pull requests, for "Mentioned:".
     static func mentioned(_ entities: [SpottedEntity]) -> String? {
         let labels = entities.filter { $0.kind == .ticket || $0.pullRequest?.repo != nil }.map(\.label)
         return labels.isEmpty ? nil : labels.joined(separator: ", ")
@@ -436,8 +436,8 @@ enum InCallPrompts {
         let known = (Array(vocabulary.ticketPrefixes).sorted().map { "\($0)-123" } + vocabulary.repos + vocabulary.names).prefix(60)
         let system = """
             You read a live meeting transcript in Swedish or English, written by speech recognition, and list what it refers \
-            to. tickets: Jira keys such as ABC-123, also when spoken as letters and digits ("Q D L Y nittio trettioett" is \
-            QDLY-9031). pullRequests: pull requests as owner/repo#number or repo#number. names: repositories, projects or \
+            to. tickets: Jira keys such as ABC-123, also when spoken as letters and digits ("A C M E nittio trettioett" is \
+            ACME-9031). pullRequests: pull requests as owner/repo#number or repo#number. names: repositories, projects or \
             customers from the known list. asksWhatWasDecided: whether someone asks what was decided or agreed earlier. \
             Only list what the transcript says; leave lists empty when nothing is mentioned.
             """

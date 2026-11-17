@@ -395,7 +395,7 @@ private let logicTests: [(name: String, run: () throws -> Void)] = [
     ("meeting titles are cleaned per service", {
         let meet = { (title: String) in MeetingSourceLogic.cleanTitle(title, service: "Google Meet") }
         check(meet("Meet - Nova checkin") == "Nova checkin", "meet prefix")
-        check(meet("Meet \u{2013} Nova checkin - Camera and microphone recording - Google Chrome - Niklas (Quiddly)") == "Nova checkin",
+        check(meet("Meet \u{2013} Nova checkin - Camera and microphone recording - Google Chrome - Niklas (Acme)") == "Nova checkin",
               "chrome window title")
         check(meet("Meet - abc-defg-hij") == nil, "a meeting code is no name")
         check(meet("Meet - abc-defg-hij - Microphone recording - Google Chrome") == nil, "code in a window title")
@@ -403,7 +403,7 @@ private let logicTests: [(name: String, run: () throws -> Void)] = [
         check(meet("Google Meet") == nil, "landing page")
         let teams = { (title: String) in MeetingSourceLogic.cleanTitle(title, service: "Microsoft Teams") }
         check(teams("Nova checkin | Microsoft Teams") == "Nova checkin", "teams suffix")
-        check(teams("(3) Weekly sync | Quiddly | Microsoft Teams") == "Weekly sync", "unread count and organisation")
+        check(teams("(3) Weekly sync | Acme | Microsoft Teams") == "Weekly sync", "unread count and organisation")
         check(teams("Chat | Andy Smith | Microsoft Teams") == nil, "navigation is no meeting")
         check(teams("Meeting compact view | Microsoft Teams") == nil, "compact view")
         let zoom = { (title: String) in MeetingSourceLogic.cleanTitle(title, service: "Zoom") }
@@ -411,18 +411,18 @@ private let logicTests: [(name: String, run: () throws -> Void)] = [
         check(zoom("Zoom Workplace") == nil, "zoom main window")
         check(zoom("Design review - Zoom") == "Design review", "web client title")
         let slack = { (title: String) in MeetingSourceLogic.cleanTitle(title, service: "Slack") }
-        check(slack("Andy Smith (DM) - Quiddly - Slack") == "Huddle with Andy Smith", "dm")
-        check(slack("* general (Channel) - Quiddly - Slack") == "Huddle in #general", "unread channel")
-        check(slack("Slack | dev-team | Quiddly") == "Huddle in #dev-team", "older title")
-        check(slack("Huddle: general - Quiddly - Slack") == "Huddle in #general", "huddle window")
+        check(slack("Andy Smith (DM) - Acme - Slack") == "Huddle with Andy Smith", "dm")
+        check(slack("* general (Channel) - Acme - Slack") == "Huddle in #general", "unread channel")
+        check(slack("Slack | dev-team | Acme") == "Huddle in #dev-team", "older title")
+        check(slack("Huddle: general - Acme - Slack") == "Huddle in #general", "huddle window")
         check(slack("Huddle with Andy - Slack") == "Huddle with Andy", "named huddle window")
-        check(slack("Activity - Quiddly - Slack") == nil, "activity view")
+        check(slack("Activity - Acme - Slack") == nil, "activity view")
         check(slack("Slack") == nil, "bare app")
     }),
 
     ("meeting sources come from tabs, huddle windows and meeting windows", {
         let chrome = "com.google.Chrome"
-        let tabs = [BrowserTab(url: "https://mail.google.com/mail/u/0/#inbox", title: "Inbox (12) - niklas@quiddly.com - Gmail"),
+        let tabs = [BrowserTab(url: "https://mail.google.com/mail/u/0/#inbox", title: "Inbox (12) - niklas@acme.com - Gmail"),
                     BrowserTab(url: "https://meet.google.com/abc-defg-hij?authuser=0", title: "Meet - Nova checkin")]
         check(MeetingSourceLogic.source(app: chrome, trusted: false, windowTitles: [], tabs: tabs)
               == MeetingSource(app: "Google Meet", title: "Nova checkin", bundle: chrome), "meet tab in the background")
@@ -436,11 +436,11 @@ private let logicTests: [(name: String, run: () throws -> Void)] = [
         check(MeetingSourceLogic.source(app: chrome, trusted: false, windowTitles: [],
                                         tabs: [BrowserTab(url: "https://zoom.us/pricing", title: "Plans & Pricing | Zoom")]) == nil, "zoom site is no call")
         let slack = "com.tinyspeck.slackmacgap"
-        check(MeetingSourceLogic.source(app: slack, trusted: false, windowTitles: ["general (Channel) - Quiddly - Slack"], tabs: []) == nil,
+        check(MeetingSourceLogic.source(app: slack, trusted: false, windowTitles: ["general (Channel) - Acme - Slack"], tabs: []) == nil,
               "slack in the background without a huddle")
-        check(MeetingSourceLogic.source(app: slack, trusted: false, windowTitles: ["general (Channel) - Quiddly - Slack", "Huddle: Andy Smith (DM)"],
+        check(MeetingSourceLogic.source(app: slack, trusted: false, windowTitles: ["general (Channel) - Acme - Slack", "Huddle: Andy Smith (DM)"],
                                         tabs: [])?.title == "Huddle with Andy Smith", "huddle window wins")
-        check(MeetingSourceLogic.source(app: slack, trusted: true, windowTitles: ["Andy Smith (DM) - Quiddly - Slack"], tabs: [])
+        check(MeetingSourceLogic.source(app: slack, trusted: true, windowTitles: ["Andy Smith (DM) - Acme - Slack"], tabs: [])
               == MeetingSource(app: "Slack", title: "Huddle with Andy Smith", bundle: slack), "slack taking the microphone")
         let teams = "com.microsoft.teams2"
         check(MeetingSourceLogic.source(app: teams, trusted: false, windowTitles: ["Calendar | Calendar | Microsoft Teams"], tabs: []) == nil,
@@ -774,12 +774,17 @@ private let logicTests: [(name: String, run: () throws -> Void)] = [
 
     ("the vocabulary prompt spells domain terms, names, projects and ticket terms within the limit", {
         let prompt = WhisperLogic.vocabularyPrompt(names: ["Anna Berg", "anna berg", ""],
-                                                   ticketKeys: ["QDLY-1", "QDLY-2", "ISD-9"],
-                                                   ticketTitles: ["Send Strawbay cases to execution", "Fees for Strawbay in GraphQL", "Fix the bug"])
-        check(prompt == "Quiddly, finq, QDLY, Jira, PR, Anna Berg, ISD, Strawbay, GraphQL.", prompt)
-        let short = WhisperLogic.vocabularyPrompt(names: ["Anna Berg"], ticketKeys: [], ticketTitles: [], limit: 24)
-        check(short == "Quiddly, finq, QDLY.", short)
-        check(WhisperLogic.vocabularyPrompt(names: [], ticketKeys: [], ticketTitles: [], limit: 1) == "", "nothing fits")
+                                                   ticketKeys: ["ACME-1", "ACME-2", "ISD-9"],
+                                                   ticketTitles: ["Send Strawbay cases to execution", "Fees for Strawbay in GraphQL", "Fix the bug"],
+                                                   terms: ["Acme", "orbit", "Zeta", "Jira", "PR"])
+        check(prompt == "Acme, orbit, Zeta, Jira, PR, Anna Berg, ISD, Strawbay, GraphQL.", prompt)
+        let short = WhisperLogic.vocabularyPrompt(names: ["Anna Berg"], ticketKeys: [], ticketTitles: [], terms: ["Acme", "orbit", "Zeta"], limit: 24)
+        check(short == "Acme, orbit, Zeta.", short)
+        check(WhisperLogic.vocabularyPrompt(names: [], ticketKeys: [], ticketTitles: [], terms: ["Acme"], limit: 1) == "", "nothing fits")
+        let suite = UserDefaults(suiteName: "whisper-terms-\(UUID().uuidString)")!
+        check(WhisperLogic.domainTerms(defaults: suite) == ["Jira", "PR"], "no custom terms by default")
+        suite.set("Acme, orbit\n ACME ,", forKey: WhisperLogic.customTermsKey)
+        check(WhisperLogic.domainTerms(defaults: suite) == ["Acme", "orbit", "ACME", "Jira", "PR"], "custom terms first")
     }),
 
     ("Whisper's silence hallucinations and loops are dropped", {

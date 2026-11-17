@@ -14,13 +14,13 @@ private func folder() throws -> URL {
 }
 
 /// Your own pull request with an unresolved thread from elin since your last commit, and failing checks.
-private let mine = GitHubPR(url: apiPull, number: 7, title: "QDLY-1: Title", repo: "acme/api", updated: now.addingTimeInterval(-600),
+private let mine = GitHubPR(url: apiPull, number: 7, title: "ACME-1: Title", repo: "acme/api", updated: now.addingTimeInterval(-600),
                             review: .required, checks: .failed, author: me,
                             activity: GitHubActivity(me: me, threads: 1,
                                                      open: [GitHubActivity.Event(actor: .init(login: "elin"), date: now.addingTimeInterval(-300))],
                                                      lastCommit: now.addingTimeInterval(-3600)))
 
-private let merged = GitHubPR(url: "https://github.com/acme/api/pull/5", number: 5, title: "QDLY-2: Old", repo: "acme/api",
+private let merged = GitHubPR(url: "https://github.com/acme/api/pull/5", number: 5, title: "ACME-2: Old", repo: "acme/api",
                               state: .merged, updated: now.addingTimeInterval(-86_400), checks: .passed, author: me)
 
 /// Someone else's pull request that waits on you for a review.
@@ -59,11 +59,11 @@ let mcpGitHubTests: [(name: String, run: () throws -> Void)] = [
         let mcp = server(.success(try seeded(directory)))
         let open = call(mcp, "github_prs")
         check(!open.isError && open.text.hasPrefix("Created, open: 1 of 1 pull requests, cached just now\n"), open.text)
-        check(open.text.contains("- acme/api#7 QDLY-1: Title\n  \(apiPull)\n  by niklas \u{00B7} review required \u{00B7} checks failed"), open.text)
+        check(open.text.contains("- acme/api#7 ACME-1: Title\n  \(apiPull)\n  by niklas \u{00B7} review required \u{00B7} checks failed"), open.text)
         check(open.text.contains("1 unresolved \u{00B7} 1 new comment \u{00B7} updated"), open.text)
-        check(!open.text.contains("QDLY-2"), "merged is not open")
+        check(!open.text.contains("ACME-2"), "merged is not open")
         let all = call(mcp, "github_prs", #"{"state":"all"}"#)
-        check(all.text.contains("QDLY-2") && all.text.contains("merged \u{00B7} by niklas"), all.text)
+        check(all.text.contains("ACME-2") && all.text.contains("merged \u{00B7} by niklas"), all.text)
         let waiting = call(mcp, "github_prs", #"{"kind":"review_requested"}"#)
         check(waiting.text.contains("- acme/web#3 Web: Banner") && waiting.text.contains("by elin \u{00B7} review required")
               && waiting.text.contains("waiting on you"), waiting.text)
@@ -83,8 +83,8 @@ let mcpGitHubTests: [(name: String, run: () throws -> Void)] = [
         check(web.text.hasPrefix("All lists, open, repo WEB, author elin, waiting on you, checks passing, review review_required: 1 of 1 pull requests"),
               web.text)
         check(web.text.contains("acme/web#3"), web.text)
-        let mineOnly = call(mcp, "github_prs", #"{"kind":"all","state":"all","author":"me","query":"qdly-2"}"#)
-        check(mineOnly.text.hasPrefix("All lists, all, author me, query \"qdly-2\": 1 of 1") && mineOnly.text.contains("acme/api#5"), mineOnly.text)
+        let mineOnly = call(mcp, "github_prs", #"{"kind":"all","state":"all","author":"me","query":"acme-2"}"#)
+        check(mineOnly.text.hasPrefix("All lists, all, author me, query \"acme-2\": 1 of 1") && mineOnly.text.contains("acme/api#5"), mineOnly.text)
         check(call(mcp, "github_prs", #"{"query":"acme/api#7","checks":"failing","draft":false}"#).text.contains("acme/api#7"), "owner/repo#n")
         let none = call(mcp, "github_prs", #"{"draft":true}"#)
         check(!none.isError && none.text == "No open pull requests in the created list matching drafts.\n", none.text)
@@ -100,12 +100,12 @@ let mcpGitHubTests: [(name: String, run: () throws -> Void)] = [
         defer { try? FileManager.default.removeItem(at: directory) }
         let mcp = server(.success(try seeded(directory)))
         let byURL = call(mcp, "github_pr", "{\"pr\":\"\(apiPull)\"}")
-        check(!byURL.isError && byURL.text.hasPrefix("# acme/api#7 QDLY-1: Title\n\(apiPull)\n"), byURL.text)
-        check(byURL.text.contains("- Branches: NI/QDLY-1-title into develop"), byURL.text)
+        check(!byURL.isError && byURL.text.hasPrefix("# acme/api#7 ACME-1: Title\n\(apiPull)\n"), byURL.text)
+        check(byURL.text.contains("- Branches: NI/ACME-1-title into develop"), byURL.text)
         check(byURL.text.contains("- Review decision: review required"), byURL.text)
         check(byURL.text.contains("johan: approved") && byURL.text.contains("sara: changes requested")
               && byURL.text.contains("backend (team): review requested"), byURL.text)
-        check(byURL.text.contains("- Ticket keys: QDLY-1") && byURL.text.hasSuffix("## Description\nBody\n"), byURL.text)
+        check(byURL.text.contains("- Ticket keys: ACME-1") && byURL.text.hasSuffix("## Description\nBody\n"), byURL.text)
         check(call(mcp, "github_pr", #"{"pr":"acme/api#7"}"#).text == byURL.text, "owner/repo#n gives the same")
     }),
 

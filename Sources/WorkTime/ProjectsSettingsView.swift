@@ -92,12 +92,12 @@ private struct ProjectSettingsRow: View {
 
     private var placeholder: String {
         switch field {
-        case .branch: return "NI/QDLY-*"
-        case .owner: return "quiddly-com"
-        case .repo: return "finq.api"
+        case .branch: return "NI/ACME-*"
+        case .owner: return "acme-com"
+        case .repo: return "orbit.api"
         case .host: return "github.com"
         case .app: return "Xcode"
-        case .ticket: return "QDLY"
+        case .ticket: return "ACME"
         }
     }
 

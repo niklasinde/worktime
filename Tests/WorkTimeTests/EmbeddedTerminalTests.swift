@@ -42,7 +42,7 @@ let embeddedTerminalTests: [(name: String, run: () throws -> Void)] = [
             .write(to: cli, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
         for title in hostileTitles {
-            let context = GitHubClaude.Context(url: "https://github.com/acme/api/pull/7", repo: "acme/api", number: 7, title: title, base: "develop", head: "NI/x", ticket: "QDLY-1")
+            let context = GitHubClaude.Context(url: "https://github.com/acme/api/pull/7", repo: "acme/api", number: 7, title: title, base: "develop", head: "NI/x", ticket: "ACME-1")
             let prompt = GitHubClaude.prompt(.review, context)
             let promptFile = try GitHubClaude.writePromptFile(prompt: prompt, folder: folder.appendingPathComponent("prompts"))
             let script = EmbeddedTerminal.script(directory: work, promptFile: promptFile, cli: cli)

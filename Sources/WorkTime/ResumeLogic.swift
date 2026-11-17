@@ -229,7 +229,7 @@ enum ResumeLogic {
         return ticket.map { ResumeContextKey(ticket: $0) }
     }
 
-    /// `finq.api` from `quiddly-com/finq.api` or a GitHub url.
+    /// `orbit.api` from `acme-com/orbit.api` or a GitHub url.
     static func repoName(_ text: String) -> String {
         text.split(separator: "/").last.map(String.init) ?? text
     }
@@ -348,7 +348,7 @@ enum ResumeLogic {
         return nil
     }
 
-    /// `QDLY-1234` also as said aloud (`QDLY 1234`), a pull request as `#12`, `PR 12` or `pull request 12`, and the repository as
+    /// `ACME-1234` also as said aloud (`ACME 1234`), a pull request as `#12`, `PR 12` or `pull request 12`, and the repository as
     /// a word.
     static func mentionPatterns(ticket: String?, prNumber: Int?, repo: String?) -> [String] {
         var patterns: [String] = []

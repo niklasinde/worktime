@@ -39,7 +39,7 @@ let agentWorkMapTests: [(name: String, run: () throws -> Void)] = [
     ("work map: web, MCP, browser, agent and skill tools", {
         check(category("WebFetch", ["url": "https://example.com"]) == .network, "web fetch")
         check(category("WebSearch", ["query": "swift canvas"]) == .network, "web search")
-        check(category("mcp__worktime__jira_issue", ["key": "QDLY-1"]) == .network, "jira")
+        check(category("mcp__worktime__jira_issue", ["key": "ACME-1"]) == .network, "jira")
         check(category("mcp__plugin_engineering_slack__slack_read_thread") == .network, "slack")
         check(category("mcp__claude-in-chrome__navigate", ["url": "https://example.com"]) == .browser, "chrome")
         check(category("mcp__claude_in_chrome__read_page") == .browser, "chrome with underscores")
@@ -54,8 +54,8 @@ let agentWorkMapTests: [(name: String, run: () throws -> Void)] = [
         check(described == "Check the release note", described)
         check(WorkMap.description(tool: "Bash", input: ["command": "swift build\nswift test"], cwd: "/repo") == "swift build \u{2026}", "first line of the command")
         check(WorkMap.description(tool: "Read", input: ["file_path": "/repo/Sources/App.swift"], cwd: "/repo") == "Read Sources/App.swift", "relative file")
-        let mcp = WorkMap.description(tool: "mcp__worktime__jira_issue", input: ["key": "QDLY-1"], cwd: "/repo")
-        check(mcp == "WorkTime \u{00B7} Jira issue: QDLY-1", mcp)
+        let mcp = WorkMap.description(tool: "mcp__worktime__jira_issue", input: ["key": "ACME-1"], cwd: "/repo")
+        check(mcp == "WorkTime \u{00B7} Jira issue: ACME-1", mcp)
         check(WorkMap.description(tool: "Skill", input: [:], cwd: "/repo") == "Skill", "nothing to add")
     }),
     ("work map: durations read as ms, seconds and minutes", {

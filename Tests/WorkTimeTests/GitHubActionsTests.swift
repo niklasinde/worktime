@@ -44,7 +44,7 @@ private struct FakeGH {
     func remove() { try? FileManager.default.removeItem(at: directory) }
 }
 
-private func pr(_ number: Int = 2442, repo: String = "acme/finq.api", title: String = "QDLY-1: Fix it", state: GitHubPR.State = .open,
+private func pr(_ number: Int = 2442, repo: String = "acme/orbit.api", title: String = "ACME-1: Fix it", state: GitHubPR.State = .open,
                 draft: Bool = false, checks: GitHubPR.Checks = .passed, review: GitHubPR.Review? = nil, author: String = "elin",
                 me: String = "niklas") -> GitHubPR {
     GitHubPR(url: "https://github.com/\(repo)/pull/\(number)", number: number, title: title, repo: repo, isDraft: draft, state: state,
@@ -81,24 +81,24 @@ private func sources() throws -> [String: String] {
 
 let githubActionsTests: [(name: String, run: () throws -> Void)] = [
     ("each action builds its own gh command, one argument per word", {
-        check(GitHubActions.arguments(request(.approve)) == ["pr", "review", "2442", "--repo", "acme/finq.api", "--approve"], "approve without a body")
-        check(GitHubActions.arguments(request(.approve, comment: "  Looks good\n")) == ["pr", "review", "2442", "--repo", "acme/finq.api", "--approve", "--body", "Looks good"],
+        check(GitHubActions.arguments(request(.approve)) == ["pr", "review", "2442", "--repo", "acme/orbit.api", "--approve"], "approve without a body")
+        check(GitHubActions.arguments(request(.approve, comment: "  Looks good\n")) == ["pr", "review", "2442", "--repo", "acme/orbit.api", "--approve", "--body", "Looks good"],
               "approve with a trimmed body")
-        check(GitHubActions.arguments(request(.requestChanges, comment: "Please add a test")) == ["pr", "review", "2442", "--repo", "acme/finq.api", "--request-changes", "--body", "Please add a test"],
+        check(GitHubActions.arguments(request(.requestChanges, comment: "Please add a test")) == ["pr", "review", "2442", "--repo", "acme/orbit.api", "--request-changes", "--body", "Please add a test"],
               "request changes")
-        check(GitHubActions.arguments(request(.comment, comment: "Question")) == ["pr", "review", "2442", "--repo", "acme/finq.api", "--comment", "--body", "Question"], "comment")
-        check(GitHubActions.arguments(request(.close)) == ["pr", "close", "2442", "--repo", "acme/finq.api"], "plain close")
-        check(GitHubActions.arguments(request(.close, comment: "Stale", deleteBranch: true)) == ["pr", "close", "2442", "--repo", "acme/finq.api", "--comment", "Stale", "--delete-branch"],
+        check(GitHubActions.arguments(request(.comment, comment: "Question")) == ["pr", "review", "2442", "--repo", "acme/orbit.api", "--comment", "--body", "Question"], "comment")
+        check(GitHubActions.arguments(request(.close)) == ["pr", "close", "2442", "--repo", "acme/orbit.api"], "plain close")
+        check(GitHubActions.arguments(request(.close, comment: "Stale", deleteBranch: true)) == ["pr", "close", "2442", "--repo", "acme/orbit.api", "--comment", "Stale", "--delete-branch"],
               "close with comment and branch")
         check(!GitHubActions.arguments(request(.close)).contains("--delete-branch"), "the branch stays by default")
-        check(GitHubActions.arguments(request(.reopen)) == ["pr", "reopen", "2442", "--repo", "acme/finq.api"], "reopen")
+        check(GitHubActions.arguments(request(.reopen)) == ["pr", "reopen", "2442", "--repo", "acme/orbit.api"], "reopen")
         check(!GitHubActions.arguments(request(.approve, comment: "x", deleteBranch: true)).contains("--delete-branch"), "only close deletes a branch")
     }),
 
     ("the command line is shown quoted for a terminal", {
-        check(GitHubActions.commandLine(request(.approve)) == "gh pr review 2442 --repo acme/finq.api --approve", "plain")
+        check(GitHubActions.commandLine(request(.approve)) == "gh pr review 2442 --repo acme/orbit.api --approve", "plain")
         let line = GitHubActions.commandLine(request(.close, comment: "it's stale; $HOME"))
-        check(line == "gh pr close 2442 --repo acme/finq.api --comment 'it'\\''s stale; $HOME'", "quoted: \(line)")
+        check(line == "gh pr close 2442 --repo acme/orbit.api --comment 'it'\\''s stale; $HOME'", "quoted: \(line)")
     }),
 
     ("a comment with quotes, dollar signs, backticks, Swedish letters and newlines reaches gh as one argument", {
@@ -162,12 +162,12 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         let failing = pr(checks: .failed, review: .required)
         let approve = GitHubActions.confirmation(for: request(.approve, failing, comment: "Nice"), target: target(failing))
         check(approve.title == "Approve pull request" && approve.confirmTitle == "Approve pull request", "approve title")
-        check(approve.reference == "acme/finq.api #2442" && approve.prTitle == "QDLY-1: Fix it", "reference and title")
+        check(approve.reference == "acme/orbit.api #2442" && approve.prTitle == "ACME-1: Fix it", "reference and title")
         check(approve.facts.contains { $0.label == "Author" && $0.value == "elin" }, "author")
         check(approve.facts.contains { $0.label == "Checks" && $0.value == "Failing" && $0.tone == .bad }, "checks")
         check(approve.facts.contains { $0.label == "Review" && $0.tone == .normal }, "review decision")
         check(approve.warnings.map(\.text) == [GitHubActions.checksFailing], "warning line")
-        check(approve.command == "gh pr review 2442 --repo acme/finq.api --approve --body Nice", "the exact command: \(approve.command)")
+        check(approve.command == "gh pr review 2442 --repo acme/orbit.api --approve --body Nice", "the exact command: \(approve.command)")
         check(approve.comment == "Nice", "the comment")
         check(!approve.confirmIsDefault, "approving needs a deliberate click, Return does not do it")
         check(!approve.offersBranchDelete, "no branch to delete when approving")
@@ -187,7 +187,7 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("which branches are offered for deletion", {
-        check(GitHubActions.branchDeletable(head: "NI/QDLY-1", base: "develop"), "a feature branch")
+        check(GitHubActions.branchDeletable(head: "NI/ACME-1", base: "develop"), "a feature branch")
         check(GitHubActions.branchDeletable(head: nil, base: nil), "unknown is offered, GitHub refuses what it must")
         for kept in ["main", "master", "develop", "Release/2026.10", "release-1"] {
             check(!GitHubActions.branchDeletable(head: kept, base: "main"), "\(kept) is kept")
@@ -225,9 +225,9 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a fake gh answers success, your own pull request, SSO and branch protection", {
-        let ok = try FakeGH(stdout: "\u{2713} Closed pull request acme/finq.api#2442")
+        let ok = try FakeGH(stdout: "\u{2713} Closed pull request acme/orbit.api#2442")
         defer { ok.remove() }
-        check(GitHubActionRunner.perform(request(.close), cli: ok.cli) == .success("\u{2713} Closed pull request acme/finq.api#2442"), "success")
+        check(GitHubActionRunner.perform(request(.close), cli: ok.cli) == .success("\u{2713} Closed pull request acme/orbit.api#2442"), "success")
         let own = try FakeGH(exit: 1, stderr: "GraphQL: Can not approve your own pull request (addPullRequestReview)")
         defer { own.remove() }
         check(GitHubActionRunner.perform(request(.approve), cli: own.cli) == .failure(.ownPullRequest), "own pull request")
@@ -237,10 +237,10 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         let protected = try FakeGH(exit: 1, stderr: "GraphQL: Base branch policy prohibits the merge")
         defer { protected.remove() }
         if case .failure(.branchProtection) = GitHubActionRunner.perform(request(.close), cli: protected.cli) {} else { check(false, "branch protection") }
-        let closed = try FakeGH(exit: 0, stderr: "! Pull request acme/finq.api#2442 (QDLY-1: Fix it) is already closed")
+        let closed = try FakeGH(exit: 0, stderr: "! Pull request acme/orbit.api#2442 (ACME-1: Fix it) is already closed")
         defer { closed.remove() }
         check(GitHubActionRunner.perform(request(.close), cli: closed.cli) == .failure(.alreadyClosed), "gh answers an already closed pull request with exit 0")
-        let open = try FakeGH(exit: 0, stderr: "! Pull request acme/finq.api#2442 (QDLY-1: Fix it) is already open")
+        let open = try FakeGH(exit: 0, stderr: "! Pull request acme/orbit.api#2442 (ACME-1: Fix it) is already open")
         defer { open.remove() }
         check(GitHubActionRunner.perform(request(.reopen), cli: open.cli) == .failure(.alreadyOpen), "and an already open one")
         check(GitHubActionRunner.perform(request(.close), cli: nil) == .failure(.cliMissing), "no gh")
@@ -300,8 +300,8 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         check(id2 > id1, "ids grow")
         let rows = try store.githubActions()
         check(rows.map(\.id) == [id2, id1], "newest first")
-        check(rows[1].action == .close && rows[1].repo == "acme/finq.api" && rows[1].number == 7 && rows[1].title == "Bump \u{00E5}", "fields round trip")
-        check(rows[1].command == "gh pr close 7 --repo acme/finq.api --comment Stale" && rows[1].succeeded && rows[1].error == nil, "command and result")
+        check(rows[1].action == .close && rows[1].repo == "acme/orbit.api" && rows[1].number == 7 && rows[1].title == "Bump \u{00E5}", "fields round trip")
+        check(rows[1].command == "gh pr close 7 --repo acme/orbit.api --comment Stale" && rows[1].succeeded && rows[1].error == nil, "command and result")
         check(rows[0].action == .approve && !rows[0].succeeded && rows[0].error?.contains("own pull request") == true, "failure keeps its error")
         check(rows[1].at == start, "time round trips")
         for index in 0..<60 { _ = try store.saveGitHubAction(GitHubActionRecord(at: start.addingTimeInterval(Double(index)), request: request(.comment, comment: "x"), succeeded: true)) }
@@ -340,11 +340,11 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("the result texts say what happened and whether it can be undone", {
-        check(GitHubActions.successText(request(.approve, pr(2442, repo: "acme/finq.api"))) == "Approved finq.api #2442 \u{00B7} Undo isn't possible \u{2014} it can be dismissed on GitHub", "approved")
-        check(GitHubActions.successText(request(.close)) == "Closed finq.api #2442", "closed")
-        check(GitHubActions.successText(request(.reopen)) == "Reopened finq.api #2442", "reopened")
+        check(GitHubActions.successText(request(.approve, pr(2442, repo: "acme/orbit.api"))) == "Approved orbit.api #2442 \u{00B7} Undo isn't possible \u{2014} it can be dismissed on GitHub", "approved")
+        check(GitHubActions.successText(request(.close)) == "Closed orbit.api #2442", "closed")
+        check(GitHubActions.successText(request(.reopen)) == "Reopened orbit.api #2442", "reopened")
         check(GitHubActions.successText(request(.requestChanges)).hasSuffix("dismissed on GitHub"), "changes requested")
-        check(GitHubActions.failureText(request(.approve), .ownPullRequest) == "Could not approve finq.api #2442. GitHub does not let you review your own pull request.", "failure")
+        check(GitHubActions.failureText(request(.approve), .ownPullRequest) == "Could not approve orbit.api #2442. GitHub does not let you review your own pull request.", "failure")
     }),
 
     ("a closed or reviewed pull request shows its new state before GitHub's search does", {
@@ -441,12 +441,12 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         for method in GitHubMergeMethod.allCases {
             var ask = request(.merge)
             ask.method = method
-            check(GitHubActions.arguments(ask) == ["pr", "merge", "2442", "--repo", "acme/finq.api", method.flag], "\(method) without options")
+            check(GitHubActions.arguments(ask) == ["pr", "merge", "2442", "--repo", "acme/orbit.api", method.flag], "\(method) without options")
         }
         var full = request(.merge, comment: "Thanks, \u{00E5}\u{00E4}\u{00F6}", deleteBranch: true)
         full.method = .rebase
-        check(GitHubActions.arguments(full) == ["pr", "merge", "2442", "--repo", "acme/finq.api", "--rebase", "--delete-branch", "--body", "Thanks, \u{00E5}\u{00E4}\u{00F6}"], "all options")
-        check(GitHubActions.commandLine(full) == "gh pr merge 2442 --repo acme/finq.api --rebase --delete-branch --body 'Thanks, \u{00E5}\u{00E4}\u{00F6}'", "the command line")
+        check(GitHubActions.arguments(full) == ["pr", "merge", "2442", "--repo", "acme/orbit.api", "--rebase", "--delete-branch", "--body", "Thanks, \u{00E5}\u{00E4}\u{00F6}"], "all options")
+        check(GitHubActions.commandLine(full) == "gh pr merge 2442 --repo acme/orbit.api --rebase --delete-branch --body 'Thanks, \u{00E5}\u{00E4}\u{00F6}'", "the command line")
         check(!GitHubActions.arguments(request(.merge, comment: "  ")).contains("--body"), "a blank body is not sent")
         check(!GitHubActions.arguments(request(.merge)).contains("--delete-branch"), "the branch stays by default")
         for action in GitHubAction.allCases {
@@ -508,7 +508,7 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         t.mergeable = .mergeable
         t.mergeMethods = [.squash, .merge]
         t.base = "develop"
-        t.head = "NI/QDLY-1"
+        t.head = "NI/ACME-1"
         t.review = .required
         t.checks = .passed
         let c = GitHubActions.confirmation(for: request(.merge), target: t)
@@ -518,7 +518,7 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         check(c.facts.contains { $0.label == "Review" && $0.value == "Review required" && $0.tone == .warning }, "the requirement")
         check(c.offersBranchDelete && c.commentLabel == "Commit body (optional)", "branch and body")
         check(c.mergeMethods == [.squash, .merge], "the methods offered")
-        check(c.command == "gh pr merge 2442 --repo acme/finq.api --squash", "the command: \(c.command)")
+        check(c.command == "gh pr merge 2442 --repo acme/orbit.api --squash", "the command: \(c.command)")
         var conflicting = t
         conflicting.mergeable = .conflicting
         let blocked = GitHubActions.confirmation(for: request(.merge), target: conflicting)
@@ -558,7 +558,7 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a fake gh merge runs once with the exact arguments, whatever gh answers", {
-        let merged = "\u{2713} Merged pull request acme/finq.api#2442"
+        let merged = "\u{2713} Merged pull request acme/orbit.api#2442"
         let cases: [(Int32, String, String, GitHubActionError?)] = [
             (0, merged, "", nil),
             (1, "", "GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created", .conflicts),
@@ -589,8 +589,8 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         let fetched: [GitHubKind: [GitHubPR]] = [.created: [open]]
         check(GitHubActions.overlay(fetched, [open.url: patch], now: now.addingTimeInterval(10))[.created]?[0].state == .merged, "held over the fetch")
         check(GitHubActions.overlay(fetched, [open.url: patch], now: now.addingTimeInterval(500)) == fetched, "and it lapses")
-        check(GitHubActions.successText(request(.merge)) == "Merged finq.api #2442 \u{00B7} GitHub can't undo a merge; you can revert it with a new PR", "the result text")
-        check(GitHubActions.failureText(request(.merge), .conflicts) == "Could not merge finq.api #2442. The branch has merge conflicts. Resolve them on the branch, then try again.", "the failure text")
+        check(GitHubActions.successText(request(.merge)) == "Merged orbit.api #2442 \u{00B7} GitHub can't undo a merge; you can revert it with a new PR", "the result text")
+        check(GitHubActions.failureText(request(.merge), .conflicts) == "Could not merge orbit.api #2442. The branch has merge conflicts. Resolve them on the branch, then try again.", "the failure text")
 
         let directory = try folder()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -600,7 +600,7 @@ let githubActionsTests: [(name: String, run: () throws -> Void)] = [
         _ = try store.saveGitHubAction(GitHubActionRecord(at: now, request: ask, succeeded: true))
         _ = try store.saveGitHubAction(GitHubActionRecord(at: now, request: request(.merge), succeeded: false, error: "The branch has merge conflicts."))
         let rows = try store.githubActions()
-        check(rows.count == 2 && rows[1].action == .merge && rows[1].command == "gh pr merge 2442 --repo acme/finq.api --merge --body Thanks", "the audit row: \(rows.map(\.command))")
+        check(rows.count == 2 && rows[1].action == .merge && rows[1].command == "gh pr merge 2442 --repo acme/orbit.api --merge --body Thanks", "the audit row: \(rows.map(\.command))")
         check(rows[1].succeeded && !rows[0].succeeded, "results kept")
         check(GitHubActionRecord.reopenable(rows, now: now).isEmpty, "a merge cannot be reopened from the log")
     }),

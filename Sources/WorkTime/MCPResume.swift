@@ -86,15 +86,15 @@ extension MCPServer {
                         + "their last Claude Code prompts there, the pull request with commits, comments and checks since then, the "
                         + "ticket's status, assignee and comment changes since then, meetings that mentioned it with the line, and its "
                         + "WorkTime agent. With no arguments, the context the user was in last. Read-only.",
-                    properties: ["repo": ["type": "string", "description": "Repository folder name or owner/name, e.g. finq.api."],
-                                 "branch": ["type": "string", "description": "Branch name, e.g. NI/QDLY-1234."],
-                                 "ticket": ["type": "string", "description": "Jira key like QDLY-1234, or its browse link."],
+                    properties: ["repo": ["type": "string", "description": "Repository folder name or owner/name, e.g. orbit.api."],
+                                 "branch": ["type": "string", "description": "Branch name, e.g. NI/ACME-1234."],
+                                 "ticket": ["type": "string", "description": "Jira key like ACME-1234, or its browse link."],
                                  "workspace": workspaceProperty]) { args in
                 func text(_ name: String) -> String? {
                     (args[name] as? String).map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
                 }
                 let ticket = try text("ticket").map { raw -> String in
-                    guard let key = JiraLogic.issueKey(raw) else { throw MCPToolError("ticket must be a Jira key like QDLY-1234, not \u{201C}\(raw)\u{201D}.") }
+                    guard let key = JiraLogic.issueKey(raw) else { throw MCPToolError("ticket must be a Jira key like ACME-1234, not \u{201C}\(raw)\u{201D}.") }
                     return key
                 }
                 let date = now()

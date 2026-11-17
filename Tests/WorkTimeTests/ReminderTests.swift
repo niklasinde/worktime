@@ -62,7 +62,7 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
         check(made == ReminderDraft(title: "Review the PR", notes: "Before standup", due: ReminderDue(date: utc("2026-11-12T23:00:00Z"), allDay: true),
                                     link: "acme/api#7", priority: .high), "\(made)")
         check(try draft(["title": "x"]).get() == ReminderDraft(title: "x"), "only a title")
-        for link in ["https://github.com/acme/api/pull/7", "QDLY-1234", "https://acme.atlassian.net/browse/QDLY-1", "https://example.com/a", "meeting:42",
+        for link in ["https://github.com/acme/api/pull/7", "ACME-1234", "https://acme.atlassian.net/browse/ACME-1", "https://example.com/a", "meeting:42",
                      "https://acme.slack.com/archives/C0ACME1/p1730000000123456"] {
             check((try? draft(["title": "x", "link": link]).get()) != nil, link)
         }
@@ -76,19 +76,19 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
     ("reminders: a link becomes a source of the right kind, and opens where it can", {
         check(ReminderSource.parse("acme/api#7") == pullRequest && ReminderSource.parse("https://github.com/acme/api/pull/7/files") == pullRequest, "pull request")
         check(pullRequest.reference == "acme/api#7" && pullRequest.label == "acme/api#7" && pullRequest.kind.rawValue == "github_pr", "reference")
-        check(ReminderSource.parse(" qdly-9 ") == .jira(key: "QDLY-9"), "any case")
-        check(ReminderSource.parse("QDLY-9") == .jira(key: "QDLY-9"), "jira key")
-        check(ReminderSource.parse("https://acme.atlassian.net/browse/QDLY-9") == .jira(key: "QDLY-9"), "jira url on atlassian.net")
-        check(ReminderSource.parse("https://jira.acme.com/browse/QDLY-9", jiraSite: "jira.acme.com") == .jira(key: "QDLY-9"), "jira url on the set up site")
-        check(ReminderSource.parse("https://jira.acme.com/browse/QDLY-9")?.kind == .url, "another host is a page")
+        check(ReminderSource.parse(" acme-9 ") == .jira(key: "ACME-9"), "any case")
+        check(ReminderSource.parse("ACME-9") == .jira(key: "ACME-9"), "jira key")
+        check(ReminderSource.parse("https://acme.atlassian.net/browse/ACME-9") == .jira(key: "ACME-9"), "jira url on atlassian.net")
+        check(ReminderSource.parse("https://jira.acme.com/browse/ACME-9", jiraSite: "jira.acme.com") == .jira(key: "ACME-9"), "jira url on the set up site")
+        check(ReminderSource.parse("https://jira.acme.com/browse/ACME-9")?.kind == .url, "another host is a page")
         let slack = "https://acme.slack.com/archives/C0ACME1/p1730000000123456"
         check(ReminderSource.parse(slack)?.kind == .slack && ReminderSource.parse(slack)?.reference == slack, "slack message")
         check(ReminderSource.parse("meeting:42") == .meeting(id: 42) && ReminderSource.meeting(id: 42).reference == "42", "meeting")
         check(ReminderSource.parse("https://example.com/a")?.kind == .url && ReminderSource.parse("https://example.com/a")?.label == "example.com", "page")
         check(ReminderSource.parse("http://example.com") == nil && ReminderSource.parse("ftp://x") == nil && ReminderSource.parse("main:work") == nil, "refused")
         check(pullRequest.url(jiraSite: nil)?.absoluteString == "https://github.com/acme/api/pull/7", "pull request page")
-        check(ReminderSource.jira(key: "QDLY-1").url(jiraSite: "acme.atlassian.net")?.absoluteString == "https://acme.atlassian.net/browse/QDLY-1", "jira page")
-        check(ReminderSource.jira(key: "QDLY-1").url(jiraSite: nil) == nil && ReminderSource.meeting(id: 1).url(jiraSite: nil) == nil, "no page without a site, for a meeting")
+        check(ReminderSource.jira(key: "ACME-1").url(jiraSite: "acme.atlassian.net")?.absoluteString == "https://acme.atlassian.net/browse/ACME-1", "jira page")
+        check(ReminderSource.jira(key: "ACME-1").url(jiraSite: nil) == nil && ReminderSource.meeting(id: 1).url(jiraSite: nil) == nil, "no page without a site, for a meeting")
         check(ReminderPriority(eventKit: 1) == .high && ReminderPriority(eventKit: 0) == .none && ReminderPriority(eventKit: 7) == .low, "EventKit priorities")
     }),
 
@@ -204,19 +204,19 @@ let reminderTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("reminders: the app adds, dedupes, lists and completes, and says why when it cannot", {
-        let review = ReminderDraft(title: "Review", notes: "Soon", due: ReminderDue(date: utc("2026-11-12T12:15:00Z")), link: "QDLY-9", priority: .medium)
+        let review = ReminderDraft(title: "Review", notes: "Soon", due: ReminderDue(date: utc("2026-11-12T12:15:00Z")), link: "ACME-9", priority: .medium)
         let added = handle(request(.add, draft: review), book: ReminderBook(), jiraSite: "acme.atlassian.net")
         check(added.reply.ok && added.reply.message == "Added \"Review\", due 2026-11-12 13:15; id \(added.reply.notice ?? "").", added.reply.message)
         let id = added.reply.notice ?? ""
         check(added.book.reminder(id) == Reminder(id: id, title: "Review", notes: "Soon", due: review.due, priority: .medium, created: now,
-                                                  source: .jira(key: "QDLY-9"), addedBy: "Reviewer"), "\(String(describing: added.book.reminder(id)))")
+                                                  source: .jira(key: "ACME-9"), addedBy: "Reviewer"), "\(String(describing: added.book.reminder(id)))")
         let again = handle(request(.add, draft: ReminderDraft(title: "review", due: review.due)), book: added.book)
         check(again.reply.ok && again.reply.notice == id && again.reply.message.contains("not added again") && again.book.reminders.count == 1, again.reply.message)
         var book = again.book
         book = handle(request(.add, draft: ReminderDraft(title: "Someday", link: "https://github.com/acme/api/pull/7")), book: book).book
         let all = handle(request(.list), book: book).reply.message
         let someday = book.reminders.last?.id ?? ""
-        check(all == "- id \(id) \u{00B7} Review \u{00B7} due 2026-11-12 13:15 \u{00B7} medium priority \u{00B7} jira QDLY-9 \u{00B7} added by Reviewer\n"
+        check(all == "- id \(id) \u{00B7} Review \u{00B7} due 2026-11-12 13:15 \u{00B7} medium priority \u{00B7} jira ACME-9 \u{00B7} added by Reviewer\n"
               + "- id \(someday) \u{00B7} Someday \u{00B7} github_pr acme/api#7 \u{00B7} added by Reviewer\n", all)
         check(handle(request(.list, dueBefore: utc("2026-11-12T10:00:00Z")), book: book).reply.message == "No open reminders.\n", "none due yet")
 

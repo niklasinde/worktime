@@ -46,12 +46,12 @@ enum JiraPreview {
             await shot("changed-only", appearances: [.aqua])
             model.onlyChanged = false
             model.showSample(unseenSince: Date())
-            model.filter = JiraFilter(project: "QDLY, ISD", statusName: "In Progress, Review", group: .status)
+            model.filter = JiraFilter(project: "ACME, ISD", statusName: "In Progress, Review", group: .status)
             await shot("filters-grouped", appearances: [.aqua])
             model.filter = JiraFilter()
-            model.meetingLinks["QDLY-8332"] = [JiraMeetingLink(id: 1, title: "Release planning", date: Date().addingTimeInterval(-90_000))]
+            model.meetingLinks["ACME-8332"] = [JiraMeetingLink(id: 1, title: "Release planning", date: Date().addingTimeInterval(-90_000))]
             model.showSample(issue: sampleIssue, transitions: [JiraTransition(id: "1", name: "Send to review", status: "Review", category: .inProgress, fields: [])],
-                             undo: JiraPageModel.Undo(key: "QDLY-8332", from: "To Do", text: "QDLY-8332 moved to In Progress", transition: nil))
+                             undo: JiraPageModel.Undo(key: "ACME-8332", from: "To Do", text: "ACME-8332 moved to In Progress", transition: nil))
             await shot("detail-actions", appearances: [.aqua, .darkAqua])
             model.select(nil)
             model.showSample(issue: sampleIssue, undo: nil)
@@ -60,7 +60,7 @@ enum JiraPreview {
             await shot("my-turn", appearances: [.aqua])
             model.filter.status = .blocked
             await shot("blocked", appearances: [.aqua])
-            model.filter = JiraFilter(project: "QDLY", type: "Bug")
+            model.filter = JiraFilter(project: "ACME", type: "Bug")
             await shot("filtered", appearances: [.aqua])
             model.filter = JiraFilter(query: "zzz")
             await shot("no-match", appearances: [.aqua])
@@ -111,24 +111,24 @@ enum JiraPreview {
 
     static var samples: [JiraTab: [JiraTicket]] {
         let assigned = [
-            ticket("QDLY-8332", "Release note for the new export of invoices to Gaia", "In Progress", .inProgress, priority: "High", ago: 1_800),
-            ticket("QDLY-8301", "Rating conversion table as a grid of tiers and risk indicators", "In Progress", .inProgress, type: "Story", ago: 9_000),
-            ticket("QDLY-8294", "Strawbay send guard rejects a valid journal number", "Review", .inProgress, type: "Bug", priority: "Highest", ago: 40_000),
-            ticket("QDLY-8290", "Add the missing downgrade to the reminder fee migration", "To Do", .todo, type: "Maintenance", priority: "Low", ago: 90_000),
+            ticket("ACME-8332", "Release note for the new export of invoices to Globex", "In Progress", .inProgress, priority: "High", ago: 1_800),
+            ticket("ACME-8301", "Rating conversion table as a grid of tiers and risk indicators", "In Progress", .inProgress, type: "Story", ago: 9_000),
+            ticket("ACME-8294", "Strawbay send guard rejects a valid journal number", "Review", .inProgress, type: "Bug", priority: "Highest", ago: 40_000),
+            ticket("ACME-8290", "Add the missing downgrade to the reminder fee migration", "To Do", .todo, type: "Maintenance", priority: "Low", ago: 90_000),
             ticket("ISD-4417", "Intrum UAT login fails after the SSO change", "Blocked", .inProgress, type: "Support", priority: "High", ago: 200_000,
                    labels: ["blocked"]),
-            ticket("QDLY-8250", "Report deductions to the authority through the partner", "Done", .done, type: "Story", priority: nil, ago: 260_000),
+            ticket("ACME-8250", "Report deductions to the authority through the partner", "Done", .done, type: "Story", priority: nil, ago: 260_000),
         ]
         return [
             .assigned: assigned,
-            .reported: [ticket("QDLY-8340", "Customers see a stale balance after a partial payment", "To Do", .todo, type: "Bug", assignee: "Anna Berg", ago: 20_000),
-                        ticket("QDLY-8311", "Show the debtor's payment plan in the case view", "In Progress", .inProgress, type: "Story", assignee: "Katia Lind", ago: 70_000)],
-            .watching: [ticket("QDLY-8120", "Move the print-house templates to the new address layout", "Review", .inProgress, type: "Story", assignee: "Johan Ek", ago: 150_000)],
+            .reported: [ticket("ACME-8340", "Customers see a stale balance after a partial payment", "To Do", .todo, type: "Bug", assignee: "Anna Berg", ago: 20_000),
+                        ticket("ACME-8311", "Show the debtor's payment plan in the case view", "In Progress", .inProgress, type: "Story", assignee: "Katia Lind", ago: 70_000)],
+            .watching: [ticket("ACME-8120", "Move the print-house templates to the new address layout", "Review", .inProgress, type: "Story", assignee: "Johan Ek", ago: 150_000)],
         ]
     }
 
     static var sampleIssue: JiraIssue {
-        JiraIssue(key: "QDLY-8332", summary: "Release note for the new export of invoices to Gaia", status: "In Progress", type: "Task", priority: "High",
+        JiraIssue(key: "ACME-8332", summary: "Release note for the new export of invoices to Globex", status: "In Progress", type: "Task", priority: "High",
                   assignee: "Niklas Inde", reporter: "Oskar Appelberg", created: Date().addingTimeInterval(-90_000), updated: Date().addingTimeInterval(-1_800),
                   description: "Write the release note for the export.\n- Mention the new column\n- Link the guide", comments: [
                     JiraIssue.Comment(author: "Anna Berg", created: Date().addingTimeInterval(-7_200), body: "Can you add the Swedish text too?"),
@@ -140,8 +140,8 @@ enum JiraPreview {
         func pr(_ number: Int, _ repo: String, _ title: String) -> GitHubPR {
             GitHubPR(url: "https://github.com/acme/\(repo)/pull/\(number)", number: number, title: title, repo: "acme/\(repo)", updated: Date(), checks: .passed)
         }
-        return ["QDLY-8332": [pr(872, "finq.admin-ui", "QDLY-8332: Release note")],
-                "QDLY-8294": [pr(2462, "finq.api", "QDLY-8294: Guard"), pr(2470, "finq.api", "QDLY-8294: Follow-up")]]
+        return ["ACME-8332": [pr(872, "orbit.admin-ui", "ACME-8332: Release note")],
+                "ACME-8294": [pr(2462, "orbit.api", "ACME-8294: Guard"), pr(2470, "orbit.api", "ACME-8294: Follow-up")]]
     }
 }
 #endif

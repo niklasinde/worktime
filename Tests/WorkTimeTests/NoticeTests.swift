@@ -51,8 +51,8 @@ let noticeTests: [(name: String, run: () throws -> Void)] = [
     ("notify: links open a pull request, an agent, a Jira ticket or a web page", {
         check(NoticeLogic.link("https://github.com/acme/api/pull/7") == .pullRequest(GitHubLink.Target(repo: "acme/api", number: 7)), "pr")
         check(NoticeLogic.link("main:work") == .agent("main:work"), "main")
-        check(NoticeLogic.link("QDLY-1234") == .jira("QDLY-1234"), "jira key")
-        check(NoticeLogic.link("https://acme.atlassian.net/browse/QDLY-1") == .web(URL(string: "https://acme.atlassian.net/browse/QDLY-1")!), "jira url")
+        check(NoticeLogic.link("ACME-1234") == .jira("ACME-1234"), "jira key")
+        check(NoticeLogic.link("https://acme.atlassian.net/browse/ACME-1") == .web(URL(string: "https://acme.atlassian.net/browse/ACME-1")!), "jira url")
         check(NoticeLogic.link("https://acme.slack.com/archives/C1/p123") != nil, "slack permalink")
         check(NoticeLogic.link("http://example.com") == nil && NoticeLogic.link("hello world") == nil, "not https")
     }),

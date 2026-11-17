@@ -273,7 +273,15 @@ struct WhisperVAD: Equatable {
 enum WhisperLogic {
     /// whisper.cpp takes 16 kHz mono floats.
     static let sampleRate: Double = 16_000
-    static let domainTerms = ["Quiddly", "finq", "QDLY", "Jira", "PR"]
+    static let builtInTerms = ["Jira", "PR"]
+    static let customTermsKey = "whisperCustomTerms"
+
+    /// The user's own words for Whisper to expect (company, product, ticket prefixes), separated by commas or lines, then the built-in ones.
+    static func domainTerms(defaults: UserDefaults = .standard) -> [String] {
+        let custom = (defaults.string(forKey: customTermsKey) ?? "").split(whereSeparator: { $0 == "," || $0.isNewline })
+        return custom.map { $0.trimmingCharacters(in: .whitespaces) } + builtInTerms
+    }
+
     /// Whisper reads at most 224 prompt tokens; this many characters stays under that in Swedish and English.
     static let promptLimit = 550
 
@@ -287,7 +295,7 @@ enum WhisperLogic {
 
     /// A prompt that spells the words meetings are likely to use: the domain terms, people's names, Jira project keys,
     /// then the names and acronyms most used in ticket titles. Whatever does not fit in `limit` characters is dropped.
-    static func vocabularyPrompt(names: [String], ticketKeys: [String], ticketTitles: [String], limit: Int = promptLimit) -> String {
+    static func vocabularyPrompt(names: [String], ticketKeys: [String], ticketTitles: [String], terms: [String] = domainTerms(), limit: Int = promptLimit) -> String {
         let projects = ticketKeys.compactMap { $0.split(separator: "-").first.map(String.init) }
         var counts: [String: Int] = [:]
         for title in ticketTitles {
@@ -296,7 +304,7 @@ enum WhisperLogic {
         let titleTerms = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map(\.key)
         var seen: Set<String> = []
         var prompt = ""
-        for term in domainTerms + names + byFrequency(projects) + titleTerms {
+        for term in terms + names + byFrequency(projects) + titleTerms {
             let term = term.trimmingCharacters(in: .whitespaces)
             guard !term.isEmpty, seen.insert(term.lowercased()).inserted else { continue }
             let next = prompt.isEmpty ? term : prompt + ", " + term

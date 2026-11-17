@@ -393,11 +393,11 @@ private struct OpenTicketButton: View {
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Open a ticket").font(.headline)
-                TextField("QDLY-8332 or https://acme.atlassian.net/browse/QDLY-8332", text: $text)
+                TextField("ACME-8332 or https://acme.atlassian.net/browse/ACME-8332", text: $text)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 360)
                     .onSubmit(open)
-                Text(invalid ? "Type a Jira key like QDLY-8332 or paste a browse link." : "Opens the ticket\u{2019}s agent, made the first time.")
+                Text(invalid ? "Type a Jira key like ACME-8332 or paste a browse link." : "Opens the ticket\u{2019}s agent, made the first time.")
                     .font(.caption)
                     .foregroundStyle(invalid ? .red : .secondary)
                 HStack {

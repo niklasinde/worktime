@@ -59,9 +59,9 @@ enum Workspaces {
     static let mainFoldersKey = "agentMainFolders"
 
     static let defaults = [
-        Workspace(id: "work", name: "Work", symbol: "briefcase.fill", color: "blue", roots: ["~/git/quiddly"], githubOwners: ["quiddly-com"],
-                  jiraProjects: ["QDLY", "ISD", "QPB"], slack: "Quiddly", extraFiles: []),
-        Workspace(id: "personal", name: "Personal", symbol: "person.fill", color: "green", roots: ["~/git/inde"], githubOwners: ["niklasinde"],
+        Workspace(id: "work", name: "Work", symbol: "briefcase.fill", color: "blue", roots: ["~/git"], githubOwners: [],
+                  jiraProjects: [], slack: nil, extraFiles: []),
+        Workspace(id: "personal", name: "Personal", symbol: "person.fill", color: "green", roots: [], githubOwners: [],
                   jiraProjects: [], slack: nil, extraFiles: []),
     ]
 

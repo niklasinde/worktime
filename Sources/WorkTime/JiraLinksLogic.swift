@@ -10,7 +10,7 @@ struct JiraMeetingLink: Equatable, Identifiable {
 enum JiraLinks {
     static let meetingLimit = 5
 
-    /// Whether the text names the ticket, in any case, and not a longer key that starts the same (`QDLY-12` is not in `QDLY-123`).
+    /// Whether the text names the ticket, in any case, and not a longer key that starts the same (`ACME-12` is not in `ACME-123`).
     static func mentions(_ text: String, key: String) -> Bool {
         guard let pattern = try? NSRegularExpression(pattern: "(?<![A-Za-z0-9])" + NSRegularExpression.escapedPattern(for: key) + "(?![0-9])",
                                                      options: .caseInsensitive) else { return false }

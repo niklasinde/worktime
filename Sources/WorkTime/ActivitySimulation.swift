@@ -57,15 +57,15 @@ enum ActivitySimulation {
 /// A week of made-up activity for the previews.
 enum SampleActivity {
     static func write(to store: MeetingStore, now: Date) throws {
-        let quiddly = try store.addProject("Quiddly")
+        let acme = try store.addProject("Acme")
         let inde = try store.addProject("Inde")
-        try store.addRule(project: quiddly.id, field: .repo, pattern: "finq.api")
-        try store.addRule(project: quiddly.id, field: .ticket, pattern: "QDLY")
-        try store.addRule(project: quiddly.id, field: .host, pattern: "quiddly.atlassian.net")
+        try store.addRule(project: acme.id, field: .repo, pattern: "orbit.api")
+        try store.addRule(project: acme.id, field: .ticket, pattern: "ACME")
+        try store.addRule(project: acme.id, field: .host, pattern: "acme.atlassian.net")
         try store.addRule(project: inde.id, field: .repo, pattern: "indemeeting")
         let calendar = Calendar.current
         let claude = ClaudeSession(id: "31f99ea7", folder: "/Users/niklasinde/git/inde/indemeeting", title: "Activity tracking inside WorkTime")
-        let api = ClaudeSession(id: "a92d893c", folder: "/Users/niklasinde/git/quiddly/finq.api", title: "Fix the ISD-13089 reminder fee rounding")
+        let api = ClaudeSession(id: "a92d893c", folder: "/Users/niklasinde/git/acme/orbit.api", title: "Fix the ISD-13089 reminder fee rounding")
         func block(_ dayOffset: Int, _ from: Double, _ to: Double, app: (String, String), title: String? = nil, url: String? = nil,
                    repo: String? = nil, branch: String? = nil, claude: [ClaudeSession] = [], idle: Bool = false,
                    category: ActivityCategory? = nil, description: String? = nil, excerpt: String? = nil, guess: Int64? = nil,
@@ -86,15 +86,15 @@ enum SampleActivity {
         let terminal = ("com.apple.Terminal", "Terminal")
         let claudeApp = ("com.anthropic.claudefordesktop", "Claude")
         for dayOffset in [-4, -3, -2, -1, 0] {
-            try block(dayOffset, 8.5, 9.0, app: slack, title: "general (Quiddly) \u{2014} Slack", category: .chat, description: "Chatting in the Quiddly general channel",
-                      excerpt: "Jag tittar p\u{00E5} avrundningen i p\u{00E5}minnelseavgifterna efter standup", guess: quiddly.id)
-            try block(dayOffset, 9.0, 9.25, app: safari, url: "quiddly.atlassian.net/browse/QDLY-8296", category: .planning, description: "Reading the QDLY-8296 ticket")
-            try block(dayOffset, 9.25, 10.75, app: pycharm, title: "finq.api \u{2013} reminder_fees.py", repo: "finq.api", branch: "NI/QDLY-8296",
+            try block(dayOffset, 8.5, 9.0, app: slack, title: "general (Acme) \u{2014} Slack", category: .chat, description: "Chatting in the Acme general channel",
+                      excerpt: "Jag tittar p\u{00E5} avrundningen i p\u{00E5}minnelseavgifterna efter standup", guess: acme.id)
+            try block(dayOffset, 9.0, 9.25, app: safari, url: "acme.atlassian.net/browse/ACME-8296", category: .planning, description: "Reading the ACME-8296 ticket")
+            try block(dayOffset, 9.25, 10.75, app: pycharm, title: "orbit.api \u{2013} reminder_fees.py", repo: "orbit.api", branch: "NI/ACME-8296",
                       claude: [api], category: .coding, description: "Editing reminder fee rounding")
-            try block(dayOffset, 10.75, 11.0, app: terminal, title: "finq.api \u{2014} pytest \u{2014} 80\u{00D7}24", repo: "finq.api", branch: "NI/QDLY-8296",
+            try block(dayOffset, 10.75, 11.0, app: terminal, title: "orbit.api \u{2014} pytest \u{2014} 80\u{00D7}24", repo: "orbit.api", branch: "NI/ACME-8296",
                       category: .coding, description: "Running the test suite")
-            try block(dayOffset, 11.0, 12.0, app: safari, url: "github.com/quiddly-com/finq.api/pull/1966", claude: [api], category: .codeReview,
-                      description: "Reviewing the reminder fee pull request", guess: quiddly.id)
+            try block(dayOffset, 11.0, 12.0, app: safari, url: "github.com/acme-com/orbit.api/pull/1966", claude: [api], category: .codeReview,
+                      description: "Reviewing the reminder fee pull request", guess: acme.id)
             try block(dayOffset, 12.0, 12.75, app: slack, idle: true)
             try block(dayOffset, 12.75, 15.5, app: xcode, title: "ActivityView.swift \u{2014} indemeeting", repo: "indemeeting", branch: "main",
                       claude: [claude], category: .coding, description: "Building the activity day view")

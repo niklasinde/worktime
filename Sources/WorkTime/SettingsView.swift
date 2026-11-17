@@ -313,6 +313,7 @@ struct SettingsView: View {
     @AppStorage(SettingsTab.storageKey) private var tab = SettingsTab.general
     @AppStorage(TranscriptionEngine.beamSearchKey) private var beamSearch = true
     @AppStorage(TranscriptionEngine.quietKey) private var quiet = true
+    @AppStorage(WhisperLogic.customTermsKey) private var customTerms = ""
     @AppStorage(SummaryEngine.storageKey) private var summaryEngine = SummaryEngine.ministral
     @ObservedObject private var ministral = LocalLLMModels.shared
     @AppStorage(AudioRetention.developerModeKey) private var developerMode = false
@@ -455,6 +456,13 @@ struct SettingsView: View {
                     Toggle("Higher accuracy", isOn: $beamSearch)
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                        .labelsHidden()
+                }
+                Divider().padding(.leading, 14)
+                row("Words to expect", detail: "Company, product and ticket prefixes, separated by commas") {
+                    TextField("Words to expect", text: $customTerms)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
                         .labelsHidden()
                 }
                 Divider().padding(.leading, 14)

@@ -7,8 +7,8 @@ func detailJSON(pr extra: String = "", commits: String = "[]", commitCount: Int 
                         contexts: String = "[]", rollup: String = #"{"state":"SUCCESS","contexts":{"totalCount":0,"nodes":[]}}"#) -> Data {
     Data("""
     {"data":{"repository":{"pullRequest":{
-      "number":7,"title":"QDLY-1: Title","body":"Body","url":"https://github.com/acme/api/pull/7","isDraft":false,"state":"OPEN","merged":false,
-      "mergeable":"MERGEABLE","reviewDecision":"REVIEW_REQUIRED","baseRefName":"develop","headRefName":"NI/QDLY-1-title",
+      "number":7,"title":"ACME-1: Title","body":"Body","url":"https://github.com/acme/api/pull/7","isDraft":false,"state":"OPEN","merged":false,
+      "mergeable":"MERGEABLE","reviewDecision":"REVIEW_REQUIRED","baseRefName":"develop","headRefName":"NI/ACME-1-title",
       "createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T12:00:00Z","additions":10,"deletions":2,"changedFiles":3,
       "author":{"login":"niklas"},"labels":{"nodes":[{"name":"bug"}]},"assignees":{"nodes":[{"login":"niklas"}]},
       "reviewRequests":{"nodes":[{"requestedReviewer":{"login":"elin"}},{"requestedReviewer":{"name":"backend"}},{"requestedReviewer":{}}]},
@@ -29,12 +29,12 @@ private func run(_ name: String, _ status: String, _ conclusion: String = "null"
 let githubDetailTests: [(name: String, run: () throws -> Void)] = [
     ("a pull request detail is parsed with branches, people, labels and numbers", {
         let detail = try GitHubLogic.parseDetail(detailJSON())
-        check(detail.repo == "acme/api" && detail.number == 7 && detail.title == "QDLY-1: Title", "identity")
+        check(detail.repo == "acme/api" && detail.number == 7 && detail.title == "ACME-1: Title", "identity")
         check(detail.state == .open && !detail.isDraft && detail.mergeable == .mergeable && detail.review == .required, "state")
-        check(detail.base == "develop" && detail.head == "NI/QDLY-1-title", "branches")
+        check(detail.base == "develop" && detail.head == "NI/ACME-1-title", "branches")
         check(detail.additions == 10 && detail.deletions == 2 && detail.changedFiles == 3, "numbers")
         check(detail.labels == ["bug"] && detail.assignees == ["niklas"] && detail.author == "niklas", "labels and people")
-        check(detail.ticket == "QDLY-1", "ticket")
+        check(detail.ticket == "ACME-1", "ticket")
         check(detail.created == Date(timeIntervalSince1970: 1_792_404_000), "created")
     }),
 
@@ -193,7 +193,7 @@ let githubDetailTests: [(name: String, run: () throws -> Void)] = [
         let url = "https://github.com/acme/api/pull/7"
         check(try store.githubDetail(url) == nil, "nothing cached")
         try store.saveGitHubDetail(url, json: detailJSON())
-        check(try store.githubDetail(url)?.title == "QDLY-1: Title", "cached")
+        check(try store.githubDetail(url)?.title == "ACME-1: Title", "cached")
         try store.saveGitHubDetail(url, json: Data("garbage".utf8))
         check(try store.githubDetail(url) == nil, "an unreadable cache row is ignored")
         try store.saveGitHubDetail(url, json: detailJSON())

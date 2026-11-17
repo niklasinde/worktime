@@ -46,26 +46,26 @@ enum ResumePreview {
     private static let now = Date()
 
     private static var sample: ResumeCard {
-        let session = ClaudeSession(id: "s1", folder: "/Users/me/git/finq.api", title: "Rounding of voucher rows")
+        let session = ClaudeSession(id: "s1", folder: "/Users/me/git/orbit.api", title: "Rounding of voucher rows")
         let visit = ResumeVisit(start: now.addingTimeInterval(-26 * 3600), end: now.addingTimeInterval(-23.5 * 3600), active: 1.9 * 3600,
                                 sessions: [session])
         return ResumeCard(
-            key: ResumeContextKey(repo: "finq.api", branch: "NI/QDLY-8734", ticket: "QDLY-8734"), entered: now, visit: visit,
+            key: ResumeContextKey(repo: "orbit.api", branch: "NI/ACME-8734", ticket: "ACME-8734"), entered: now, visit: visit,
             prompts: [ResumePrompt(session: session.title, text: "make test_round_half_up pass without touching the bookkeeping export", date: nil),
                       ResumePrompt(session: session.title, text: "why does the voucher total differ by one öre on credit notes?", date: nil)],
-            pr: ResumePR(url: "https://github.com/quiddly-com/finq.api/pull/2591", repo: "quiddly-com/finq.api", number: 2591,
-                         title: "QDLY-8734: Round voucher rows half up", state: .open, checks: .failed, review: .changesRequested, unresolved: 2,
+            pr: ResumePR(url: "https://github.com/acme-com/orbit.api/pull/2591", repo: "acme-com/orbit.api", number: 2591,
+                         title: "ACME-8734: Round voucher rows half up", state: .open, checks: .failed, review: .changesRequested, unresolved: 2,
                          newCommits: ["Address review", "Fix flake"], newComments: [
                             ResumeComment(author: "jessica", text: "Can we keep the old rounding for imported vouchers?", date: nil),
                             ResumeComment(author: "bo-lind", text: "Tests fail on Python 3.12 only", date: nil)],
                          finishedChecks: ["tests failed", "lint passed"]),
-            ticket: ResumeTicket(key: "QDLY-8734", summary: "Voucher rows are rounded down on credit notes", status: "Review",
+            ticket: ResumeTicket(key: "ACME-8734", summary: "Voucher rows are rounded down on credit notes", status: "Review",
                                  assignee: "Niklas Inde", changes: ["Status: In Progress \u{2192} Review (Niklas Inde)"],
-                                 newComments: [ResumeComment(author: "Anna Berg", text: "Customer confirmed the fix on testadmin", date: nil)]),
+                                 newComments: [ResumeComment(author: "Anna Berg", text: "Customer confirmed the fix on staging", date: nil)]),
             meetings: [ResumeMention(meeting: 412, title: "Daily standup", date: now.addingTimeInterval(-3 * 3600),
-                                     line: "03:12 Anna: QDLY 8734 should go out with Thursday's release")],
-            agent: ResumeAgent(key: "https://github.com/quiddly-com/finq.api/pull/2591", title: "finq.api #2591",
-                               prURL: "https://github.com/quiddly-com/finq.api/pull/2591", status: "idle",
+                                     line: "03:12 Anna: ACME 8734 should go out with Thursday's release")],
+            agent: ResumeAgent(key: "https://github.com/acme-com/orbit.api/pull/2591", title: "orbit.api #2591",
+                               prURL: "https://github.com/acme-com/orbit.api/pull/2591", status: "idle",
                                lastResult: "Fixed the rounding and added two tests; the review thread about imported vouchers is still open."))
     }
 

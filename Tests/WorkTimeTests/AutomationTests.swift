@@ -9,7 +9,7 @@ private func message(_ text: String, place: String = "#reviews", author: String 
     SlackMessage(kind: .mention, teamID: "T1", channelID: "C1", place: place, author: author, text: text, ts: ts, permalink: "https://acme.slack.com/archives/C1/p1800000000000100")
 }
 
-private func pullRequest(_ number: Int, repo: String = "quiddly-com/finq.api", title: String = "QDLY-1: Change") -> GitHubPR {
+private func pullRequest(_ number: Int, repo: String = "acme-com/orbit.api", title: String = "ACME-1: Change") -> GitHubPR {
     GitHubPR(url: "https://github.com/\(repo)/pull/\(number)", number: number, title: title, repo: repo, updated: now)
 }
 
@@ -24,7 +24,7 @@ private func slackEvent(_ text: String, place: String = "#reviews", ts: String =
 
 let automationTests: [(name: String, run: () throws -> Void)] = [
     ("automations: a slack trigger matches by place and text, any of several, ignoring case", {
-        let event = slackEvent("Can someone review https://github.com/quiddly-com/finq.api/pull/12 please")
+        let event = slackEvent("Can someone review https://github.com/acme-com/orbit.api/pull/12 please")
         check(Automations.matches(AutomationTrigger(kind: .slackMessage, place: "review", text: ""), event), "place contains")
         check(Automations.matches(AutomationTrigger(kind: .slackMessage, place: "dev, REVIEWS", text: "PLEASE"), event), "any of several")
         check(!Automations.matches(AutomationTrigger(kind: .slackMessage, place: "general"), event), "other place")
@@ -34,8 +34,8 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
 
     ("automations: needing a pull request matches only messages that mention one", {
         let trigger = AutomationTrigger(kind: .slackMessage, needsPullRequest: true)
-        check(Automations.matches(trigger, slackEvent("see quiddly-com/finq.api#12")), "short reference")
-        check(Automations.matches(trigger, slackEvent("see https://github.com/quiddly-com/finq.api/pull/12/files")), "link")
+        check(Automations.matches(trigger, slackEvent("see acme-com/orbit.api#12")), "short reference")
+        check(Automations.matches(trigger, slackEvent("see https://github.com/acme-com/orbit.api/pull/12/files")), "link")
         check(!Automations.matches(trigger, slackEvent("lunch?")), "no pull request")
     }),
 
@@ -48,13 +48,13 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("automations: events carry the fields a prompt can use", {
-        let slack = slackEvent("review quiddly-com/finq.api#12 for QDLY-77")
-        check(slack.fields["pr_url"] == "https://github.com/quiddly-com/finq.api/pull/12" && slack.pullRequest == slack.fields["pr_url"], "pull request")
-        check(slack.fields["ticket"] == "QDLY-77" && slack.fields["slack_place"] == "#reviews" && slack.fields["slack_author"] == "Anna", "\(slack.fields)")
+        let slack = slackEvent("review acme-com/orbit.api#12 for ACME-77")
+        check(slack.fields["pr_url"] == "https://github.com/acme-com/orbit.api/pull/12" && slack.pullRequest == slack.fields["pr_url"], "pull request")
+        check(slack.fields["ticket"] == "ACME-77" && slack.fields["slack_place"] == "#reviews" && slack.fields["slack_author"] == "Anna", "\(slack.fields)")
         let review = Automations.pullRequestEvent(pullRequest(9))
-        check(review.id == "review:https://github.com/quiddly-com/finq.api/pull/9" && review.fields["pr_number"] == "9" && review.fields["ticket"] == "QDLY-1", "\(review)")
+        check(review.id == "review:https://github.com/acme-com/orbit.api/pull/9" && review.fields["pr_number"] == "9" && review.fields["ticket"] == "ACME-1", "\(review)")
         let prompt = Automations.prompt("Review {pr_url} by {pr_author} {nothing}", event: review)
-        check(prompt == "Review https://github.com/quiddly-com/finq.api/pull/9 by someone {nothing}", prompt)
+        check(prompt == "Review https://github.com/acme-com/orbit.api/pull/9 by someone {nothing}", prompt)
     }),
 
     ("automations: the first look marks what is there as seen and starts nothing, then each new event fires once", {
@@ -82,11 +82,11 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("automations: a disabled one, another kind and a filter fire nothing, and the rate cap skips the rest", {
-        let reviews = automation(AutomationTrigger(kind: .reviewRequested, place: "finq.api"))
+        let reviews = automation(AutomationTrigger(kind: .reviewRequested, place: "orbit.api"))
         var state = Automations.plan(kind: .reviewRequested, events: [], routines: [reviews], state: AutomationState(), now: now).state
-        let events = (1...10).map { Automations.pullRequestEvent(pullRequest($0)) } + [Automations.pullRequestEvent(pullRequest(99, repo: "quiddly-com/finq.admin-ui"))]
+        let events = (1...10).map { Automations.pullRequestEvent(pullRequest($0)) } + [Automations.pullRequestEvent(pullRequest(99, repo: "acme-com/orbit.admin-ui"))]
         let plan = Automations.plan(kind: .reviewRequested, events: events, routines: [reviews], state: state, now: now)
-        check(plan.fire.count == Automations.runsPerHour && plan.fire.allSatisfy { $0.event.place == "quiddly-com/finq.api" }, "\(plan.fire.count) fired")
+        check(plan.fire.count == Automations.runsPerHour && plan.fire.allSatisfy { $0.event.place == "acme-com/orbit.api" }, "\(plan.fire.count) fired")
         state = plan.state
         let later = Automations.plan(kind: .reviewRequested, events: events, routines: [reviews], state: state, now: now.addingTimeInterval(7200))
         check(later.fire.isEmpty, "the skipped ones are seen, not queued for later")
@@ -105,12 +105,12 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("automations: an automation never fires on a schedule and shows its trigger", {
-        var routine = automation(AutomationTrigger(kind: .reviewRequested, place: "finq.api"))
+        var routine = automation(AutomationTrigger(kind: .reviewRequested, place: "orbit.api"))
         check(Routines.armed(routine, now: now).nextRun == nil, "no next run")
         routine.nextRun = now.addingTimeInterval(-600)
         check(Routines.tick([routine], now: now, running: []).fire.isEmpty, "never due")
         let text = Routines.detail(routine, now: now)
-        check(text.hasPrefix("Review requested in finq.api") && text.hasSuffix("not run yet"), text)
+        check(text.hasPrefix("Review requested in orbit.api") && text.hasSuffix("not run yet"), text)
         check(Routines.systemPrompt(routine, base: nil).contains("Never approve"), "the draft rule is in its instructions")
         check(!Routines.systemPrompt(automation(AutomationTrigger(kind: .reviewRequested)).with(trigger: nil), base: nil).contains("Never approve"), "a routine has no such note")
     }),
@@ -128,9 +128,9 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
         let event = Automations.pullRequestEvent(pullRequest(12, title: "Add the thing"))
         let run = RoutineRun(started: now, finished: now, status: .done, summary: "Request changes: the migration has no downgrade.\nSmall: a typo.")
         let notice = Automations.notification(for: routine, event: event, run: run)
-        check(notice.title == "Reviewer: finq.api #12 Add the thing" && notice.body.hasPrefix("Request changes"), "\(notice)")
+        check(notice.title == "Reviewer: orbit.api #12 Add the thing" && notice.body.hasPrefix("Request changes"), "\(notice)")
         let reminder = Automations.reminder(for: event)
-        check(reminder?.title == "Decide on finq.api #12: Add the thing" && reminder?.source == .pullRequest(GitHubLink.Target(repo: "quiddly-com/finq.api", number: 12)), "\(String(describing: reminder))")
+        check(reminder?.title == "Decide on orbit.api #12: Add the thing" && reminder?.source == .pullRequest(GitHubLink.Target(repo: "acme-com/orbit.api", number: 12)), "\(String(describing: reminder))")
         let slack = Automations.reminder(for: slackEvent("anyone?"))
         check(slack?.source.kind == .slack && slack?.title == "Answer #reviews: anyone?", "\(String(describing: slack))")
     }),
@@ -138,11 +138,11 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     ("automations: a notification from an automation about a pull request offers the review actions", {
         var source = NoticeSource(agent: Routines.prefix + UUID().uuidString, workspace: "work")
         source.reviewing = true
-        let review = AgentNotice(id: "n1", title: "t", link: "https://github.com/quiddly-com/finq.api/pull/12", source: source, created: now)
+        let review = AgentNotice(id: "n1", title: "t", link: "https://github.com/acme-com/orbit.api/pull/12", source: source, created: now)
         check(NoticeLogic.isReview(review), "a routine's run about a pull request")
         source.reviewing = nil
-        check(!NoticeLogic.isReview(AgentNotice(id: "n4", title: "t", link: "https://github.com/quiddly-com/finq.api/pull/12", source: source, created: now)), "one about my own pull request")
-        check(!NoticeLogic.isReview(AgentNotice(id: "n2", title: "t", link: "https://github.com/quiddly-com/finq.api/pull/12", source: NoticeSource(agent: "main:work"), created: now)), "another agent's")
+        check(!NoticeLogic.isReview(AgentNotice(id: "n4", title: "t", link: "https://github.com/acme-com/orbit.api/pull/12", source: source, created: now)), "one about my own pull request")
+        check(!NoticeLogic.isReview(AgentNotice(id: "n2", title: "t", link: "https://github.com/acme-com/orbit.api/pull/12", source: NoticeSource(agent: "main:work"), created: now)), "another agent's")
         check(!NoticeLogic.isReview(AgentNotice(id: "n3", title: "t", link: source.agent, source: source, created: now)), "one linking its own agent")
     }),
 
@@ -152,16 +152,16 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
             RoutineRequests.handle(RoutineRequest(id: "q", action: action, draft: draft, patch: patch, routine: routine, enabled: nil, source: NoticeSource(workspace: "work"), created: now),
                                    routines: routines, workspaces: workspaces, assistants: [], now: now, newID: { "NEW" })
         }
-        let draft = try RoutineRequests.automationDraft(["name": "Reviewer", "event": "review_requested", "place": "finq.api", "remind": true])
+        let draft = try RoutineRequests.automationDraft(["name": "Reviewer", "event": "review_requested", "place": "orbit.api", "remind": true])
         check(draft.prompt == AutomationTrigger.Kind.reviewRequested.defaultPrompt && draft.followUp == AutomationFollowUp(notify: true, remind: true), "defaults")
         let created = ask(.create, draft: draft)
         guard case .save(let made)? = created.change else { return check(false, "saved: \(created.reply.message)") }
-        check(made.trigger == AutomationTrigger(kind: .reviewRequested, place: "finq.api") && made.nextRun == nil && made.isAutomation, "\(made)")
+        check(made.trigger == AutomationTrigger(kind: .reviewRequested, place: "orbit.api") && made.nextRun == nil && made.isAutomation, "\(made)")
         check(ask(.create, draft: draft, in: [made]).change == nil, "the same one is not made twice")
         check(ask(.create, draft: try RoutineRequests.automationDraft(["name": "x", "event": "slack_message"])).reply.ok == false, "a Slack one that matches everything")
-        let patch = try RoutineRequests.automationPatch(["place": "finq.admin-ui", "contains": "QDLY", "notify": false])
+        let patch = try RoutineRequests.automationPatch(["place": "orbit.admin-ui", "contains": "ACME", "notify": false])
         guard case .save(let changed)? = ask(.update, patch: patch, routine: "NEW", in: [made]).change else { return check(false, "updated") }
-        check(changed.trigger == AutomationTrigger(kind: .reviewRequested, place: "finq.admin-ui", text: "QDLY") && changed.followUp == AutomationFollowUp(notify: false, remind: true), "\(changed)")
+        check(changed.trigger == AutomationTrigger(kind: .reviewRequested, place: "orbit.admin-ui", text: "ACME") && changed.followUp == AutomationFollowUp(notify: false, remind: true), "\(changed)")
         let plain = Routine(id: "R", name: "Sweep", prompt: "p", workspace: "work", schedule: RoutineSchedule(kind: .daily), created: now)
         check(ask(.listAutomations, in: [made, plain]).reply.message.contains("Reviewer") && !ask(.listAutomations, in: [made, plain]).reply.message.contains("Sweep"), "automations")
         check(ask(.list, in: [made, plain]).reply.message.contains("Sweep") && !ask(.list, in: [made, plain]).reply.message.contains("Reviewer"), "routines")
@@ -183,14 +183,14 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
         let old = Data(#"{"kind":"slack_message","place":"reviews","text":"","needsPullRequest":true}"#.utf8)
         let read = try JSONDecoder().decode(AutomationTrigger.self, from: old)
         check(read == AutomationTrigger(kind: .slackMessage, place: "reviews", needsPullRequest: true), "\(read)")
-        let trigger = AutomationTrigger(kind: .jiraStatus, place: "QDLY", text: "x", status: "Done", fromStatus: "Review", jql: "labels = a", pattern: "^x")
+        let trigger = AutomationTrigger(kind: .jiraStatus, place: "ACME", text: "x", status: "Done", fromStatus: "Review", jql: "labels = a", pattern: "^x")
         check(try JSONDecoder().decode(AutomationTrigger.self, from: JSONEncoder().encode(trigger)) == trigger, "round trip")
     }),
 
     ("automations: triggers that would match everything or cannot work are refused", {
         check(Automations.problem(AutomationTrigger(kind: .slackChannel)) != nil && Automations.problem(AutomationTrigger(kind: .slackChannel, place: "#reviews")) == nil, "channel")
         check(Automations.problem(AutomationTrigger(kind: .slackKeyword)) != nil && Automations.problem(AutomationTrigger(kind: .slackKeyword, text: "outage")) == nil, "keyword")
-        check(Automations.problem(AutomationTrigger(kind: .prOpened)) != nil && Automations.problem(AutomationTrigger(kind: .prUpdated, place: "finq.api")) == nil, "repository")
+        check(Automations.problem(AutomationTrigger(kind: .prOpened)) != nil && Automations.problem(AutomationTrigger(kind: .prUpdated, place: "orbit.api")) == nil, "repository")
         check(Automations.problem(AutomationTrigger(kind: .jiraNew)) != nil, "every new ticket")
         check(Automations.problem(AutomationTrigger(kind: .jiraNew, place: "ISD")) == nil && Automations.problem(AutomationTrigger(kind: .jiraNew, jql: "labels = a")) == nil, "a project or a query")
         check(Automations.problem(AutomationTrigger(kind: .jiraStatus)) == nil && Automations.problem(AutomationTrigger(kind: .ciFailed)) == nil, "mine by default")
@@ -199,20 +199,20 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("automations: status, regex and text filters narrow an event", {
-        let event = AutomationEvent(id: "j", kind: .jiraStatus, title: "t", place: "QDLY", text: "Fix the invoice export",
+        let event = AutomationEvent(id: "j", kind: .jiraStatus, title: "t", place: "ACME", text: "Fix the invoice export",
                                     fields: ["status": "Ready for review", "from_status": "In progress"], pullRequest: nil, link: nil, date: now)
-        check(Automations.matches(AutomationTrigger(kind: .jiraStatus, place: "qdly", status: "review, done", fromStatus: "progress"), event), "to and from")
+        check(Automations.matches(AutomationTrigger(kind: .jiraStatus, place: "acme", status: "review, done", fromStatus: "progress"), event), "to and from")
         check(!Automations.matches(AutomationTrigger(kind: .jiraStatus, status: "Done"), event), "another status")
         check(!Automations.matches(AutomationTrigger(kind: .jiraStatus, fromStatus: "Backlog"), event), "another from")
         check(Automations.matches(AutomationTrigger(kind: .jiraStatus, pattern: "^fix .* export$"), event), "regex")
         check(!Automations.matches(AutomationTrigger(kind: .jiraStatus, pattern: "^export"), event), "regex that does not")
-        check(Automations.label(AutomationTrigger(kind: .jiraStatus, place: "QDLY", status: "Done", fromStatus: "Review")) == "Jira status change in QDLY from Review to Done", Automations.label(AutomationTrigger(kind: .jiraStatus, place: "QDLY", status: "Done", fromStatus: "Review")))
+        check(Automations.label(AutomationTrigger(kind: .jiraStatus, place: "ACME", status: "Done", fromStatus: "Review")) == "Jira status change in ACME from Review to Done", Automations.label(AutomationTrigger(kind: .jiraStatus, place: "ACME", status: "Done", fromStatus: "Review")))
     }),
 
     ("automations: the pull request lists make the events, and only for the lists that loaded", {
-        func pr(_ number: Int, repo: String = "quiddly-com/finq.api", state: GitHubPR.State = .open, checks: GitHubPR.Checks = .none, review: GitHubPR.Review? = nil,
+        func pr(_ number: Int, repo: String = "acme-com/orbit.api", state: GitHubPR.State = .open, checks: GitHubPR.Checks = .none, review: GitHubPR.Review? = nil,
                 author: String = "anna", activity: GitHubActivity? = nil) -> GitHubPR {
-            GitHubPR(url: "https://github.com/\(repo)/pull/\(number)", number: number, title: "QDLY-\(number): T", repo: repo, state: state, updated: now, review: review,
+            GitHubPR(url: "https://github.com/\(repo)/pull/\(number)", number: number, title: "ACME-\(number): T", repo: repo, state: state, updated: now, review: review,
                      checks: checks, author: author, activity: activity)
         }
         let robot = GitHubActivity.Actor(login: "dependabot", isBot: true), elin = GitHubActivity.Actor(login: "elin"), me = GitHubActivity.Actor(login: "me")
@@ -225,23 +225,23 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
         ]
         let events = Automations.githubEvents(lists)
         check(events[.reviewRequested] == nil, "a list that did not load makes no events, not empty ones")
-        check(events[.ciFailed]?.map(\.id) == ["ci_failed:https://github.com/quiddly-com/finq.api/pull/1:\(Int(now.timeIntervalSince1970) - 60)"], "\(String(describing: events[.ciFailed]?.map(\.id)))")
+        check(events[.ciFailed]?.map(\.id) == ["ci_failed:https://github.com/acme-com/orbit.api/pull/1:\(Int(now.timeIntervalSince1970) - 60)"], "\(String(describing: events[.ciFailed]?.map(\.id)))")
         check(events[.prMerged]?.map(\.fields["pr_number"]) == ["2"] && events[.prApproved]?.map(\.fields["pr_number"]) == ["3"], "merged and approved")
         check(events[.prMentioned]?.map(\.fields["pr_number"]) == ["4"], "my own pull request is not a mention")
         let feedback = events[.prFeedback] ?? []
         check(feedback.map(\.fields["reviewer"]) == ["elin", "elin"] && feedback.first?.fields["review_state"] == "changes requested" && feedback.last?.fields["review_state"] == "comment",
               "\(feedback.map(\.id))")
-        check(feedback.allSatisfy { $0.pullRequest == "https://github.com/quiddly-com/finq.api/pull/1" }, "they are about the pull request")
+        check(feedback.allSatisfy { $0.pullRequest == "https://github.com/acme-com/orbit.api/pull/1" }, "they are about the pull request")
         check(Automations.githubEvents([.reviewRequested: []])[.reviewRequested]?.isEmpty == true, "an empty list that loaded is a first look")
         let repo = Automations.repositoryEvents([pr(7), pr(8, state: .closed)])
-        check(repo[.prOpened]?.count == 1 && repo[.prUpdated]?.first?.id.hasPrefix("pr_updated:https://github.com/quiddly-com/finq.api/pull/7:") == true, "\(repo)")
-        check(Automations.repositories("finq.api, other/name, nope", known: ["quiddly-com/finq.admin-ui", "quiddly-com/finq.api"]) == ["quiddly-com/finq.api", "other/name"], "names")
+        check(repo[.prOpened]?.count == 1 && repo[.prUpdated]?.first?.id.hasPrefix("pr_updated:https://github.com/acme-com/orbit.api/pull/7:") == true, "\(repo)")
+        check(Automations.repositories("orbit.api, other/name, nope", known: ["acme-com/orbit.admin-ui", "acme-com/orbit.api"]) == ["acme-com/orbit.api", "other/name"], "names")
         check(Automations.repositorySearch("a/b").terms.contains("repo:a/b is:pr is:open -author:@me"), Automations.repositorySearch("a/b").terms)
     }),
 
     ("automations: each Jira event kind searches its own tickets", {
         check(Automations.jiraQuery(AutomationTrigger(kind: .jiraAssigned)) == "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC", Automations.jiraQuery(AutomationTrigger(kind: .jiraAssigned)))
-        check(Automations.jiraQuery(AutomationTrigger(kind: .jiraNew, place: "ISD, QDLY")) == "project in (ISD, QDLY) AND created >= -2d ORDER BY updated DESC", Automations.jiraQuery(AutomationTrigger(kind: .jiraNew, place: "ISD, QDLY")))
+        check(Automations.jiraQuery(AutomationTrigger(kind: .jiraNew, place: "ISD, ACME")) == "project in (ISD, ACME) AND created >= -2d ORDER BY updated DESC", Automations.jiraQuery(AutomationTrigger(kind: .jiraNew, place: "ISD, ACME")))
         let status = Automations.jiraQuery(AutomationTrigger(kind: .jiraStatus))
         check(status.contains("updated >= -2d") && status.contains("watcher = currentUser()"), status)
         let own = Automations.jiraQuery(AutomationTrigger(kind: .jiraStatus, place: "QPB", jql: "labels = a ORDER BY created DESC"))
@@ -259,7 +259,7 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
             return formatter.string(from: now.addingTimeInterval(offset))
         }
         let json = """
-        {"issues":[{"key":"QDLY-7","fields":{"summary":"Export fails","status":{"name":"In review"},"assignee":{"accountId":"me","displayName":"Niklas"},
+        {"issues":[{"key":"ACME-7","fields":{"summary":"Export fails","status":{"name":"In review"},"assignee":{"accountId":"me","displayName":"Niklas"},
           "created":"\(iso(-86400))","updated":"\(iso(-60))",
           "comment":{"comments":[
             {"id":"10","author":{"accountId":"anna","displayName":"Anna"},"created":"\(iso(-300))","body":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Can you check this?"}]}]}},
@@ -275,16 +275,16 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
             try Automations.jiraEvents(Data(json.utf8), kind: kind, site: "acme.atlassian.net", me: "me", now: now)
         }
         let assigned = try events(.jiraAssigned)
-        check(assigned.map(\.id) == ["jira_assigned:QDLY-7"] && assigned.first?.fields["url"] == "https://acme.atlassian.net/browse/QDLY-7" && assigned.first?.place == "QDLY", "\(assigned)")
-        check(try events(.jiraNew).map(\.id) == ["jira_new:QDLY-7", "jira_new:ISD-9"], "new")
+        check(assigned.map(\.id) == ["jira_assigned:ACME-7"] && assigned.first?.fields["url"] == "https://acme.atlassian.net/browse/ACME-7" && assigned.first?.place == "ACME", "\(assigned)")
+        check(try events(.jiraNew).map(\.id) == ["jira_new:ACME-7", "jira_new:ISD-9"], "new")
         let status = try events(.jiraStatus)
-        check(status.map(\.id) == ["jira_status:QDLY-7:90"] && status.first?.fields["from_status"] == "In progress" && status.first?.fields["status"] == "In review", "\(status.map(\.id)): not mine, not old, only the status item")
+        check(status.map(\.id) == ["jira_status:ACME-7:90"] && status.first?.fields["from_status"] == "In progress" && status.first?.fields["status"] == "In review", "\(status.map(\.id)): not mine, not old, only the status item")
         let comments = try events(.jiraComment)
-        check(comments.map(\.id) == ["jira_comment:QDLY-7:10"] && comments.first?.text == "Can you check this?" && comments.first?.fields["comment_author"] == "Anna", "\(comments)")
+        check(comments.map(\.id) == ["jira_comment:ACME-7:10"] && comments.first?.text == "Can you check this?" && comments.first?.fields["comment_author"] == "Anna", "\(comments)")
         check(Automations.matches(AutomationTrigger(kind: .jiraComment, text: "check"), comments[0]) && !Automations.matches(AutomationTrigger(kind: .jiraComment, place: "ISD"), comments[0]), "filters")
         check((try? Automations.jiraEvents(Data("nope".utf8), kind: .jiraNew, site: "x", me: "", now: now)) == nil, "an answer that is not Jira's is an error, not no events")
         let prompt = Automations.prompt(AutomationTrigger.Kind.jiraStatus.defaultPrompt, event: status[0])
-        check(prompt.contains("QDLY-7 (Export fails) moved from In progress to In review") && prompt.contains("https://acme.atlassian.net/browse/QDLY-7"), prompt)
+        check(prompt.contains("ACME-7 (Export fails) moved from In progress to In review") && prompt.contains("https://acme.atlassian.net/browse/ACME-7"), prompt)
     }),
 
     ("automations: Slack searches for a channel, a keyword and the threads the user wrote in", {
@@ -321,10 +321,10 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("automations: reminders and notifications fit the kind of event", {
-        let pr = pullRequest(5, title: "QDLY-5: Fix")
+        let pr = pullRequest(5, title: "ACME-5: Fix")
         func reminder(_ kind: AutomationTrigger.Kind) -> String? { Automations.reminder(for: Automations.pullRequestEvent(pr, kind: kind))?.title }
-        check(reminder(.ciFailed) == "Fix the checks on finq.api #5: QDLY-5: Fix" && reminder(.prApproved) == "Merge finq.api #5: QDLY-5: Fix", "\(String(describing: reminder(.ciFailed)))")
-        check(reminder(.prOpened) == "Decide on finq.api #5: QDLY-5: Fix" && reminder(.prFeedback) == "Answer the review on finq.api #5: QDLY-5: Fix", "decide and answer")
+        check(reminder(.ciFailed) == "Fix the checks on orbit.api #5: ACME-5: Fix" && reminder(.prApproved) == "Merge orbit.api #5: ACME-5: Fix", "\(String(describing: reminder(.ciFailed)))")
+        check(reminder(.prOpened) == "Decide on orbit.api #5: ACME-5: Fix" && reminder(.prFeedback) == "Answer the review on orbit.api #5: ACME-5: Fix", "decide and answer")
         let json = Data(#"{"issues":[{"key":"ISD-9","fields":{"summary":"Slow page","status":{"name":"Open"},"created":"2027-01-15T07:00:00.000+0000"}}]}"#.utf8)
         let ticket = try Automations.jiraEvents(json, kind: .jiraNew, site: "acme.atlassian.net", me: "me", now: now)[0]
         let made = Automations.reminder(for: ticket)
@@ -356,11 +356,11 @@ let automationTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("automations: create_automation and update_automation take the new filters", {
-        let draft = try RoutineRequests.automationDraft(["name": "Status", "event": "jira_status", "place": "QDLY", "status": "Done", "from_status": "Review", "jql": "labels = a", "pattern": "x"])
-        check(draft.trigger == AutomationTrigger(kind: .jiraStatus, place: "QDLY", status: "Done", fromStatus: "Review", jql: "labels = a", pattern: "x") && draft.prompt == AutomationTrigger.Kind.jiraStatus.defaultPrompt, "\(String(describing: draft.trigger))")
+        let draft = try RoutineRequests.automationDraft(["name": "Status", "event": "jira_status", "place": "ACME", "status": "Done", "from_status": "Review", "jql": "labels = a", "pattern": "x"])
+        check(draft.trigger == AutomationTrigger(kind: .jiraStatus, place: "ACME", status: "Done", fromStatus: "Review", jql: "labels = a", pattern: "x") && draft.prompt == AutomationTrigger.Kind.jiraStatus.defaultPrompt, "\(String(describing: draft.trigger))")
         let patch = try RoutineRequests.automationPatch(["status": "Closed", "from_status": "", "pattern": ""])
         let applied = patch.automation?.applied(to: draft.trigger, followUp: nil).0
-        check(applied == AutomationTrigger(kind: .jiraStatus, place: "QDLY", status: "Closed", jql: "labels = a"), "\(String(describing: applied))")
+        check(applied == AutomationTrigger(kind: .jiraStatus, place: "ACME", status: "Closed", jql: "labels = a"), "\(String(describing: applied))")
         check(RoutineRequests.triggerKinds.count == AutomationTrigger.Kind.allCases.count && RoutineRequests.triggerKinds.contains("slack_reply"), "every kind can be asked for")
     }),
 ]

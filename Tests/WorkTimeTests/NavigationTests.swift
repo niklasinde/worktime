@@ -9,12 +9,12 @@ let navigationTests: [(name: String, run: () throws -> Void)] = [
     ("history goes back and forward through the places visited", {
         var history = NavigationHistory()
         history.push(place(.meetings, "a"))
-        history.push(place(.jira, "QDLY-1"))
+        history.push(place(.jira, "ACME-1"))
         history.push(place(.gitHub, "pr"))
-        check(history.back() == place(.jira, "QDLY-1"), "back once")
+        check(history.back() == place(.jira, "ACME-1"), "back once")
         check(history.back() == place(.meetings, "a"), "back twice")
         check(history.back() == nil && !history.canGoBack, "nothing before the first")
-        check(history.forward() == place(.jira, "QDLY-1"), "forward")
+        check(history.forward() == place(.jira, "ACME-1"), "forward")
         check(history.canGoForward, "one more ahead")
     }),
 

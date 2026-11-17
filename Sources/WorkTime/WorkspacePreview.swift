@@ -32,8 +32,8 @@ enum WorkspacePreview {
         let store = WorkspaceStore.shared
         let hub = AgentHub.shared
         let home = NSHomeDirectory()
-        let prs = [("https://github.com/quiddly-com/finq.api/pull/2591", home + "/git/quiddly/finq.api", true, false),
-                   ("https://github.com/quiddly-com/finq.admin-ui/pull/664", home + "/git/quiddly/finq.admin-ui", false, true),
+        let prs = [("https://github.com/acme-com/orbit.api/pull/2591", home + "/git/acme/orbit.api", true, false),
+                   ("https://github.com/acme-com/orbit.admin-ui/pull/664", home + "/git/acme/orbit.admin-ui", false, true),
                    ("https://github.com/niklasinde/worktime/pull/42", home + "/git/inde/worktime", true, true),
                    ("https://github.com/niklasinde/papercut/pull/17", home + "/git/inde/papercut", false, true)]
         for (url, folder, waiting, seen) in prs {
@@ -75,7 +75,7 @@ enum WorkspacePreview {
     private static func catchUp(work: Bool) -> [AgentItem] {
         var items = [AgentItem(id: "user-0", kind: .user(AgentLogic.catchUpPrompt))]
         let reply = work
-            ? "1. **finq.api#2591** waits for your review, the checks passed.\n2. **finq.admin-ui#664** has an agent asking to run `npm test`."
+            ? "1. **orbit.api#2591** waits for your review, the checks passed.\n2. **orbit.admin-ui#664** has an agent asking to run `npm test`."
             : "1. **niklasinde/worktime#42** has a new comment from a reviewer.\n2. Nothing else in Personal needs you."
         AgentLogic.apply(.text(reply), to: &items)
         AgentLogic.apply(.result(sessionID: "preview-\(work)", isError: false, text: "", turns: 2, model: "claude-sonnet-5-5"), to: &items)

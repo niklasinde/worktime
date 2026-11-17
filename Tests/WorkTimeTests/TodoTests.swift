@@ -109,7 +109,7 @@ let todoTests: [(name: String, run: () throws -> Void)] = [
         done1.completed = now
         var done2 = Reminder(id: "2", title: "b", created: now)
         done2.completed = now.addingTimeInterval(60)
-        let open = Reminder(id: "3", title: "c", created: now, source: .jira(key: "QDLY-1"))
+        let open = Reminder(id: "3", title: "c", created: now, source: .jira(key: "ACME-1"))
         check(SuggestionLogic.completed([done1, open, done2]).map(\.id) == ["2", "1"], "latest first, open ones left out")
         check(SuggestionLogic.kinds(in: [open], suggested: []) == [.jira], "jira only")
         check(SuggestionLogic.kinds(in: [open], suggested: [item(1, "x")]) == [.jira, .meeting], "meetings once something is suggested")

@@ -94,7 +94,7 @@ enum AgentSessions {
         return main + AgentOverview.sorted(filled.filter { !Workspaces.isMainKey($0.key) })
     }
 
-    /// `finq.api#2591` for a pull request url: the repository without its owner, short enough for the agents list.
+    /// `orbit.api#2591` for a pull request url: the repository without its owner, short enough for the agents list.
     static func shortReference(_ url: String) -> String {
         GitHubLink.pullRequest(at: url).map { "\($0.repo.split(separator: "/").last ?? "")#\($0.number)" } ?? url
     }

@@ -410,7 +410,7 @@ Every 5 seconds while the Mac is awake, unlocked and you have touched the keyboa
 - The git repository and branch: the folders under `~/git/*` and `~/git/*/*` that have a `.git` entry are matched by
   name, as a whole word, against the titles of terminals and editors (Terminal, iTerm2, Warp, Ghostty, JetBrains IDEs,
   VS Code, Cursor, Xcode, Claude, Sublime, Tower, …). The branch is read from `.git/HEAD`, following a worktree's
-  `gitdir:` file; no process is spawned. Ticket keys like `QDLY-8296` are picked out of the branch, title or address.
+  `gitdir:` file; no process is spawned. Ticket keys like `ACME-8296` are picked out of the branch, title or address.
 - Claude Code sessions: with the Claude Code plugin (below), its hook events say exactly which sessions are working
   and which one you last typed into. Without it, or for sessions it has not seen, `~/.claude/projects/<folder>/<session>.jsonl`
   files written to in the last 2 minutes count as working. The
@@ -432,7 +432,7 @@ Passwords by default; editable in Settings) keep only their name and time. Block
 what is being tracked.
 
 Projects (name and colour) and rules map blocks to projects automatically: a rule matches a repository name, a website
-(host or any subdomain of it), an app, or a ticket prefix such as `QDLY`; the first matching rule wins. Clicking a block
+(host or any subdomain of it), an app, or a ticket prefix such as `ACME`; the first matching rule wins. Clicking a block
 in the Activity view sets its project by hand (which beats every rule) and offers "Always map … to <project>", which
 adds the rule.
 

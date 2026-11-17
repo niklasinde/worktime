@@ -35,12 +35,12 @@ enum AssistantPreview {
         store.files.write("---\nname: Planner\ndescription: Plans the sprint\nmodel: gpt\n---\nPlan.", workspace: "work", slug: "planner")
         store.refresh(force: true)
         guard let developer = store.entry("assistant:work:developer"), let reporter = store.entry("assistant:work:time-reporter") else { return }
-        var items = [AgentItem(id: "user-0", kind: .user(AgentInbox.prompt("Work on QDLY-123 in finq.api: the VAT test skips on CI.")))]
+        var items = [AgentItem(id: "user-0", kind: .user(AgentInbox.prompt("Work on ACME-123 in orbit.api: the VAT test skips on CI.")))]
         let events: [AgentEvent] = [
-            .toolUse(id: "1", tool: "mcp__worktime__jira_issue", summary: "QDLY-123", detail: ""),
-            .toolResult(id: "1", content: "# QDLY-123 VAT test skipped on CI …", isError: false, auto: false),
-            .toolUse(id: "2", tool: "Bash", summary: "git switch -c NI/QDLY-123", detail: "git switch -c NI/QDLY-123"),
-            .text("I read QDLY-123 and the repository\u{2019}s CLAUDE.md. `VAT_ENABLED` is only set locally, so CI skips the test (tests/test_vat.py:12). "
+            .toolUse(id: "1", tool: "mcp__worktime__jira_issue", summary: "ACME-123", detail: ""),
+            .toolResult(id: "1", content: "# ACME-123 VAT test skipped on CI …", isError: false, auto: false),
+            .toolUse(id: "2", tool: "Bash", summary: "git switch -c NI/ACME-123", detail: "git switch -c NI/ACME-123"),
+            .text("I read ACME-123 and the repository\u{2019}s CLAUDE.md. `VAT_ENABLED` is only set locally, so CI skips the test (tests/test_vat.py:12). "
                   + "I will default it to true in `conftest.py`, run `pytest tests/test_vat.py`, and ask before I push."),
             .result(sessionID: "preview-developer", isError: false, text: "", turns: 3, model: "claude-opus-5-5", mode: .ask),
         ]

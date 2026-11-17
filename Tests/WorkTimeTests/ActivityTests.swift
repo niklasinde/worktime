@@ -32,9 +32,9 @@ private var utc: Calendar {
     return calendar
 }
 
-private let projects = [Project(id: 1, name: "Quiddly", color: "#5B8DEF"), Project(id: 2, name: "Inde", color: "#E0665C")]
-private let rules = [ProjectRule(id: 1, projectID: 1, field: .repo, pattern: "finq.api"),
-                     ProjectRule(id: 2, projectID: 1, field: .ticket, pattern: "QDLY"),
+private let projects = [Project(id: 1, name: "Acme", color: "#5B8DEF"), Project(id: 2, name: "Inde", color: "#E0665C")]
+private let rules = [ProjectRule(id: 1, projectID: 1, field: .repo, pattern: "orbit.api"),
+                     ProjectRule(id: 2, projectID: 1, field: .ticket, pattern: "ACME"),
                      ProjectRule(id: 3, projectID: 2, field: .host, pattern: "indepower.se"),
                      ProjectRule(id: 4, projectID: 2, field: .app, pattern: "Xcode")]
 
@@ -60,7 +60,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
 
     ("capture settings and blocked apps strip fields", {
         var settings = ActivitySettings()
-        var s = sample(0, app: "1Password", title: "Login for bank", url: "bank.se/login", repo: "x", ticket: "QDLY-1")
+        var s = sample(0, app: "1Password", title: "Login for bank", url: "bank.se/login", repo: "x", ticket: "ACME-1")
         s.claudePrompt = "secret"
         let filtered = ActivityLogic.filtered(s, settings: settings)!
         check(filtered.appName == "1Password" && filtered.appBundle == "com.1Password" && filtered.windowTitle == nil && filtered.url == nil
@@ -79,7 +79,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
 
     ("website patterns are normalised and match the host and its subdomains", {
         check(HostPattern.normalized("https://Www.Bank.SE/login?x=1") == "www.bank.se", "scheme, path and query dropped")
-        check(HostPattern.normalized("  github.com/quiddly-com ") == "github.com", "path")
+        check(HostPattern.normalized("  github.com/acme-com ") == "github.com", "path")
         check(HostPattern.normalized("*.Atlassian.net") == "*.atlassian.net", "wildcard kept")
         check(HostPattern.normalized("user@localhost:8080") == "localhost", "credentials and port")
         check(HostPattern.normalized("bank.se.") == "bank.se", "trailing dot")
@@ -88,12 +88,12 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         }
         check(HostPattern.matches("bank.se", host: "bank.se") && HostPattern.matches("bank.se", host: "www.bank.se"), "suffix")
         check(!HostPattern.matches("bank.se", host: "mybank.se") && !HostPattern.matches("bank.se", host: "bank.se.evil.com"), "whole labels only")
-        check(HostPattern.matches("*.atlassian.net", host: "quiddly.atlassian.net") && !HostPattern.matches("*.atlassian.net", host: "atlassian.net"),
+        check(HostPattern.matches("*.atlassian.net", host: "acme.atlassian.net") && !HostPattern.matches("*.atlassian.net", host: "atlassian.net"),
               "wildcard covers only subdomains")
         check(HostPattern.matches("GitHub.com", host: "GITHUB.COM"), "case")
         check(HostPattern.presets.allSatisfy { HostPattern.normalized($0.pattern) == $0.pattern }, "presets are normalised")
         let rule = ProjectRule(id: 1, projectID: 1, field: .host, pattern: "*.atlassian.net")
-        check(rule.matches(block(0, 1, url: "quiddly.atlassian.net/browse/QDLY-1").key), "project rules take wildcards too")
+        check(rule.matches(block(0, 1, url: "acme.atlassian.net/browse/ACME-1").key), "project rules take wildcards too")
     }),
 
     ("app and website modes are independent and the blocklist wins", {
@@ -107,7 +107,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
 
         settings.siteMode = .onlyAllowed
         settings.allowedSites = ["*.atlassian.net", "github.com"]
-        check(settings.capture(key("Chrome", chrome, url: "quiddly.atlassian.net/browse/X-1")) == .keep, "allowed site keeps detail")
+        check(settings.capture(key("Chrome", chrome, url: "acme.atlassian.net/browse/X-1")) == .keep, "allowed site keeps detail")
         check(settings.capture(key("Chrome", chrome, url: "gist.github.com/x")) == .keep, "subdomain of an allowed site")
         check(settings.capture(key("Chrome", chrome, url: "news.se/a")) == .redact(.otherSite), "other site")
         check(settings.capture(key("Chrome", chrome)) == .redact(.otherSite), "a browser without an address is another site")
@@ -122,7 +122,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         check(settings.capture(key("Xcode", "com.apple.dt.Xcode")) == .keep, "allowed by name")
         check(settings.capture(key("Terminal", "com.apple.Terminal")) == .keep, "allowed by bundle id")
         check(settings.capture(key("Slack", "com.tinyspeck.slackmacgap")) == .redact(.other), "not allowed: other")
-        check(settings.capture(key("Chrome", chrome, url: "quiddly.atlassian.net/x")) == .keep, "a browser counts as allowed on an allowed site")
+        check(settings.capture(key("Chrome", chrome, url: "acme.atlassian.net/x")) == .keep, "a browser counts as allowed on an allowed site")
         check(settings.capture(key("Chrome", chrome, url: "news.se")) == .redact(.other), "a browser off the allowed sites is other")
         settings.allowedApps.append("Google Chrome")
         check(settings.capture(key("Google Chrome", chrome, url: "news.se")) == .redact(.otherSite), "an allowed browser still follows the website list")
@@ -182,7 +182,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         let xcode = try add(0, app: "Xcode")
         _ = try add(10, app: "Slack")
         _ = try add(20, app: "Google Chrome", bundle: chrome, url: "news.se/a")
-        _ = try add(30, app: "Google Chrome", bundle: chrome, url: "quiddly.atlassian.net/browse/X-1")
+        _ = try add(30, app: "Google Chrome", bundle: chrome, url: "acme.atlassian.net/browse/X-1")
         _ = try add(40, app: "Google Chrome", bundle: chrome, url: "online.bank.se/login")
         _ = try add(50, app: "1Password", redaction: .private)
         var idle = block(60, 70, idle: true)
@@ -204,7 +204,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         check(other.key.redaction == .other && other.key.appName == nil && other.key.appBundle == nil && other.key.windowTitle == nil
               && other.typedExcerpt == nil && other.aiDescription == nil && other.duration == 10, "other keeps only times \(other)")
         check(blocks[2].key.redaction == .otherSite && blocks[2].key.appName == "Google Chrome" && blocks[2].key.url == nil, "other site")
-        check(blocks[3].key.redaction == nil && blocks[3].key.url == "quiddly.atlassian.net/browse/X-1", "allowed site kept")
+        check(blocks[3].key.redaction == nil && blocks[3].key.url == "acme.atlassian.net/browse/X-1", "allowed site kept")
         check(blocks[4].key.redaction == .private && blocks[4].key.url == nil && blocks[4].key.appName == "Google Chrome", "blocked site private")
         check(blocks[6].key.idle, "idle untouched")
         check(try store.applyRules(settings) == 0, "applying again changes nothing")
@@ -340,18 +340,18 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("tickets are found in titles, branches and urls", {
-        check(ActivityLogic.ticket(in: "NI/QDLY-8296 — finq.api") == "QDLY-8296", "branch")
-        check(ActivityLogic.ticket(in: nil, "QDLY-8178: Search the fields — PyCharm") == "QDLY-8178", "title after nil")
-        check(ActivityLogic.ticket(in: "quiddly.atlassian.net/browse/ISD-13089") == "ISD-13089", "url")
+        check(ActivityLogic.ticket(in: "NI/ACME-8296 — orbit.api") == "ACME-8296", "branch")
+        check(ActivityLogic.ticket(in: nil, "ACME-8178: Search the fields — PyCharm") == "ACME-8178", "title after nil")
+        check(ActivityLogic.ticket(in: "acme.atlassian.net/browse/ISD-13089") == "ISD-13089", "url")
         check(ActivityLogic.ticket(in: "utf-8 and ab-12") == nil, "lowercase")
     }),
 
     ("repositories are matched by folder name as a whole word, longest first", {
-        let repos = ["finq.api", "finq.admin-ui", "indemeeting", "inde"].map { URL(fileURLWithPath: "/Users/me/git/\($0)") }
+        let repos = ["orbit.api", "orbit.admin-ui", "indemeeting", "inde"].map { URL(fileURLWithPath: "/Users/me/git/\($0)") }
         check(ActivityLogic.repository(inTitle: "MainWindow.swift — indemeeting", repositories: repos)?.lastPathComponent == "indemeeting", "editor")
-        check(ActivityLogic.repository(inTitle: "niklasinde@mac finq.admin-ui — zsh", repositories: repos)?.lastPathComponent == "finq.admin-ui",
-              "longest wins over finq.api prefix")
-        check(ActivityLogic.repository(inTitle: "~/git/inde/finq.api — Claude", repositories: repos)?.lastPathComponent == "finq.api", "path")
+        check(ActivityLogic.repository(inTitle: "niklasinde@mac orbit.admin-ui — zsh", repositories: repos)?.lastPathComponent == "orbit.admin-ui",
+              "longest wins over orbit.api prefix")
+        check(ActivityLogic.repository(inTitle: "~/git/inde/orbit.api — Claude", repositories: repos)?.lastPathComponent == "orbit.api", "path")
         check(ActivityLogic.repository(inTitle: "indemeeting", repositories: repos)?.lastPathComponent == "indemeeting",
               "inde is only a prefix of indemeeting")
         check(ActivityLogic.repository(inTitle: "Slack — #general", repositories: repos) == nil, "no repo")
@@ -365,11 +365,11 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         try FileManager.default.createDirectory(at: main.appendingPathComponent(".git/worktrees/wt"), withIntermediateDirectories: true)
         try "ref: refs/heads/main\n".write(to: main.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
         check(ActivityLogic.branch(ofRepository: main) == "main", "plain repo")
-        try "ref: refs/heads/NI/QDLY-8296\n".write(to: main.appendingPathComponent(".git/worktrees/wt/HEAD"), atomically: true, encoding: .utf8)
+        try "ref: refs/heads/NI/ACME-8296\n".write(to: main.appendingPathComponent(".git/worktrees/wt/HEAD"), atomically: true, encoding: .utf8)
         let worktree = folder.appendingPathComponent("wt")
         try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
         try "gitdir: \(main.path)/.git/worktrees/wt\n".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
-        check(ActivityLogic.branch(ofRepository: worktree) == "NI/QDLY-8296", "worktree \(ActivityLogic.branch(ofRepository: worktree) ?? "nil")")
+        check(ActivityLogic.branch(ofRepository: worktree) == "NI/ACME-8296", "worktree \(ActivityLogic.branch(ofRepository: worktree) ?? "nil")")
         check(ActivityLogic.branch(fromHEAD: "9a68712abcdef0123456\n") == "9a68712a", "detached")
         check(ActivityLogic.branch(ofRepository: folder.appendingPathComponent("missing")) == nil, "no repo")
         let repos = ActivityLogic.repositories(under: folder)
@@ -377,7 +377,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("urls keep host and path only", {
-        check(ActivityLogic.cleanURL("https://github.com/quiddly-com/finq.api/pull/1966?diff=split#top") == "github.com/quiddly-com/finq.api/pull/1966", "query and fragment dropped")
+        check(ActivityLogic.cleanURL("https://github.com/acme-com/orbit.api/pull/1966?diff=split#top") == "github.com/acme-com/orbit.api/pull/1966", "query and fragment dropped")
         check(ActivityLogic.cleanURL("https://Mail.Google.com/") == "mail.google.com", "root path")
         check(ActivityLogic.cleanURL("https://x.se/a/b/") == "x.se/a/b", "trailing slash")
         check(ActivityLogic.cleanURL("file:///Users/me/doc.pdf") == nil, "file urls skipped")
@@ -408,23 +408,23 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
 
     ("project rules match repo, ticket prefix, host and app; a block's own project wins", {
         func project(_ b: ActivityBlock) -> String? { ActivityLogic.project(for: b, rules: rules, projects: projects)?.name }
-        check(project(block(0, 5, app: "PyCharm", repo: "finq.api")) == "Quiddly", "repo")
-        check(project(block(0, 5, app: "Safari", url: "quiddly.atlassian.net/browse/QDLY-1", ticket: "QDLY-1")) == "Quiddly", "ticket prefix")
-        check(project(block(0, 5, app: "Safari", ticket: "QDLYX-1")) == nil, "prefix needs the dash")
+        check(project(block(0, 5, app: "PyCharm", repo: "orbit.api")) == "Acme", "repo")
+        check(project(block(0, 5, app: "Safari", url: "acme.atlassian.net/browse/ACME-1", ticket: "ACME-1")) == "Acme", "ticket prefix")
+        check(project(block(0, 5, app: "Safari", ticket: "ACMEX-1")) == nil, "prefix needs the dash")
         check(project(block(0, 5, app: "Safari", url: "devops.indepower.se/x")) == "Inde", "host suffix")
         check(project(block(0, 5, app: "Safari", url: "notindepower.se/x")) == nil, "host suffix needs a dot")
         check(project(block(0, 5, app: "Xcode")) == "Inde", "app name")
-        check(project(block(0, 5, app: "Xcode", repo: "finq.api")) == "Quiddly", "first matching rule wins")
-        check(project(block(0, 5, app: "Xcode", project: 1)) == "Quiddly", "override")
+        check(project(block(0, 5, app: "Xcode", repo: "orbit.api")) == "Acme", "first matching rule wins")
+        check(project(block(0, 5, app: "Xcode", project: 1)) == "Acme", "override")
         check(project(block(0, 5, app: "Slack")) == nil, "unmatched")
     }),
 
     ("day totals per project and app clip blocks to the day", {
         let day = t0.addingTimeInterval(100)..<t0.addingTimeInterval(1000)
         let blocks = [block(0, 400, app: "Xcode"), block(400, 700, app: "Safari", url: "indepower.se"), block(700, 800, idle: true),
-                      block(800, 1200, app: "PyCharm", repo: "finq.api")]
+                      block(800, 1200, app: "PyCharm", repo: "orbit.api")]
         let byProject = ActivityLogic.projectTotals(blocks, in: day, rules: rules, projects: projects)
-        check(byProject == [.init(name: "Inde", seconds: 600), .init(name: "Quiddly", seconds: 200)], "clipped and summed \(byProject)")
+        check(byProject == [.init(name: "Inde", seconds: 600), .init(name: "Acme", seconds: 200)], "clipped and summed \(byProject)")
         let byApp = ActivityLogic.appTotals(blocks, in: day)
         check(byApp.map(\.name) == ["Safari", "Xcode", "PyCharm"] && byApp[0].seconds == 300, "equal totals by name \(byApp)")
         check(ActivityLogic.activeSeconds(blocks, in: day) == 800, "idle left out")
@@ -445,51 +445,51 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
             ActivityBlock(id: 1, start: at(day, from), end: at(day, to), key: ActivityKey(appBundle: app, appName: app, windowTitle: title, url: url,
                           repo: repo, branch: branch, ticket: ticket, claude: [], idle: false), projectID: nil)
         }
-        let blocks = [b(0, 9, 10.5, app: "PyCharm", repo: "finq.api", branch: "NI/QDLY-8296", ticket: "QDLY-8296"),
-                      b(0, 10.5, 11, app: "Safari", ticket: "QDLY-8296", url: "github.com/quiddly-com/finq.api/pull/1"),
+        let blocks = [b(0, 9, 10.5, app: "PyCharm", repo: "orbit.api", branch: "NI/ACME-8296", ticket: "ACME-8296"),
+                      b(0, 10.5, 11, app: "Safari", ticket: "ACME-8296", url: "github.com/acme-com/orbit.api/pull/1"),
                       b(0, 13, 14, app: "Xcode", title: "Main, \"quoted\""),
                       b(2, 9, 9.25, app: "Slack")]
-        let directory = TicketDirectory(titles: ["QDLY-8296": "Round reminder fees"], sites: ["QDLY": "quiddly.atlassian.net"])
+        let directory = TicketDirectory(titles: ["ACME-8296": "Round reminder fees"], sites: ["ACME": "acme.atlassian.net"])
         let report = ActivityLogic.WeekReport(days: ActivityLogic.week(containing: t0, calendar: utc), blocks: blocks, rules: rules,
                                               projects: projects, calendar: utc, directory: directory)
         let csv = ActivityLogic.csv(report)
         let lines = csv.split(separator: "\n")
         let date = ActivityLogic.dateText(monday)
-        let jira = "https://quiddly.atlassian.net/browse/QDLY-8296"
+        let jira = "https://acme.atlassian.net/browse/ACME-8296"
         check(lines[0] == "date,project,work_item,ticket,ticket_title,jira_url,hours,details", "header")
-        check(lines[1] == "\(date),Quiddly,NI/QDLY-8296,QDLY-8296,Round reminder fees,\(jira),1.50,QDLY-8296; finq.api (NI/QDLY-8296)", "branch row '\(lines[1])'")
-        check(lines[2] == "\(date),Quiddly,QDLY-8296,QDLY-8296,Round reminder fees,\(jira),0.50,QDLY-8296; github.com", "ticket row '\(lines[2])'")
+        check(lines[1] == "\(date),Acme,NI/ACME-8296,ACME-8296,Round reminder fees,\(jira),1.50,ACME-8296; orbit.api (NI/ACME-8296)", "branch row '\(lines[1])'")
+        check(lines[2] == "\(date),Acme,ACME-8296,ACME-8296,Round reminder fees,\(jira),0.50,ACME-8296; github.com", "ticket row '\(lines[2])'")
         check(lines[3] == "\(date),Inde,,,,,1.00,\"Main, \"\"quoted\"\"\"", "quoted field without a work item '\(lines[3])'")
         check(lines[4].hasSuffix(",Unassigned,,,,,0.25,Slack") && lines.count == 5, "slack on wednesday '\(lines[4])'")
         let markdown = ActivityLogic.markdown(report)
         check(markdown.hasPrefix("# Week ") && markdown.contains("Total: 3 h 15 min"), "title and total \(markdown.prefix(80))")
-        check(markdown.contains("### Quiddly \u{00B7} 2 h\n- QDLY-8296\n- finq.api (NI/QDLY-8296)\n- github.com\n"), "project bullets \(markdown)")
+        check(markdown.contains("### Acme \u{00B7} 2 h\n- ACME-8296\n- orbit.api (NI/ACME-8296)\n- github.com\n"), "project bullets \(markdown)")
         check(markdown.contains("### Unassigned \u{00B7} 15 min\n- Slack"), "unassigned")
         check(markdown.components(separatedBy: "\n## ").count == 5, "days with activity and the two breakdowns")
-        check(markdown.contains("## By branch\n- NI/QDLY-8296 (finq.api) \u{00B7} [QDLY-8296 \u{00B7} Round reminder fees](\(jira)) \u{00B7} Quiddly \u{00B7} 1 h 30 min\n"
-                                + "- [QDLY-8296 \u{00B7} Round reminder fees](\(jira)) \u{00B7} Quiddly \u{00B7} 30 min\n"), "by branch \(markdown)")
-        check(markdown.contains("## By ticket\n- [QDLY-8296 \u{00B7} Round reminder fees](\(jira)) \u{00B7} Quiddly \u{00B7} 2 h (NI/QDLY-8296)\n"), "by ticket")
+        check(markdown.contains("## By branch\n- NI/ACME-8296 (orbit.api) \u{00B7} [ACME-8296 \u{00B7} Round reminder fees](\(jira)) \u{00B7} Acme \u{00B7} 1 h 30 min\n"
+                                + "- [ACME-8296 \u{00B7} Round reminder fees](\(jira)) \u{00B7} Acme \u{00B7} 30 min\n"), "by branch \(markdown)")
+        check(markdown.contains("## By ticket\n- [ACME-8296 \u{00B7} Round reminder fees](\(jira)) \u{00B7} Acme \u{00B7} 2 h (NI/ACME-8296)\n"), "by ticket")
     }),
 
     ("the context summary lists projects, apps, repos, tickets, urls, claude sessions and meetings", {
         let range = t0..<t0.addingTimeInterval(3600)
         let claude = ClaudeSession(id: "s1", folder: "/Users/me/git/inde/indemeeting", title: "Activity tracking")
         let blocks = [block(0, 1800, app: "Xcode", title: "ActivityLogic.swift — indemeeting", repo: "indemeeting", branch: "main", claude: [claude]),
-                      block(1800, 2400, app: "Safari", url: "github.com/quiddly-com/finq.api/pull/1966", ticket: "QDLY-8296", claude: [claude]),
+                      block(1800, 2400, app: "Safari", url: "github.com/acme-com/orbit.api/pull/1966", ticket: "ACME-8296", claude: [claude]),
                       block(2400, 2700, idle: true),
-                      block(2700, 3600, app: "Slack", title: "general (Quiddly) — Slack")]
+                      block(2700, 3600, app: "Slack", title: "general (Acme) — Slack")]
         let meetings = [ActivityLogic.MeetingSummaryLine(date: t0.addingTimeInterval(600), title: "Standup", duration: 900)]
         let markdown = ActivityLogic.contextMarkdown(blocks: blocks, meetings: meetings, range: range, rules: rules, projects: projects)
         check(markdown.hasPrefix("# Activity "), "title")
         check(markdown.contains("Active: 55 min"), "active without idle \(markdown)")
-        check(markdown.contains("## Projects\n- Inde: 30 min\n- Quiddly: 10 min\n- Unassigned: 15 min"), "projects \(markdown)")
+        check(markdown.contains("## Projects\n- Inde: 30 min\n- Acme: 10 min\n- Unassigned: 15 min"), "projects \(markdown)")
         check(markdown.contains("## Apps\n- Xcode \u{00B7} 30 min\n- Slack \u{00B7} 15 min\n- Safari \u{00B7} 10 min"), "apps")
         check(markdown.contains("## Repositories\n- indemeeting (main) \u{00B7} 30 min"), "repos")
-        check(markdown.contains("## By ticket\n- QDLY-8296 \u{00B7} Quiddly \u{00B7} 10 min"), "tickets \(markdown)")
-        check(markdown.contains("## By branch\n- main (indemeeting) \u{00B7} Inde \u{00B7} 30 min\n- QDLY-8296 \u{00B7} Quiddly \u{00B7} 10 min"), "branches")
-        check(markdown.contains("## Websites\n- github.com/quiddly-com/finq.api/pull/1966 \u{00B7} 10 min"), "urls")
+        check(markdown.contains("## By ticket\n- ACME-8296 \u{00B7} Acme \u{00B7} 10 min"), "tickets \(markdown)")
+        check(markdown.contains("## By branch\n- main (indemeeting) \u{00B7} Inde \u{00B7} 30 min\n- ACME-8296 \u{00B7} Acme \u{00B7} 10 min"), "branches")
+        check(markdown.contains("## Websites\n- github.com/acme-com/orbit.api/pull/1966 \u{00B7} 10 min"), "urls")
         check(markdown.contains("## Claude sessions\n- Activity tracking (indemeeting) \u{00B7} 40 min"), "claude lane spans both blocks")
-        check(markdown.contains("## Windows\n- general (Quiddly) \u{2014} Slack \u{00B7} 15 min"), "titles only where no repo or url")
+        check(markdown.contains("## Windows\n- general (Acme) \u{2014} Slack \u{00B7} 15 min"), "titles only where no repo or url")
         check(markdown.contains("## Meetings\n- ") && markdown.contains("Standup \u{00B7} 15 min"), "meetings")
         check(ActivityLogic.contextArguments(["app", "--context"]) == 8 && ActivityLogic.contextArguments(["app", "--context", "2.5"]) == 2.5
               && ActivityLogic.contextArguments(["app"]) == nil && ActivityLogic.contextArguments(["app", "--context", "x"]) == 8, "arguments")
@@ -499,15 +499,15 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         let folder = try tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try MeetingStore.open(at: folder.appendingPathComponent("meetings.sqlite"))
-        let quiddly = try store.addProject("Quiddly")
+        let acme = try store.addProject("Acme")
         let inde = try store.addProject("Inde", color: "#000000")
-        check(quiddly.color == Project.colors[0] && inde.color == "#000000", "colors")
-        try store.addRule(project: quiddly.id, field: .repo, pattern: " finq.api ")
-        check(try store.rules().map(\.pattern) == ["finq.api"], "trimmed rule")
+        check(acme.color == Project.colors[0] && inde.color == "#000000", "colors")
+        try store.addRule(project: acme.id, field: .repo, pattern: " orbit.api ")
+        check(try store.rules().map(\.pattern) == ["orbit.api"], "trimmed rule")
         let claude = ClaudeSession(id: "s1", folder: "/Users/me/git/x", title: "Title with\ttab")
-        var open = ActivityLogic.collapse(nil, with: sample(0, repo: "finq.api", branch: "main", ticket: "QDLY-1", claude: [claude])).open
+        var open = ActivityLogic.collapse(nil, with: sample(0, repo: "orbit.api", branch: "main", ticket: "ACME-1", claude: [claude])).open
         open.id = try store.saveBlock(open)
-        open = ActivityLogic.collapse(open, with: sample(5, repo: "finq.api", branch: "main", ticket: "QDLY-1", claude: [claude])).open
+        open = ActivityLogic.collapse(open, with: sample(5, repo: "orbit.api", branch: "main", ticket: "ACME-1", claude: [claude])).open
         check(try store.saveBlock(open) == open.id, "update keeps the id")
         var away = block(100, 200, idle: true)
         away.id = 0
@@ -515,12 +515,12 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         let blocks = try store.blocks(in: t0..<t0.addingTimeInterval(1000))
         check(blocks.count == 2 && blocks[0].duration == 10 && blocks[0].key.claude == [claude] && blocks[1].key.idle, "read back \(blocks)")
         check(blocks[0].key == open.key && blocks[0].projectID == nil, "same key")
-        check(ActivityLogic.project(for: blocks[0], rules: try store.rules(), projects: try store.projects())?.name == "Quiddly", "rule applies")
+        check(ActivityLogic.project(for: blocks[0], rules: try store.rules(), projects: try store.projects())?.name == "Acme", "rule applies")
         try store.setProject(ofBlock: open.id, inde.id)
         check(try store.blocks(in: t0..<t0.addingTimeInterval(10)).first?.projectID == inde.id, "override saved")
         try store.deleteProject(inde.id)
         check(try store.blocks(in: t0..<t0.addingTimeInterval(10)).first?.projectID == nil, "deleting a project clears overrides")
-        try store.deleteProject(quiddly.id)
+        try store.deleteProject(acme.id)
         check(try store.rules().isEmpty, "rules go with the project")
         check(try store.deleteBlocks(before: t0.addingTimeInterval(150)) == 1, "retention deletes blocks that ended before")
         check(try store.blocks(in: t0..<t0.addingTimeInterval(1000)).count == 1, "the other block stays")
@@ -557,7 +557,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         check(try spans() == ["0-50", "250-300", "400-450", "500-600"], "a spanning block is split \(try spans())")
 
         try store.deleteAll()
-        _ = try add(0, 10, url: "github.com/quiddly-com/finq.api")
+        _ = try add(0, 10, url: "github.com/acme-com/orbit.api")
         _ = try add(10, 20, url: "github.com")
         _ = try add(20, 30, url: "github.community/x")
         _ = try add(30, 40, url: "docs.github.com/y")
@@ -651,7 +651,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         check(result.closed != nil && result.open.claudeFocusSession == b, "another session starts a new block")
         check(open.title == "Strawberry kfm tickets" && open.backgroundSessions == [b], "titled by the session, the rest is the lane")
         var withRepo = open
-        withRepo.key.repo = "finq.api"
+        withRepo.key.repo = "orbit.api"
         check(ActivityAI.prompt(for: withRepo, projects: []).contains("Claude Code session: Strawberry kfm tickets\nLast request to Claude: fix it"),
               "prompt names the session")
         check(ActivityAI.cacheKey(open.key).hasSuffix("|strawberry kfm tickets"), "sessions are cached apart")
@@ -689,20 +689,20 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     ("a session's folder maps to its repository, a worktree to its parent and own branch", {
         let root = try tempFolder()
         defer { try? FileManager.default.removeItem(at: root) }
-        let repo = root.appendingPathComponent("git/quiddly/finq.api")
+        let repo = root.appendingPathComponent("git/acme/orbit.api")
         let worktree = repo.appendingPathComponent(".claude/worktrees/strawberry-tickets-518556")
         let gitdir = repo.appendingPathComponent(".git/worktrees/strawberry-tickets-518556")
         try FileManager.default.createDirectory(at: gitdir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: worktree.appendingPathComponent("src"), withIntermediateDirectories: true)
         try "ref: refs/heads/main\n".write(to: repo.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
-        try "ref: refs/heads/NI/QDLY-8700\n".write(to: gitdir.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+        try "ref: refs/heads/NI/ACME-8700\n".write(to: gitdir.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
         try "gitdir: \(gitdir.path)\n".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
 
         let fromWorktree = ActivityLogic.claudeCheckout(cwd: worktree.appendingPathComponent("src").path)
-        check(fromWorktree?.repo == "finq.api" && fromWorktree?.checkout.path == worktree.path, "worktree \(String(describing: fromWorktree))")
-        check(fromWorktree.flatMap { ActivityLogic.branch(ofRepository: $0.checkout) } == "NI/QDLY-8700", "the worktree's branch")
+        check(fromWorktree?.repo == "orbit.api" && fromWorktree?.checkout.path == worktree.path, "worktree \(String(describing: fromWorktree))")
+        check(fromWorktree.flatMap { ActivityLogic.branch(ofRepository: $0.checkout) } == "NI/ACME-8700", "the worktree's branch")
         let nested = ActivityLogic.claudeCheckout(cwd: repo.appendingPathComponent("docs/deep").path)
-        check(nested?.repo == "finq.api" && nested.flatMap { ActivityLogic.branch(ofRepository: $0.checkout) } == "main", "nearest repository")
+        check(nested?.repo == "orbit.api" && nested.flatMap { ActivityLogic.branch(ofRepository: $0.checkout) } == "main", "nearest repository")
         check(ActivityLogic.claudeCheckout(cwd: "/Users/me/Library/Application Support/Claude/scratch-workspaces/x/scratch") == nil, "scratch")
         check(ActivityLogic.claudeCheckout(cwd: root.appendingPathComponent("plain").path) == nil, "no repository")
     }),
@@ -732,10 +732,10 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("ai classification: cache keys ignore counters, prompts list the fields, results map onto the fixed lists", {
-        let a = ActivityKey(appBundle: "com.apple.Terminal", appName: "Terminal", windowTitle: "finq.api \u{2014} zsh \u{2014} 80\u{00D7}24", url: nil,
-                            repo: "finq.api", branch: "main", ticket: nil, claude: [], idle: false)
+        let a = ActivityKey(appBundle: "com.apple.Terminal", appName: "Terminal", windowTitle: "orbit.api \u{2014} zsh \u{2014} 80\u{00D7}24", url: nil,
+                            repo: "orbit.api", branch: "main", ticket: nil, claude: [], idle: false)
         var b = a
-        b.windowTitle = "finq.api \u{2014} zsh \u{2014} 120\u{00D7}40"
+        b.windowTitle = "orbit.api \u{2014} zsh \u{2014} 120\u{00D7}40"
         b.branch = "other"
         check(ActivityAI.cacheKey(a) == ActivityAI.cacheKey(b), "sizes and branches do not matter \(ActivityAI.cacheKey(a))")
         var c = a
@@ -744,25 +744,25 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         var slack = a
         slack.appBundle = "com.tinyspeck.slackmacgap"
         slack.windowTitle = "general (3)  \u{2014}  Slack"
-        check(ActivityAI.cacheKey(slack) == "com.tinyspeck.slackmacgap|general (#) \u{2014} slack||finq.api", "normalised '\(ActivityAI.cacheKey(slack))'")
+        check(ActivityAI.cacheKey(slack) == "com.tinyspeck.slackmacgap|general (#) \u{2014} slack||orbit.api", "normalised '\(ActivityAI.cacheKey(slack))'")
 
-        var b1 = block(0, 5, app: "Safari", url: "github.com/quiddly-com/finq.api/pull/1966", repo: "finq.api", branch: "NI/QDLY-8296", ticket: "QDLY-8296")
+        var b1 = block(0, 5, app: "Safari", url: "github.com/acme-com/orbit.api/pull/1966", repo: "orbit.api", branch: "NI/ACME-8296", ticket: "ACME-8296")
         b1.typedExcerpt = "Looks good, one nit on the rounding"
         let prompt = ActivityAI.prompt(for: b1, projects: projects)
         check(prompt == """
             App: Safari
-            Address: github.com/quiddly-com/finq.api/pull/1966
-            Code host: quiddly-com/finq.api, pull request 1966
-            Repository: finq.api on branch NI/QDLY-8296
-            Ticket: QDLY-8296
+            Address: github.com/acme-com/orbit.api/pull/1966
+            Code host: acme-com/orbit.api, pull request 1966
+            Repository: orbit.api on branch NI/ACME-8296
+            Ticket: ACME-8296
             Text being written: Looks good, one nit on the rounding
-            Projects: Quiddly, Inde
+            Projects: Acme, Inde
             """, "prompt\n\(prompt)")
         check(ActivityAI.prompt(for: block(0, 5, app: "Slack"), projects: []).hasSuffix("Projects: none"), "no projects")
-        check(ActivityAI.projectChoices(projects) == ["none", "Quiddly", "Inde"], "choices")
+        check(ActivityAI.projectChoices(projects) == ["none", "Acme", "Inde"], "choices")
 
         let mapped = ActivityAI.classification(category: "Code Review", description: "Reviewing a pull request about rounding fees in reminders",
-                                               project: "quiddly", projects: projects)
+                                               project: "acme", projects: projects)
         check(mapped == .init(category: .codeReview, description: "Reviewing a pull request about rounding fees in", projectID: 1),
               "mapped \(mapped)")
         check(ActivityAI.classification(category: "gaming", description: " ", project: "none", projects: projects)
@@ -775,8 +775,8 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         guessed.aiProjectID = 2
         check(ActivityLogic.project(for: guessed, rules: rules, projects: projects)?.name == "Inde", "guess used when nothing else matches")
         check(ActivityLogic.projectIsGuessed(guessed, rules: rules), "shown as a guess")
-        guessed.key.repo = "finq.api"
-        check(ActivityLogic.project(for: guessed, rules: rules, projects: projects)?.name == "Quiddly", "rule wins")
+        guessed.key.repo = "orbit.api"
+        check(ActivityLogic.project(for: guessed, rules: rules, projects: projects)?.name == "Acme", "rule wins")
         check(!ActivityLogic.projectIsGuessed(guessed, rules: rules), "not a guess with a rule")
         guessed.projectID = 2
         check(ActivityLogic.project(for: guessed, rules: rules, projects: projects)?.name == "Inde", "manual choice wins over the rule")
@@ -798,7 +798,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         let folder = try tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try MeetingStore.open(at: folder.appendingPathComponent("meetings.sqlite"))
-        let project = try store.addProject("Quiddly")
+        let project = try store.addProject("Acme")
         var open = block(0, 60, app: "Safari", url: "github.com/x")
         open.id = 0
         open.typedExcerpt = "LGTM"
@@ -816,7 +816,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         try store.saveBlock(saved)
         check(try store.blocks(in: t0..<t0.addingTimeInterval(1000))[0].category == .codeReview, "saving a block keeps its classification")
         check(try store.cachedClassification("k") == nil, "empty cache")
-        try store.cacheClassification("k", category: "coding", description: "Editing", project: "Quiddly")
+        try store.cacheClassification("k", category: "coding", description: "Editing", project: "Acme")
         try store.cacheClassification("k", category: "coding", description: "Editing Swift", project: nil)
         let cached = try store.cachedClassification("k")
         check(cached?.category == "coding" && cached?.description == "Editing Swift" && cached?.project == nil, "upsert \(String(describing: cached))")
@@ -825,15 +825,15 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     }),
     ("code-host addresses give the owner, repository and the pull request, merge request, issue or commit", {
         func parse(_ url: String) -> CodeHostLink? { CodeHostLink.parse(url) }
-        let pr = parse("github.com/quiddly-com/finq.api/pull/2094/changes/BASE..6253f441b0b15951d44b50680402ebd5ea928552")
-        check(pr == CodeHostLink(host: "github.com", owner: "quiddly-com", repo: "finq.api", kind: .pullRequest("2094")), "github pr \(String(describing: pr))")
-        check(pr?.label == "quiddly-com/finq.api \u{00B7} PR #2094", "pr label")
+        let pr = parse("github.com/acme-com/orbit.api/pull/2094/changes/BASE..6253f441b0b15951d44b50680402ebd5ea928552")
+        check(pr == CodeHostLink(host: "github.com", owner: "acme-com", repo: "orbit.api", kind: .pullRequest("2094")), "github pr \(String(describing: pr))")
+        check(pr?.label == "acme-com/orbit.api \u{00B7} PR #2094", "pr label")
         check(parse("github.com/niklasinde/papercut/issues/12")?.label == "niklasinde/papercut \u{00B7} Issue #12", "issue")
-        check(parse("github.com/quiddly-com/finq.api/commit/6253f441b0b15951d44b50680402ebd5ea928552")?.label == "quiddly-com/finq.api \u{00B7} commit 6253f44", "commit")
-        check(parse("github.com/quiddly-com/finq.api/blob/main/app/x.py")?.kind == .repository, "file path ignored")
-        check(parse("github.com/quiddly-com/finq.api/pulls")?.kind == .repository, "pull request list")
-        check(parse("github.com/quiddly-com/finq.api/pull/new")?.kind == .repository, "not a number")
-        check(parse("github.com/orgs/quiddly-com/projects") == nil && parse("github.com/login") == nil && parse("github.com/sessions/social/apple/callback") == nil && parse("github.com/settings/profile") == nil, "reserved")
+        check(parse("github.com/acme-com/orbit.api/commit/6253f441b0b15951d44b50680402ebd5ea928552")?.label == "acme-com/orbit.api \u{00B7} commit 6253f44", "commit")
+        check(parse("github.com/acme-com/orbit.api/blob/main/app/x.py")?.kind == .repository, "file path ignored")
+        check(parse("github.com/acme-com/orbit.api/pulls")?.kind == .repository, "pull request list")
+        check(parse("github.com/acme-com/orbit.api/pull/new")?.kind == .repository, "not a number")
+        check(parse("github.com/orgs/acme-com/projects") == nil && parse("github.com/login") == nil && parse("github.com/sessions/social/apple/callback") == nil && parse("github.com/settings/profile") == nil, "reserved")
         check(parse("github.acme.com/team/service/pull/7")?.label == "team/service \u{00B7} PR #7", "enterprise github")
         check(parse("gitlab.com/group/sub/project/-/merge_requests/12")?.label == "group/sub/project \u{00B7} MR !12", "gitlab nested group")
         check(parse("gitlab.acme.se/team/app/-/issues/3")?.label == "team/app \u{00B7} Issue #3", "self-hosted gitlab")
@@ -841,24 +841,24 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         check(parse("gitlab.com/team/app") == CodeHostLink(host: "gitlab.com", owner: "team", repo: "app", kind: .repository), "gitlab project")
         check(parse("bitbucket.org/acme/web/pull-requests/45/overview")?.label == "acme/web \u{00B7} PR #45", "bitbucket pr")
         check(parse("bitbucket.org/acme/web/commits/abc1234def")?.kind == .commit("abc1234def"), "bitbucket commit")
-        check(parse("github.com/quiddly-com") == nil && parse("example.com/a/b") == nil && CodeHostLink.parse(nil) == nil, "no repository")
+        check(parse("github.com/acme-com") == nil && parse("example.com/a/b") == nil && CodeHostLink.parse(nil) == nil, "no repository")
     }),
 
     ("addresses fill an empty repository and owner, and a browser ticket finds its local branch", {
-        let index = BranchIndex(branches: ["finq.api": ["develop", "NI/QDLY-8315", "NI/QDLY-83150-other"], "finq.admin-ui": ["NI/QDLY-8400"]])
-        var key = block(0, 5, app: "Chrome", url: "github.com/quiddly-com/finq.api/pull/2094", ticket: "QDLY-8315").key
+        let index = BranchIndex(branches: ["orbit.api": ["develop", "NI/ACME-8315", "NI/ACME-83150-other"], "orbit.admin-ui": ["NI/ACME-8400"]])
+        var key = block(0, 5, app: "Chrome", url: "github.com/acme-com/orbit.api/pull/2094", ticket: "ACME-8315").key
         let linked = ActivityLogic.linked(key, branches: index)
-        check(linked.repo == "finq.api" && linked.owner == "quiddly-com" && linked.branch == "NI/QDLY-8315", "pr linked \(linked)")
+        check(linked.repo == "orbit.api" && linked.owner == "acme-com" && linked.branch == "NI/ACME-8315", "pr linked \(linked)")
         key.repo = "kept"
         check(ActivityLogic.linked(key, branches: index).repo == "kept" && ActivityLogic.linked(key, branches: index).branch == nil,
               "a known repository is kept and only searched")
-        let jira = block(0, 5, app: "Chrome", url: "quiddly.atlassian.net/browse/QDLY-8400", ticket: "QDLY-8400").key
+        let jira = block(0, 5, app: "Chrome", url: "acme.atlassian.net/browse/ACME-8400", ticket: "ACME-8400").key
         let fromJira = ActivityLogic.linked(jira, branches: index)
-        check(fromJira.branch == "NI/QDLY-8400" && fromJira.repo == "finq.admin-ui" && fromJira.owner == nil, "jira finds the branch anywhere \(fromJira)")
-        check(index.branch(for: "QDLY-83", repo: nil) == nil, "a key is not a prefix of a longer key")
-        check(ActivityLogic.linked(block(0, 5, app: "Slack", title: "QDLY-8400", ticket: "QDLY-8400").key, branches: index).branch == nil,
+        check(fromJira.branch == "NI/ACME-8400" && fromJira.repo == "orbit.admin-ui" && fromJira.owner == nil, "jira finds the branch anywhere \(fromJira)")
+        check(index.branch(for: "ACME-83", repo: nil) == nil, "a key is not a prefix of a longer key")
+        check(ActivityLogic.linked(block(0, 5, app: "Slack", title: "ACME-8400", ticket: "ACME-8400").key, branches: index).branch == nil,
               "only blocks with an address are linked")
-        check(ActivityLogic.urlLabel("github.com/quiddly-com/finq.api/pull/2094/changes/BASE..6253f441") == "quiddly-com/finq.api \u{00B7} PR #2094", "chip label")
+        check(ActivityLogic.urlLabel("github.com/acme-com/orbit.api/pull/2094/changes/BASE..6253f441") == "acme-com/orbit.api \u{00B7} PR #2094", "chip label")
         check(ActivityLogic.urlLabel("x.se/build/6253f441b0b15951d44b5068") == "x.se/build/6253f44\u{2026}", "hash shortened")
         let long = ActivityLogic.urlLabel("docs.example.com/" + String(repeating: "section/", count: 12) + "end", limit: 40)
         check(long.count == 40 && long.hasPrefix("docs.example.com/") && long.hasSuffix("/end") && long.contains("\u{2026}"), "middle cut '\(long)'")
@@ -868,32 +868,32 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     ("branches come from loose refs, packed-refs and worktrees", {
         let folder = try tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = folder.appendingPathComponent("finq.api")
+        let repo = folder.appendingPathComponent("orbit.api")
         let git = repo.appendingPathComponent(".git")
         try FileManager.default.createDirectory(at: git.appendingPathComponent("refs/heads/NI"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: git.appendingPathComponent("worktrees/wt"), withIntermediateDirectories: true)
         try "ref: refs/heads/develop\n".write(to: git.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
         try "abc\n".write(to: git.appendingPathComponent("refs/heads/develop"), atomically: true, encoding: .utf8)
-        try "abc\n".write(to: git.appendingPathComponent("refs/heads/NI/QDLY-8315"), atomically: true, encoding: .utf8)
+        try "abc\n".write(to: git.appendingPathComponent("refs/heads/NI/ACME-8315"), atomically: true, encoding: .utf8)
         try "# pack-refs with: peeled fully-peeled sorted\nabc refs/heads/feature/papercut-1\nabc refs/remotes/origin/main\n^def\n"
             .write(to: git.appendingPathComponent("packed-refs"), atomically: true, encoding: .utf8)
-        try "ref: refs/heads/NI/QDLY-8400\n".write(to: git.appendingPathComponent("worktrees/wt/HEAD"), atomically: true, encoding: .utf8)
+        try "ref: refs/heads/NI/ACME-8400\n".write(to: git.appendingPathComponent("worktrees/wt/HEAD"), atomically: true, encoding: .utf8)
         let index = BranchIndex.scan([repo])
-        check(index.branches["finq.api"] == ["NI/QDLY-8315", "NI/QDLY-8400", "develop", "feature/papercut-1"], "branches \(index)")
-        check(index.branch(for: "QDLY-8400", repo: "finq.api")?.branch == "NI/QDLY-8400", "worktree branch found")
+        check(index.branches["orbit.api"] == ["NI/ACME-8315", "NI/ACME-8400", "develop", "feature/papercut-1"], "branches \(index)")
+        check(index.branch(for: "ACME-8400", repo: "orbit.api")?.branch == "NI/ACME-8400", "worktree branch found")
     }),
 
     ("rules go branch, ticket prefix, repository, organisation, website, app, then the ai guess", {
         let ordered = [ProjectRule(id: 1, projectID: 6, field: .app, pattern: "Google Chrome"),
                        ProjectRule(id: 2, projectID: 5, field: .host, pattern: "github.com"),
-                       ProjectRule(id: 3, projectID: 4, field: .owner, pattern: "quiddly-com"),
-                       ProjectRule(id: 4, projectID: 3, field: .repo, pattern: "finq.api"),
-                       ProjectRule(id: 5, projectID: 2, field: .ticket, pattern: "QDLY"),
-                       ProjectRule(id: 6, projectID: 1, field: .branch, pattern: "NI/QDLY-*")]
+                       ProjectRule(id: 3, projectID: 4, field: .owner, pattern: "acme-com"),
+                       ProjectRule(id: 4, projectID: 3, field: .repo, pattern: "orbit.api"),
+                       ProjectRule(id: 5, projectID: 2, field: .ticket, pattern: "ACME"),
+                       ProjectRule(id: 6, projectID: 1, field: .branch, pattern: "NI/ACME-*")]
         let names = (1...6).map { Project(id: Int64($0), name: "P\($0)", color: "#000000") }
-        var b = block(0, 5, app: "Google Chrome", url: "github.com/quiddly-com/finq.api/pull/2094", repo: "finq.api", branch: "NI/QDLY-8315",
-                      ticket: "QDLY-8315")
-        b.key.owner = "quiddly-com"
+        var b = block(0, 5, app: "Google Chrome", url: "github.com/acme-com/orbit.api/pull/2094", repo: "orbit.api", branch: "NI/ACME-8315",
+                      ticket: "ACME-8315")
+        b.key.owner = "acme-com"
         b.aiProjectID = 6
         func project() -> String? { ActivityLogic.project(for: b, rules: ordered, projects: names)?.name }
         check(project() == "P1", "branch first")
@@ -912,38 +912,38 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         check(project() == "P1" && ActivityLogic.projectIsGuessed(b, rules: ordered), "then the guess")
         b.projectID = 3
         check(project() == "P3", "a manual choice beats everything")
-        check(ProjectRule.glob("feature/papercut-*", matches: "Feature/Papercut-12") && !ProjectRule.glob("NI/QDLY-*", matches: "x/NI/QDLY-1")
+        check(ProjectRule.glob("feature/papercut-*", matches: "Feature/Papercut-12") && !ProjectRule.glob("NI/ACME-*", matches: "x/NI/ACME-1")
               && ProjectRule.glob("main", matches: "main") && !ProjectRule.glob("main", matches: "maint") && ProjectRule.glob("a.b*", matches: "a.bc")
               && !ProjectRule.glob("a.b", matches: "axb"), "wildcards")
-        let jiraProject = block(0, 5, app: "Safari", url: "quiddly.atlassian.net/jira/software/c/projects/QDLY/boards/12").key
-        check(jiraProject.ticketPrefix == "QDLY" && ProjectRule(id: 1, projectID: 1, field: .ticket, pattern: "qdly").matches(jiraProject),
+        let jiraProject = block(0, 5, app: "Safari", url: "acme.atlassian.net/jira/software/c/projects/ACME/boards/12").key
+        check(jiraProject.ticketPrefix == "ACME" && ProjectRule(id: 1, projectID: 1, field: .ticket, pattern: "acme").matches(jiraProject),
               "a jira project page matches its ticket prefix")
     }),
 
     ("jira addresses give the site, project and ticket; page titles give ticket titles", {
         check(JiraLink.parse("papyrus-se.atlassian.net/browse/ISD-12466") == JiraLink(site: "papyrus-se.atlassian.net", prefix: "ISD", ticket: "ISD-12466"), "browse")
-        check(JiraLink.parse("quiddly.atlassian.net/jira/software/projects/QDLY/boards/3") == JiraLink(site: "quiddly.atlassian.net", prefix: "QDLY", ticket: nil), "board")
-        check(JiraLink.parse("quiddly.atlassian.net/jira/servicedesk/projects/ISD/queues/custom/1/ISD-13089")?.ticket == "ISD-13089", "queue issue")
-        check(JiraLink.parse("quiddly.atlassian.net/wiki/spaces/X") == nil && JiraLink.parse("github.com/browse/QDLY-1") == nil, "not jira")
-        check(ActivityLogic.ticket(in: "quiddly.atlassian.net/browse/QDLY-8315") == "QDLY-8315", "ticket regex covers browse urls")
-        let chrome = " - Google Chrome \u{2013} Niklas (quiddly.com)"
+        check(JiraLink.parse("acme.atlassian.net/jira/software/projects/ACME/boards/3") == JiraLink(site: "acme.atlassian.net", prefix: "ACME", ticket: nil), "board")
+        check(JiraLink.parse("acme.atlassian.net/jira/servicedesk/projects/ISD/queues/custom/1/ISD-13089")?.ticket == "ISD-13089", "queue issue")
+        check(JiraLink.parse("acme.atlassian.net/wiki/spaces/X") == nil && JiraLink.parse("github.com/browse/ACME-1") == nil, "not jira")
+        check(ActivityLogic.ticket(in: "acme.atlassian.net/browse/ACME-8315") == "ACME-8315", "ticket regex covers browse urls")
+        let chrome = " - Google Chrome \u{2013} Niklas (acme.com)"
         func title(_ window: String, _ url: String) -> String? {
             ActivityLogic.ticketTitle(windowTitle: window, url: url).map { "\($0.ticket)|\($0.title)" }
         }
         check(title("[ISD-12466] Det genereras inte n\u{00E5}gon utbetalning - JIRA" + chrome, "papyrus-se.atlassian.net/browse/ISD-12466")
               == "ISD-12466|Det genereras inte n\u{00E5}gon utbetalning", "bracketed jira title")
-        check(title("QDLY-8315: Add Strawbay - Jira", "quiddly.atlassian.net/jira/software/projects/QDLY/boards/3?x") == "QDLY-8315|Add Strawbay", "colon jira title")
-        check(title("[QDLY-1] Old page - Jira" + chrome, "quiddly.atlassian.net/browse/QDLY-2") == nil, "a title from another issue is not taken")
+        check(title("ACME-8315: Add Strawbay - Jira", "acme.atlassian.net/jira/software/projects/ACME/boards/3?x") == "ACME-8315|Add Strawbay", "colon jira title")
+        check(title("[ACME-1] Old page - Jira" + chrome, "acme.atlassian.net/browse/ACME-2") == nil, "a title from another issue is not taken")
         check(title("YouTube" + chrome, "papyrus-se.atlassian.net/browse/ISD-12466") == nil, "not a jira title")
-        let pr = "QDLY-8315: Add Strawbay (kfm-api) as a second enforcement service provider by niklasinde \u{00B7} Pull Request #2094 \u{00B7} quiddly-com/finq.api"
-        check(title(pr + chrome, "github.com/quiddly-com/finq.api/pull/2094/changes") == "QDLY-8315|Add Strawbay (kfm-api) as a second enforcement service provider",
+        let pr = "ACME-8315: Add Strawbay (kfm-api) as a second enforcement service provider by niklasinde \u{00B7} Pull Request #2094 \u{00B7} acme-com/orbit.api"
+        check(title(pr + chrome, "github.com/acme-com/orbit.api/pull/2094/changes") == "ACME-8315|Add Strawbay (kfm-api) as a second enforcement service provider",
               "pull request title")
-        check(title(pr + chrome, "github.com/quiddly-com/finq.api/pull/2095") == nil, "another pull request's title")
+        check(title(pr + chrome, "github.com/acme-com/orbit.api/pull/2095") == nil, "another pull request's title")
         check(title("Redesign the invoice table by niklasinde \u{00B7} Pull Request #120 \u{00B7} niklasinde/papercut", "github.com/niklasinde/papercut/pull/120") == nil,
               "no key")
-        let directory = TicketDirectory(titles: ["QDLY-8315": "Add Strawbay"], sites: ["QDLY": "quiddly.atlassian.net"])
-        check(directory.url(for: "QDLY-8315")?.absoluteString == "https://quiddly.atlassian.net/browse/QDLY-8315" && directory.url(for: "ISD-1") == nil, "jira url")
-        check(directory.label("QDLY-8315") == "QDLY-8315 \u{00B7} Add Strawbay" && directory.label("ISD-1") == "ISD-1", "label")
+        let directory = TicketDirectory(titles: ["ACME-8315": "Add Strawbay"], sites: ["ACME": "acme.atlassian.net"])
+        check(directory.url(for: "ACME-8315")?.absoluteString == "https://acme.atlassian.net/browse/ACME-8315" && directory.url(for: "ISD-1") == nil, "jira url")
+        check(directory.label("ACME-8315") == "ACME-8315 \u{00B7} Add Strawbay" && directory.label("ISD-1") == "ISD-1", "label")
     }),
 
     ("the store learns jira sites and ticket titles, and backfills repositories, owners and branches", {
@@ -951,10 +951,10 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try MeetingStore.open(at: folder.appendingPathComponent("meetings.sqlite"))
         check(try store.schemaVersion() == MeetingStore.migrations.count, "migrated")
-        let pr = "QDLY-8315: Add Strawbay by niklasinde \u{00B7} Pull Request #2094 \u{00B7} quiddly-com/finq.api - Google Chrome"
-        var github = block(0, 60, app: "Google Chrome", title: pr, url: "github.com/quiddly-com/finq.api/pull/2094/changes/BASE..6253f44", ticket: "QDLY-8315")
-        var jira = block(60, 120, app: "Google Chrome", title: "[QDLY-8315] Strawbay provider - Jira", url: "quiddly.atlassian.net/browse/QDLY-8315",
-                         ticket: "QDLY-8315")
+        let pr = "ACME-8315: Add Strawbay by niklasinde \u{00B7} Pull Request #2094 \u{00B7} acme-com/orbit.api - Google Chrome"
+        var github = block(0, 60, app: "Google Chrome", title: pr, url: "github.com/acme-com/orbit.api/pull/2094/changes/BASE..6253f44", ticket: "ACME-8315")
+        var jira = block(60, 120, app: "Google Chrome", title: "[ACME-8315] Strawbay provider - Jira", url: "acme.atlassian.net/browse/ACME-8315",
+                         ticket: "ACME-8315")
         var other = block(120, 180, app: "Google Chrome", url: "example.com/x")
         var owned = block(180, 240, app: "Google Chrome", url: "github.com/niklasinde/papercut/pull/1", repo: "papercut")
         owned.key.owner = "niklasinde"
@@ -963,16 +963,16 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
             b.id = 0
             try store.saveBlock(b)
         }
-        let count = try store.backfillLinks(branches: BranchIndex(branches: ["finq.api": ["NI/QDLY-8315"]]))
+        let count = try store.backfillLinks(branches: BranchIndex(branches: ["orbit.api": ["NI/ACME-8315"]]))
         check(count == 2, "the github and jira blocks change, the others are left \(count)")
         let saved = try store.blocks(in: t0..<t0.addingTimeInterval(1000))
         github = saved[0]; jira = saved[1]; other = saved[2]; owned = saved[3]
-        check(github.key.repo == "finq.api" && github.key.owner == "quiddly-com" && github.key.branch == "NI/QDLY-8315", "github filled \(github.key)")
-        check(jira.key.branch == "NI/QDLY-8315" && jira.key.repo == "finq.api", "jira linked to the branch")
+        check(github.key.repo == "orbit.api" && github.key.owner == "acme-com" && github.key.branch == "NI/ACME-8315", "github filled \(github.key)")
+        check(jira.key.branch == "NI/ACME-8315" && jira.key.repo == "orbit.api", "jira linked to the branch")
         check(other.key.repo == nil && owned.key.owner == "niklasinde", "others unchanged")
         let directory = try store.ticketDirectory()
-        check(directory.sites == ["QDLY": "quiddly.atlassian.net"], "site learned \(directory)")
-        check(directory.titles["QDLY-8315"] == "Strawbay provider", "the later title wins \(directory)")
+        check(directory.sites == ["ACME": "acme.atlassian.net"], "site learned \(directory)")
+        check(directory.titles["ACME-8315"] == "Strawbay provider", "the later title wins \(directory)")
         check(try store.backfillLinks(branches: BranchIndex()) == 0, "a second run changes nothing")
         try store.redact(blockIDs: [github.id], as: .private)
         check(try store.blocks(in: t0..<t0.addingTimeInterval(60))[0].key.owner == nil, "private blocks lose the owner")
@@ -1022,7 +1022,7 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         let hosts = [ProjectRule(id: 1, projectID: 1, field: .host, pattern: "papercut.work"),
                      ProjectRule(id: 2, projectID: 2, field: .host, pattern: "www.youtube.com")]
         func api(_ start: TimeInterval, _ minutes: Double, guess: Int64? = nil, project: Int64? = nil) -> ActivityBlock {
-            var b = block(start, start + minutes * 60, app: "PyCharm", repo: "finq.api", branch: "NI/QDLY-8315-fees", ticket: "QDLY-8315", project: project)
+            var b = block(start, start + minutes * 60, app: "PyCharm", repo: "orbit.api", branch: "NI/ACME-8315-fees", ticket: "ACME-8315", project: project)
             b.aiProjectID = guess
             return b
         }
@@ -1049,16 +1049,16 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
         let papercutRules = [ProjectRule(id: 1, projectID: 1, field: .host, pattern: "papercut.work"),
                              ProjectRule(id: 2, projectID: 1, field: .repo, pattern: "papercut-api")]
         func evidence(_ b: ActivityBlock) -> Bool { ActivityAI.hasEvidence(b, for: papercut, rules: papercutRules) }
-        check(!evidence(block(0, 60, repo: "finq.api", branch: "develop")), "another repository")
-        check(!evidence(block(0, 60, app: "Safari", url: "github.com/quiddly-com/finq.api/pull/1", repo: "finq.api")), "another organisation")
-        check(!evidence(block(0, 60, ticket: "QDLY-8315")), "a ticket prefix without a connection")
+        check(!evidence(block(0, 60, repo: "orbit.api", branch: "develop")), "another repository")
+        check(!evidence(block(0, 60, app: "Safari", url: "github.com/acme-com/orbit.api/pull/1", repo: "orbit.api")), "another organisation")
+        check(!evidence(block(0, 60, ticket: "ACME-8315")), "a ticket prefix without a connection")
         check(evidence(block(0, 60, repo: "papercut-api")), "a repository the project owns")
         check(evidence(block(0, 60, repo: "papercut")), "the name in the repository")
         check(evidence(block(0, 60, title: "Invoices \u{2014} Papercut", repo: "web")), "the name in the title")
         check(!evidence(block(0, 60, title: "Papercutter", repo: "web")), "only whole words")
         check(evidence(block(0, 60, app: "Slack", title: "general")), "nothing that points elsewhere")
-        check(evidence(block(0, 60, app: "Safari", url: "papercut.work/x", ticket: "QDLY-1")), "a project rule")
-        var guessed = block(0, 60, repo: "finq.api")
+        check(evidence(block(0, 60, app: "Safari", url: "papercut.work/x", ticket: "ACME-1")), "a project rule")
+        var guessed = block(0, 60, repo: "orbit.api")
         guessed.aiProjectID = 1
         check(ActivityAI.vetted(1, for: guessed, projects: known, rules: papercutRules) == nil, "rejected")
         check(ActivityAI.vetted(1, for: block(0, 60, repo: "papercut"), projects: known, rules: papercutRules) == 1, "kept")
@@ -1081,10 +1081,10 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
             b.projectID = project
             return try store.saveBlock(b)
         }
-        let wrong = try save(block(0, 60, repo: "finq.api"), guess: papercut.id)
-        let manual = try save(block(100, 160, repo: "finq.api"), guess: papercut.id, project: papercut.id)
+        let wrong = try save(block(0, 60, repo: "orbit.api"), guess: papercut.id)
+        let manual = try save(block(100, 160, repo: "orbit.api"), guess: papercut.id, project: papercut.id)
         let right = try save(block(200, 260, repo: "papercut"), guess: papercut.id)
-        let none = try save(block(300, 360, repo: "finq.api"), guess: nil)
+        let none = try save(block(300, 360, repo: "orbit.api"), guess: nil)
         check(try store.clearUnsupportedGuesses() == 2, "the wrong guess and the one under a manual choice")
         let blocks = Dictionary(uniqueKeysWithValues: try store.blocks(in: t0..<t0.addingTimeInterval(1000)).map { ($0.id, $0) })
         check(blocks[wrong]?.aiProjectID == nil && blocks[right]?.aiProjectID == papercut.id && blocks[none]?.aiProjectID == nil, "guesses")
@@ -1093,20 +1093,20 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("rows of the breakdown offer the rules for what they stand for", {
-        let item = ActivityLogic.WorkTotal(name: "NI/QDLY-8315-fees", repo: "finq.api", ticket: "QDLY-8315", project: nil, seconds: 60)
-        check(ActivityLogic.ruleCandidates(for: item) == [.init(field: .branch, pattern: "NI/QDLY-8315-fees"), .init(field: .ticket, pattern: "QDLY"),
-                                                         .init(field: .repo, pattern: "finq.api")], "branch row")
+        let item = ActivityLogic.WorkTotal(name: "NI/ACME-8315-fees", repo: "orbit.api", ticket: "ACME-8315", project: nil, seconds: 60)
+        check(ActivityLogic.ruleCandidates(for: item) == [.init(field: .branch, pattern: "NI/ACME-8315-fees"), .init(field: .ticket, pattern: "ACME"),
+                                                         .init(field: .repo, pattern: "orbit.api")], "branch row")
         let ticket = ActivityLogic.WorkTotal(name: "ISD-1", repo: nil, ticket: "ISD-1", project: nil, seconds: 60)
         check(ActivityLogic.ruleCandidates(for: ticket) == [.init(field: .ticket, pattern: "ISD")], "ticket row")
-        check(ActivityLogic.ruleCandidates(forTicket: "QDLY-8315") == [.init(field: .ticket, pattern: "QDLY")], "ticket prefix")
+        check(ActivityLogic.ruleCandidates(forTicket: "ACME-8315") == [.init(field: .ticket, pattern: "ACME")], "ticket prefix")
         check(RuleCandidate(field: .branch, pattern: "main").text == "branch \u{201C}main\u{201D}", "text")
-        let key = block(0, 60, app: "Safari", url: "github.com/quiddly-com/finq.api/pull/1", repo: "finq.api").key
+        let key = block(0, 60, app: "Safari", url: "github.com/acme-com/orbit.api/pull/1", repo: "orbit.api").key
         var linked = key
-        linked.owner = "quiddly-com"
-        check(ActivityLogic.ruleCandidates(linked) == [.init(field: .repo, pattern: "finq.api"), .init(field: .owner, pattern: "quiddly-com")], "code host")
+        linked.owner = "acme-com"
+        check(ActivityLogic.ruleCandidates(linked) == [.init(field: .repo, pattern: "orbit.api"), .init(field: .owner, pattern: "acme-com")], "code host")
 
         let day = t0..<t0.addingTimeInterval(7200)
-        let blocks = [block(0, 600, repo: "finq.api"), block(600, 1000, app: "Safari", url: "papercut.work/x", project: 1), block(1000, 1200, idle: true)]
+        let blocks = [block(0, 600, repo: "orbit.api"), block(600, 1000, app: "Safari", url: "papercut.work/x", project: 1), block(1000, 1200, idle: true)]
         let share = ActivityLogic.unassignedShare(blocks, in: day, rules: [])
         check(abs(share - 0.6) < 0.0001, "unassigned share \(share)")
         check(ActivityLogic.unassignedShare([], in: day, rules: []) == 0, "no activity")
@@ -1117,23 +1117,23 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
 
     ("the setup groups unassigned activity by organisation, repository, ticket prefix and website", {
         func api(_ start: TimeInterval, _ minutes: Double) -> ActivityBlock {
-            block(start, start + minutes * 60, app: "PyCharm", repo: "finq.api", branch: "NI/QDLY-8315-fees", ticket: "QDLY-8315")
+            block(start, start + minutes * 60, app: "PyCharm", repo: "orbit.api", branch: "NI/ACME-8315-fees", ticket: "ACME-8315")
         }
-        var pull = block(2000, 2600, app: "Safari", url: "github.com/quiddly-com/finq.api/pull/1", repo: "finq.api")
-        pull.key.owner = "quiddly-com"
+        var pull = block(2000, 2600, app: "Safari", url: "github.com/acme-com/orbit.api/pull/1", repo: "orbit.api")
+        pull.key.owner = "acme-com"
         var mine = block(3000, 3400, app: "Safari", url: "github.com/niklasinde/indemeeting/pull/2", repo: "indemeeting")
         mine.key.owner = "niklasinde"
         let blocks = [api(0, 20), pull,
-                      block(2600, 3000, app: "Safari", url: "quiddly.atlassian.net/browse/ISD-1", ticket: "ISD-1"),
+                      block(2600, 3000, app: "Safari", url: "acme.atlassian.net/browse/ISD-1", ticket: "ISD-1"),
                       block(3400, 4600, app: "Xcode", repo: "indemeeting"), mine,
                       block(5000, 5900, app: "Safari", url: "papercut.work/invoices"),
                       block(6000, 6100, app: "Slack", url: "app.slack.com/x"), block(7000, 8000, idle: true)]
         let rules = [ProjectRule(id: 1, projectID: 1, field: .host, pattern: "papercut.work")]
         let groups = ProjectSuggestionLogic.suggestions(blocks, rules: rules, projects: [])
         func group(_ pattern: String) -> SetupSuggestion? { groups.first { $0.members.contains { $0.pattern == pattern } } }
-        let quiddly = group("finq.api")
-        check(quiddly?.name == "Quiddly" && quiddly?.seconds == 1200 + 600 + 400, "one Quiddly group \(groups)")
-        check(["quiddly-com", "QDLY", "ISD", "quiddly.atlassian.net"].allSatisfy { group($0)?.id == quiddly?.id }, "organisation, prefixes and Jira site join it")
+        let acme = group("orbit.api")
+        check(acme?.name == "Acme" && acme?.seconds == 1200 + 600 + 400, "one Acme group \(groups)")
+        check(["acme-com", "ACME", "ISD", "acme.atlassian.net"].allSatisfy { group($0)?.id == acme?.id }, "organisation, prefixes and Jira site join it")
         check(group("indemeeting")?.name == "Niklasinde" && group("indemeeting")?.seconds == 1600, "own repository")
         check(group("papercut.work") == nil && group("app.slack.com") == nil, "assigned time and short visits are left out")
         check(!groups.contains { $0.members.contains { $0.pattern == "github.com" } }, "code hosts are left out")
@@ -1148,74 +1148,74 @@ let activityTests: [(name: String, run: () throws -> Void)] = [
             defer { start += minutes * 60 + 10 }
             return block(start, start + minutes * 60, app: app, title: title, url: host.map { "\($0)/x" }, repo: repo)
         }
-        let fixed = [next(23, app: "DataGrip", repo: "datagrip_finq.api"), next(12, app: "PyCharm", repo: "indehouse3"),
-                     next(7, app: "PyCharm", repo: "devops.indepower.se"), next(70, title: "finq fees - Google Search", host: "www.google.com"),
-                     next(62, host: "mail.google.com"), next(47, host: "www.instagram.com"), next(46, title: "Quiddly Admin", host: "testadmin.quiddly.com"),
-                     next(44, host: "flow-and-partners-se-test-admin.quiddly.com"), next(39, host: "claude.ai"), next(33, host: "env-p-admin.quiddly.dev"),
+        let fixed = [next(23, app: "DataGrip", repo: "datagrip_orbit.api"), next(12, app: "PyCharm", repo: "indehouse3"),
+                     next(7, app: "PyCharm", repo: "devops.indepower.se"), next(70, title: "orbit fees - Google Search", host: "www.google.com"),
+                     next(62, host: "mail.google.com"), next(47, host: "www.instagram.com"), next(46, title: "Acme Admin", host: "admin.acme.com"),
+                     next(44, host: "flow-and-partners-se-test-admin.acme.com"), next(39, host: "claude.ai"), next(33, host: "env-p-admin.acme.dev"),
                      next(27, host: "console.cloud.google.com"), next(23, host: "ads.google.com")]
-        let projects = [Project(id: 3, name: "Quiddly", color: "#000"), Project(id: 5, name: "Niklasinde", color: "#000")]
-        let rules = [ProjectRule(id: 1, projectID: 3, field: .owner, pattern: "quiddly-com"), ProjectRule(id: 2, projectID: 5, field: .owner, pattern: "niklasinde")]
-        let owners = ["finq.api": "quiddly-com", "devops.indepower.se": "niklasinde"]
+        let projects = [Project(id: 3, name: "Acme", color: "#000"), Project(id: 5, name: "Niklasinde", color: "#000")]
+        let rules = [ProjectRule(id: 1, projectID: 3, field: .owner, pattern: "acme-com"), ProjectRule(id: 2, projectID: 5, field: .owner, pattern: "niklasinde")]
+        let owners = ["orbit.api": "acme-com", "devops.indepower.se": "niklasinde"]
         let groups = ProjectSuggestionLogic.suggestions(fixed, rules: rules, projects: projects, owners: owners)
         func group(_ pattern: String) -> SetupSuggestion? { groups.first { $0.members.contains { $0.pattern == pattern } } }
 
-        let quiddly = group("quiddly.com")
-        check(quiddly?.projectID == 3 && quiddly?.name == "Quiddly" && !quiddly!.generic, "Quiddly sites go to the existing project \(groups.map { ($0.name, $0.members.map(\.pattern)) })")
-        check(group("quiddly.dev")?.id == quiddly?.id && group("datagrip_finq.api")?.id == quiddly?.id, "quiddly.dev and the DataGrip folder join Quiddly")
+        let acme = group("acme.com")
+        check(acme?.projectID == 3 && acme?.name == "Acme" && !acme!.generic, "Acme sites go to the existing project \(groups.map { ($0.name, $0.members.map(\.pattern)) })")
+        check(group("acme.dev")?.id == acme?.id && group("datagrip_orbit.api")?.id == acme?.id, "acme.dev and the DataGrip folder join Acme")
         check(group("devops.indepower.se")?.projectID == 5, "a cloned repository goes to its owner's project")
         check(group("indehouse3")?.name == "Indehouse" && group("indehouse3")?.projectID == nil, "a repository on its own is named after itself")
         check(group("google.com")?.generic == true && group("google.com")?.members.count == 1, "all of Google is one unchecked site")
         check(group("instagram.com")?.generic == true && group("claude.ai")?.generic == true, "social media and chat are not projects")
-        check(quiddly?.samples.first == "Quiddly Admin" || quiddly?.samples.contains("Quiddly Admin") == true, "samples \(quiddly?.samples ?? [])")
-        check(!groups.contains { ["Mail", "Env", "Console", "Ads", "Testadmin", "Flow"].contains($0.name) }, "no first-label names")
+        check(acme?.samples.first == "Acme Admin" || acme?.samples.contains("Acme Admin") == true, "samples \(acme?.samples ?? [])")
+        check(!groups.contains { ["Mail", "Env", "Console", "Ads", "Admin", "Flow"].contains($0.name) }, "no first-label names")
 
-        var sentry = block(start, start + 600, app: "Chrome", title: "Issue - Google Chrome - Niklas (quiddly.com)", url: "auth0.com/x")
+        var sentry = block(start, start + 600, app: "Chrome", title: "Issue - Google Chrome - Niklas (acme.com)", url: "auth0.com/x")
         sentry.aiWork = true
         let joined = ProjectSuggestionLogic.suggestions(fixed + [sentry], rules: rules, projects: projects, owners: owners)
-        check(joined.first { $0.members.contains { $0.pattern == "auth0.com" } }?.projectID == 3, "a site used in the Quiddly browser profile joins Quiddly")
+        check(joined.first { $0.members.contains { $0.pattern == "auth0.com" } }?.projectID == 3, "a site used in the Acme browser profile joins Acme")
     }),
 
     ("the setup's pieces: sites, organisations, repository names, owners and the button", {
-        check(ProjectSuggestionLogic.site("www.testadmin.quiddly.com") == "quiddly.com" && ProjectSuggestionLogic.site("papyrus-se.atlassian.net") == "papyrus-se.atlassian.net"
+        check(ProjectSuggestionLogic.site("www.admin.acme.com") == "acme.com" && ProjectSuggestionLogic.site("papyrus-se.atlassian.net") == "papyrus-se.atlassian.net"
               && ProjectSuggestionLogic.site("www.bbc.co.uk") == "bbc.co.uk", "sites")
-        check(ProjectSuggestionLogic.organisation(site: "quiddly.dev") == "quiddly" && ProjectSuggestionLogic.organisation(site: "papyrus-se.atlassian.net") == "papyrus"
-              && ProjectSuggestionLogic.organisation(owner: "quiddly-com") == "quiddly", "organisations")
-        check(ProjectSuggestionLogic.cleanName(repo: "datagrip_finq.api") == "finq" && ProjectSuggestionLogic.cleanName(repo: "indehousev2") == "indehouse"
+        check(ProjectSuggestionLogic.organisation(site: "acme.dev") == "acme" && ProjectSuggestionLogic.organisation(site: "papyrus-se.atlassian.net") == "papyrus"
+              && ProjectSuggestionLogic.organisation(owner: "acme-com") == "acme", "organisations")
+        check(ProjectSuggestionLogic.cleanName(repo: "datagrip_orbit.api") == "orbit" && ProjectSuggestionLogic.cleanName(repo: "indehousev2") == "indehouse"
               && ProjectSuggestionLogic.cleanName(repo: "papercut") == "papercut", "repository names")
-        check(ProjectSuggestionLogic.profileOrganisation(title: "pgAdmin 4 - Google Chrome - Niklas (quiddly.com)") == "quiddly"
+        check(ProjectSuggestionLogic.profileOrganisation(title: "pgAdmin 4 - Google Chrome - Niklas (acme.com)") == "acme"
               && ProjectSuggestionLogic.profileOrganisation(title: "Inbox (3)") == nil, "browser profile")
         check(ProjectSuggestionLogic.cleanTitle("Instagram - Audio playing - Google Chrome - Niklas") == "Instagram", "titles lose the browser")
-        check(ProjectSuggestionLogic.isAddress("127.0.0.1") && ProjectSuggestionLogic.isAddress("localhost") && !ProjectSuggestionLogic.isAddress("quiddly.com"), "addresses")
-        check(ProjectSuggestionLogic.isGeneric(site: "google.co.jp") && !ProjectSuggestionLogic.isGeneric(site: "quiddly.com"), "generic organisations")
-        let known = ["finq.api": "quiddly-com", "api": "x"]
-        check(ProjectSuggestionLogic.owner(of: "datagrip_finq.api", known: known) == "quiddly-com" && ProjectSuggestionLogic.owner(of: "finq.apiary", known: known) == nil,
+        check(ProjectSuggestionLogic.isAddress("127.0.0.1") && ProjectSuggestionLogic.isAddress("localhost") && !ProjectSuggestionLogic.isAddress("acme.com"), "addresses")
+        check(ProjectSuggestionLogic.isGeneric(site: "google.co.jp") && !ProjectSuggestionLogic.isGeneric(site: "acme.com"), "generic organisations")
+        let known = ["orbit.api": "acme-com", "api": "x"]
+        check(ProjectSuggestionLogic.owner(of: "datagrip_orbit.api", known: known) == "acme-com" && ProjectSuggestionLogic.owner(of: "orbit.apiary", known: known) == nil,
               "owners from known repositories")
-        let choices = [SetupChoice(field: .host, pattern: "quiddly.com", name: "Quiddly"), SetupChoice(field: .repo, pattern: "indehouse3", name: "Indehouse"),
+        let choices = [SetupChoice(field: .host, pattern: "acme.com", name: "Acme"), SetupChoice(field: .repo, pattern: "indehouse3", name: "Indehouse"),
                        SetupChoice(field: .repo, pattern: "indehousev2", name: "indehouse")]
-        let summary = ProjectSuggestionLogic.summary(choices, projects: [Project(id: 3, name: "Quiddly", color: "")], rules: [])
+        let summary = ProjectSuggestionLogic.summary(choices, projects: [Project(id: 3, name: "Acme", color: "")], rules: [])
         check(summary.projects == 1 && summary.rules == 3, "summary \(summary)")
         check(ProjectSuggestionLogic.buttonTitle(projects: 1, rules: 3) == "Create 1 project, add 3 rules"
               && ProjectSuggestionLogic.buttonTitle(projects: 0, rules: 1) == "Add 1 rule", "button")
     }),
 
     ("the setup creates projects and rules, reusing projects by name and skipping rules that exist", {
-        let existing = [ProjectRule(id: 1, projectID: 1, field: .repo, pattern: "Finq.API")]
-        let plan = ProjectSetup.plan([.init(field: .repo, pattern: "finq.api", name: "Quiddly"), .init(field: .ticket, pattern: "QDLY", name: " Quiddly "),
+        let existing = [ProjectRule(id: 1, projectID: 1, field: .repo, pattern: "Orbit.API")]
+        let plan = ProjectSetup.plan([.init(field: .repo, pattern: "orbit.api", name: "Acme"), .init(field: .ticket, pattern: "ACME", name: " Acme "),
                                       .init(field: .host, pattern: "x.com", name: "  ")], rules: existing)
-        check(plan == [.init(field: .ticket, pattern: "QDLY", name: "Quiddly")], "plan \(plan)")
+        check(plan == [.init(field: .ticket, pattern: "ACME", name: "Acme")], "plan \(plan)")
 
         let folder = try tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try MeetingStore.open(at: folder.appendingPathComponent("meetings.sqlite"))
         let inde = try store.addProject("Inde")
-        let made = try store.createProjects([.init(field: .repo, pattern: "finq.api", name: "Quiddly"), .init(field: .owner, pattern: "quiddly-com", name: "quiddly"),
+        let made = try store.createProjects([.init(field: .repo, pattern: "orbit.api", name: "Acme"), .init(field: .owner, pattern: "acme-com", name: "acme"),
                                              .init(field: .repo, pattern: "indemeeting", name: "INDE")])
         check(made == 3, "rules created")
         let projects = try store.projects()
-        check(projects.map(\.name).sorted() == ["Inde", "Quiddly"], "one project per name \(projects.map(\.name))")
+        check(projects.map(\.name).sorted() == ["Acme", "Inde"], "one project per name \(projects.map(\.name))")
         let rules = try store.rules()
-        let quiddly = projects.first { $0.name == "Quiddly" }!
-        check(rules.filter { $0.projectID == quiddly.id }.count == 2 && rules.contains { $0.projectID == inde.id && $0.pattern == "indemeeting" }, "rules")
-        check(try store.createProjects([.init(field: .repo, pattern: "finq.api", name: "Quiddly")]) == 0, "again changes nothing")
+        let acme = projects.first { $0.name == "Acme" }!
+        check(rules.filter { $0.projectID == acme.id }.count == 2 && rules.contains { $0.projectID == inde.id && $0.pattern == "indemeeting" }, "rules")
+        check(try store.createProjects([.init(field: .repo, pattern: "orbit.api", name: "Acme")]) == 0, "again changes nothing")
     }),
 ]

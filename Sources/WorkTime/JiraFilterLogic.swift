@@ -117,7 +117,7 @@ enum JiraQuery {
         return Array(choices.prefix(configured.count)) + extra
     }
 
-    /// A name for the filters as they stand, such as "ISD, QDLY · Waiting for customer · Unassigned".
+    /// A name for the filters as they stand, such as "ISD, ACME · Waiting for customer · Unassigned".
     static func summary(_ tab: JiraTab, _ filter: JiraFilter, people: [String: String]) -> String {
         let parts = [filter.project.map { JQLFilter.list($0).joined(separator: ", ") }, filter.statusName.map { JQLFilter.list($0).joined(separator: ", ") },
                      filter.type, filter.priority, filter.assignee.map { JiraAssignee.summary($0, people: people) },

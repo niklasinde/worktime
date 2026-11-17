@@ -27,14 +27,14 @@ private let issueFixture = Data("""
  "created":"2026-11-01T09:00:00.000+0100","updated":"2026-11-10T14:03:00.000+0100",
  "description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Users get "},{"type":"mention","attrs":{"text":"@Bo"}},
    {"type":"text","text":" an error."}]},{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Step one"}]}]}]}]},
- "issuelinks":[{"type":{"inward":"is blocked by","outward":"blocks"},"inwardIssue":{"key":"QDLY-9","fields":{"summary":"Fix SSO","status":{"name":"Review"}}}}],
+ "issuelinks":[{"type":{"inward":"is blocked by","outward":"blocks"},"inwardIssue":{"key":"ACME-9","fields":{"summary":"Fix SSO","status":{"name":"Review"}}}}],
  "comment":{"total":12,"comments":[\((1...12).map { #"{"author":{"displayName":"Person \#($0)"},"created":"2026-11-0\#($0 % 9 + 1)T10:00:00.000+0100","body":"Comment \#($0)"}"# }.joined(separator: ","))]}}}
 """.utf8)
 
 let agentTopicTests: [(name: String, run: () throws -> Void)] = [
     ("topics: Jira keys are typed in any case or pasted as links, and anything else is refused", {
         check(JiraLogic.issueKey(" isd-123 ") == "ISD-123", "lowercase")
-        check(JiraLogic.issueKey("https://acme.atlassian.net/browse/QDLY-456") == "QDLY-456", "browse link")
+        check(JiraLogic.issueKey("https://acme.atlassian.net/browse/ACME-456") == "ACME-456", "browse link")
         check(JiraLogic.issueKey("https://acme.atlassian.net/jira/software/c/projects/ISD/boards/1?selectedIssue=ISD-7") == "ISD-7", "board link")
         for bad in ["", "ISD", "ISD-", "ISD-0", "123-4", "ISD 123", "ISD-12a"] { check(JiraLogic.issueKey(bad) == nil, bad) }
     }),
@@ -100,15 +100,15 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
 
     ("topics: send_to_agent takes a pull request url, a topic key or id, or a unique name", {
         let id = UUID().uuidString
-        let intrum = topic("Support: Intrum UAT", id: id), gaia = topic("Support: Gaia"), old = topic("Old case", archived: true)
-        let topics = [intrum, gaia, old]
+        let intrum = topic("Support: Intrum UAT", id: id), globex = topic("Support: Globex"), old = topic("Old case", archived: true)
+        let topics = [intrum, globex, old]
         let pull = "https://github.com/acme/api/pull/7"
         check(TopicAgents.resolve(pull, topics: topics) == .success(AgentTarget(key: pull, title: "acme/api#7")), "pull request")
         check(TopicAgents.resolve(intrum.key, topics: topics) == .success(AgentTarget(key: intrum.key, title: intrum.name)), "key")
         check(TopicAgents.resolve(id.lowercased(), topics: topics) == .success(AgentTarget(key: intrum.key, title: intrum.name)), "id")
         check(TopicAgents.resolve("support: intrum uat", topics: topics) == .success(AgentTarget(key: intrum.key, title: intrum.name)), "name")
-        check(TopicAgents.resolve("gaia", topics: topics) == .success(AgentTarget(key: gaia.key, title: gaia.name)), "part of a name")
-        check(TopicAgents.resolve("support", topics: topics) == .failure(.ambiguous("support", [intrum.name, gaia.name])), "ambiguous")
+        check(TopicAgents.resolve("globex", topics: topics) == .success(AgentTarget(key: globex.key, title: globex.name)), "part of a name")
+        check(TopicAgents.resolve("support", topics: topics) == .failure(.ambiguous("support", [intrum.name, globex.name])), "ambiguous")
         check(TopicAgents.resolve("old case", topics: topics) == .failure(.archived("Old case")), "archived")
         check(TopicAgents.resolve("nothing", topics: topics) == .failure(.unknown("nothing")), "unknown")
         check(AgentInbox.request(agent: intrum.key, text: "Hi", now: now).map(\.agent) == .success(intrum.key), "a topic key is a valid inbox target")
@@ -128,7 +128,7 @@ let agentTopicTests: [(name: String, run: () throws -> Void)] = [
     ("topics: a Jira issue reads as Markdown with its description, links and last ten comments", {
         let issue = try JiraLogic.parseIssue(issueFixture)
         check(issue.description == "Users get @Bo an error.\n- Step one", issue.description)
-        check(issue.links == [JiraIssue.Link(relation: "is blocked by", key: "QDLY-9", summary: "Fix SSO", status: "Review")], "\(issue.links)")
+        check(issue.links == [JiraIssue.Link(relation: "is blocked by", key: "ACME-9", summary: "Fix SSO", status: "Review")], "\(issue.links)")
         let text = JiraLogic.issueMarkdown(issue, site: "acme.atlassian.net", now: now)
         check(text.hasPrefix("# ISD-123 Intrum UAT login fails\nSupport \u{00B7} Waiting for support \u{00B7} priority High\nhttps://acme.atlassian.net/browse/ISD-123"), text)
         check(text.contains("Assignee: Niklas Inde \u{00B7} Reporter: Anna Berg") && text.contains("## Comments (last 10 of 12)"), text)

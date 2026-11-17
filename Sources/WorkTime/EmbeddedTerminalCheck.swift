@@ -15,7 +15,7 @@ private final class AlwaysKeyWindow: NSWindow {
 @MainActor
 enum TerminalCheck {
     private static let canned = [
-        "\u{1B}[1m\u{1B}[38;5;173m\u{273B} Claude Code\u{1B}[0m  \u{1B}[2m~/git/acme/finq.api\u{1B}[0m",
+        "\u{1B}[1m\u{1B}[38;5;173m\u{273B} Claude Code\u{1B}[0m  \u{1B}[2m~/git/acme/orbit.api\u{1B}[0m",
         "",
         "\u{1B}[2m>\u{1B}[0m Review this pull request. Work read-only.",
         "",
@@ -36,9 +36,9 @@ enum TerminalCheck {
         model.showSample(prs: GitHubPreview.samples, directory: directory)
         model.showSample(selecting: prs[1], detail: detail)
         let terminals = EmbeddedTerminalModel.shared
-        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("git/acme/finq.api")
-        terminals.showSample(prs[1].url, title: "Review \u{00B7} finq.api #2442", directory: home, output: canned, running: true)
-        terminals.showSample(prs[2].url, title: "Failing checks \u{00B7} finq.api #2460", directory: home, output: canned, running: false)
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("git/acme/orbit.api")
+        terminals.showSample(prs[1].url, title: "Review \u{00B7} orbit.api #2442", directory: home, output: canned, running: true)
+        terminals.showSample(prs[2].url, title: "Failing checks \u{00B7} orbit.api #2460", directory: home, output: canned, running: false)
         window.setFrameOrigin(NSPoint(x: 0, y: 40))
         window.makeKeyAndOrderFront(nil)
         for (name, size) in [("1440", NSSize(width: 1440, height: 900)), ("1728", NSSize(width: 1728, height: 960)),

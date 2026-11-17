@@ -3,7 +3,7 @@ import Foundation
 @testable import WorkTime
 #endif
 
-private let work = Workspaces.defaults[0], personal = Workspaces.defaults[1]
+private let work = Workspaces.sample[0], personal = Workspaces.sample[1]
 private let now = Date(timeIntervalSince1970: 1_792_300_000)
 
 private func scratch() throws -> URL {
@@ -135,7 +135,7 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
     }),
     ("assistants: a role works in the workspace's folder, its own, or the one it names", {
         let files = AssistantFiles(folder: URL(fileURLWithPath: "/data/Workspaces"), home: "/Users/me")
-        check(files.workFolder(role("Dev"), workspace: work) == "/Users/me/git/quiddly", "workspace root")
+        check(files.workFolder(role("Dev"), workspace: work) == "/Users/me/git/acme", "workspace root")
         check(files.workFolder(role("Dev"), workspace: personal) == "/Users/me/git/inde", "the other workspace's")
         var own = role("Time reporter")
         own.folder = "own"
@@ -145,8 +145,8 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
     }),
     ("assistants: the prompt is the scope text, the role's instructions and then the workspace's MAIN.md", {
         let developer = Assistants.template("developer")!.role
-        let scope = Assistants.scope(developer, workspace: work, folder: "/Users/me/git/quiddly")
-        check(scope.contains("Developer assistant of the Work workspace") && scope.contains("From Main:") && scope.contains("/Users/me/git/quiddly")
+        let scope = Assistants.scope(developer, workspace: work, folder: "/Users/me/git/acme")
+        check(scope.contains("Developer assistant of the Work workspace") && scope.contains("From Main:") && scope.contains("/Users/me/git/acme")
               && scope.contains("never claim it did") && scope.contains("Your role instructions:") && scope.contains("CLAUDE.md"), scope)
         let composed = WorkspaceInstructions.compose(scope: scope, main: "Answer in Swedish.", extras: [])
         let order = ["Developer assistant", "tests", "Answer in Swedish."].compactMap { composed.range(of: $0)?.lowerBound }
@@ -181,8 +181,8 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         let key = Assistants.key(workspace: "personal", slug: "my:dev")
         check(key == "assistant:personal:my:dev" && Assistants.parse(key: key)?.workspace == "personal" && Assistants.parse(key: key)?.slug == "my:dev", key)
         check(!Assistants.isKey("assistant:") && !Assistants.isKey("assistant:work") && !Assistants.isKey("assistant::x") && !Assistants.isKey("topic:1") && !Assistants.isKey("main:work"), "not keys")
-        let file = WorkspaceFile(workspaces: Workspaces.defaults)
-        var state = AgentState(key: "assistant:personal:developer", title: "Developer", folder: "/Users/me/git/quiddly", status: .idle)
+        let file = WorkspaceFile(workspaces: Workspaces.sample)
+        var state = AgentState(key: "assistant:personal:developer", title: "Developer", folder: "/Users/me/git/acme", status: .idle)
         check(Workspaces.assigned(state, in: file, home: "/Users/me") == "personal", "by its key, not its folder")
         state.key = "assistant:gone:developer"
         check(Workspaces.assigned(state, in: file, home: "/Users/me") == "work", "a deleted workspace falls back to the default")
@@ -196,10 +196,10 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
             return state
         }
         let states = [state("main:work", "Main"), state("assistant:work:support", "Support"), state("assistant:work:developer", "Developer", status: .waiting),
-                      state("assistant:personal:developer", "Developer"), state("https://github.com/quiddly-com/finq.api/pull/7", "finq.api#7")]
-        let groups = Workspaces.groups(states, file: WorkspaceFile(workspaces: Workspaces.defaults), lastUsed: [:], home: "/Users/me")
+                      state("assistant:personal:developer", "Developer"), state("https://github.com/acme-com/orbit.api/pull/7", "orbit.api#7")]
+        let groups = Workspaces.groups(states, file: WorkspaceFile(workspaces: Workspaces.sample), lastUsed: [:], home: "/Users/me")
         check(groups[0].main?.key == "main:work" && groups[0].assistants.map(\.title) == ["Developer", "Support"], "\(groups[0].assistants.map(\.title))")
-        check(groups[0].agents.map(\.title) == ["finq.api#7"] && groups[0].needing == 1, "assistants are not among the agents")
+        check(groups[0].agents.map(\.title) == ["orbit.api#7"] && groups[0].needing == 1, "assistants are not among the agents")
         check(groups[1].assistants.map(\.key) == ["assistant:personal:developer"] && groups[1].all.map(\.key).last == "assistant:personal:developer", "Personal's own")
         let line = AgentOverview.line(AgentState(key: "assistant:work:developer", title: "Developer", status: .idle, kind: "assistant", role: "Developer"), now: now)
         check(line.contains("assistant Developer") && line.contains("assistant:work:developer"), line)
@@ -219,7 +219,7 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         func tools(_ environment: String?) -> [MCPTool] {
             var sources = MCPServer.AgentSources(stateFile: state, inbox: inbox, projects: folder, replyTimeout: 0.2, slack: { _ in { nil } })
             sources.assistants = files
-            sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.defaults) }, environment: { environment })
+            sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.sample) }, environment: { environment })
             return MCPServer.agentTools(.failure(MCPToolError("no db")), sources: sources, now: { now })
         }
         func send(_ environment: String?, _ agent: String, _ args: [String: Any] = [:]) -> String {
@@ -246,7 +246,7 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         files.write("---\nname: Planner\n---\n", workspace: "work", slug: "planner")
         var sources = MCPServer.AgentSources(stateFile: folder.appendingPathComponent("agents.json"), inbox: folder, projects: folder, slack: { _ in { nil } })
         sources.assistants = files
-        sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.defaults) }, environment: { nil })
+        sources.workspaces = MCPServer.WorkspaceSource(file: { WorkspaceFile(workspaces: Workspaces.sample) }, environment: { nil })
         func rule(_ workspace: String, _ args: [String: Any], tool: String = AgentDelegation.tool) -> AgentRule? {
             AgentDelegation.rule(tool: tool, input: args, workspace: workspace, sources: sources)
         }
@@ -259,8 +259,8 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         check(rule("personal", ["agent": "developer", "workspace": "work"]) == nil, "a workspace argument pointing elsewhere")
         check(rule("work", ["agent": "nobody"]) == nil && rule("work", ["agent": "planner"]) == nil && rule("work", ["text": "x"]) == nil, "unknown, broken, none")
         check(rule("work", ["agent": "developer"], tool: "Bash") == nil && rule("nowhere", ["agent": "developer"]) == nil, "only send_to_agent, only a known workspace")
-        let pr = rule("work", ["pr_url": "https://github.com/quiddly-com/finq.api/pull/12"])
-        check(pr?.title != nil && pr?.value.hasPrefix("delegate:work:https://github.com/quiddly-com/finq.api/pull/12") == true, pr?.value ?? "nil")
+        let pr = rule("work", ["pr_url": "https://github.com/acme-com/orbit.api/pull/12"])
+        check(pr?.title != nil && pr?.value.hasPrefix("delegate:work:https://github.com/acme-com/orbit.api/pull/12") == true, pr?.value ?? "nil")
         let saved = AgentRules.decode(AgentRules.encode([developer!]))
         check(saved == [developer!] && saved.first?.title == "Developer" && saved.first?.workspaceName == "Work", "kept with its names")
         check(AgentRules.adding([AgentRule(kind: .delegate, value: developer!.value)], to: saved) == saved, "not added twice")

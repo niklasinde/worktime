@@ -126,7 +126,7 @@ extension MeetingStore {
                                   agenda: row.optionalString(first + 6))
     }
 
-    /// The words a transcript would hold for an entity: `QDLY 9031` for a ticket, `PR 2688` for a pull request.
+    /// The words a transcript would hold for an entity: `ACME 9031` for a ticket, `PR 2688` for a pull request.
     private static func searchText(_ entity: SpottedEntity) -> String? {
         switch entity.kind {
         case .ticket: return entity.key.replacingOccurrences(of: "-", with: " ")

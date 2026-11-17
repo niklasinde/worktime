@@ -1,6 +1,6 @@
 ---
 name: meeting-context
-description: Look up the user's own meetings, tracked work and cached GitHub pull requests with the worktime MCP tools. Use when the user asks about a pull request or review ("what is waiting on me", "my open PRs"), a meeting ("what did we decide in the standup", "who owns the release action item", "what did Anna say about the migration"), what they were working on ("what was I doing this morning", "which branch was I on yesterday"), or how they spent their time ("how many hours on QDLY-8296 this week"), or when that context would make an answer better.
+description: Look up the user's own meetings, tracked work and cached GitHub pull requests with the worktime MCP tools. Use when the user asks about a pull request or review ("what is waiting on me", "my open PRs"), a meeting ("what did we decide in the standup", "who owns the release action item", "what did Anna say about the migration"), what they were working on ("what was I doing this morning", "which branch was I on yesterday"), or how they spent their time ("how many hours on ACME-8296 this week"), or when that context would make an answer better.
 ---
 
 WorkTime runs on the user's Mac and records meetings (transcript with speakers, summary, action items, notes)

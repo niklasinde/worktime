@@ -12,8 +12,8 @@ let jiraFilterTests: [(name: String, run: () throws -> Void)] = [
     ("filters build server-side JQL: projects and statuses together, quoted and escaped, with the tab's own condition", {
         check(JiraQuery.jql(.assigned, JiraFilter()) == JiraTab.assigned.jql, "no filter is the tab")
         check(JiraQuery.jql(.reported, JiraFilter()) == "reporter = currentUser() ORDER BY updated DESC", "reported")
-        let jql = JiraQuery.jql(.watching, JiraFilter(project: "ISD, QDLY", statusName: "Waiting for customer"))
-        check(jql == "(watcher = currentUser()) AND project in (\"ISD\", \"QDLY\") AND status = \"Waiting for customer\" ORDER BY updated DESC", jql)
+        let jql = JiraQuery.jql(.watching, JiraFilter(project: "ISD, ACME", statusName: "Waiting for customer"))
+        check(jql == "(watcher = currentUser()) AND project in (\"ISD\", \"ACME\") AND status = \"Waiting for customer\" ORDER BY updated DESC", jql)
         let odd = JiraQuery.jql(.reported, JiraFilter(statusName: "Say \"hi\" \\ now"))
         check(odd.contains(#"status = "Say \"hi\" \\ now""#), "quotes and backslashes are escaped: \(odd)")
         check(JiraQuery.jql(.reported, JiraFilter(sort: .priority)) == "reporter = currentUser() ORDER BY priority DESC, updated DESC", "priority order")
@@ -27,14 +27,14 @@ let jiraFilterTests: [(name: String, run: () throws -> Void)] = [
         check(JiraQuery.jql(.reported, JiraFilter(assignee: "unassigned")) == "(reporter = currentUser()) AND assignee is EMPTY ORDER BY updated DESC", "other tabs keep theirs")
         check(JiraQuery.replacesAssignee(.assigned, JiraFilter(assignee: "me")) && !JiraQuery.replacesAssignee(.reported, JiraFilter(assignee: "me"))
               && !JiraQuery.replacesAssignee(.assigned, JiraFilter()), "replaces")
-        check(JiraTickets.jql(.assigned, JiraFilter(project: "QDLY", type: "Bug,Task"))
-              == "(assignee = currentUser() AND resolution = Unresolved) AND project = \"QDLY\" AND issuetype in (\"Bug\", \"Task\") ORDER BY updated DESC", "the page's query")
+        check(JiraTickets.jql(.assigned, JiraFilter(project: "ACME", type: "Bug,Task"))
+              == "(assignee = currentUser() AND resolution = Unresolved) AND project = \"ACME\" AND issuetype in (\"Bug\", \"Task\") ORDER BY updated DESC", "the page's query")
     }),
 
     ("the cached list answers unless a filter or the sort changes the query, and jql: runs a query of its own", {
         check(!JiraQuery.needsServer(JiraFilter()) && !JiraQuery.needsServer(JiraFilter(status: .inReview, query: "x")), "chips and text stay local")
         check(JiraQuery.needsServer(JiraFilter(project: "ISD")) && JiraQuery.needsServer(JiraFilter(sort: .priority)) && JiraQuery.needsServer(JiraFilter(assignee: "anyone")), "server")
-        check(JiraQuery.raw("jql: project = QDLY ORDER BY created") == "project = QDLY ORDER BY created", "raw")
+        check(JiraQuery.raw("jql: project = ACME ORDER BY created") == "project = ACME ORDER BY created", "raw")
         check(JiraQuery.raw("  JQL:assignee is EMPTY ") == "assignee is EMPTY", "case and spacing")
         check(JiraQuery.raw("jql:") == nil && JiraQuery.raw("login") == nil, "nothing to run")
         check(JiraQuery.isRaw("jql:") && !JiraQuery.isRaw("jqlx"), "raw mode")
@@ -44,9 +44,9 @@ let jiraFilterTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("choices toggle in a comma list ignoring case, and Anyone stands alone", {
-        check(JiraChoices.toggled(nil, "ISD") == "ISD" && JiraChoices.toggled("ISD", "QDLY") == "ISD, QDLY", "add")
-        check(JiraChoices.toggled("ISD, QDLY", "isd") == "QDLY" && JiraChoices.toggled("ISD", "ISD") == nil, "remove")
-        check(JiraChoices.contains("ISD, QDLY", "qdly") && !JiraChoices.contains(nil, "ISD"), "contains")
+        check(JiraChoices.toggled(nil, "ISD") == "ISD" && JiraChoices.toggled("ISD", "ACME") == "ISD, ACME", "add")
+        check(JiraChoices.toggled("ISD, ACME", "isd") == "ACME" && JiraChoices.toggled("ISD", "ISD") == nil, "remove")
+        check(JiraChoices.contains("ISD, ACME", "acme") && !JiraChoices.contains(nil, "ISD"), "contains")
         check(JiraAssignee.toggled(nil, "anyone") == "anyone" && JiraAssignee.toggled("anyone", "anyone") == nil, "anyone toggles")
         check(JiraAssignee.toggled("me", "unassigned") == "me, unassigned" && JiraAssignee.toggled("anyone", "me") == "me", "others replace anyone")
         check(JiraAssignee.toggled("me, unassigned", "anyone") == "anyone", "anyone clears the rest")
@@ -66,9 +66,9 @@ let jiraFilterTests: [(name: String, run: () throws -> Void)] = [
         let people = JiraTickets.people([ticket("A-1", assignee: "Zed", assigneeID: "z"), ticket("A-2", assignee: "Anna", assigneeID: "a"),
                                          ticket("A-3", assignee: "Anna", assigneeID: "a"), ticket("A-4", assignee: "No id")])
         check(people == [JiraPerson(id: "a", name: "Anna"), JiraPerson(id: "z", name: "Zed")], "unique by id, by name")
-        let options = JiraTickets.Options(projects: ["ISD"], statuses: ["Done"]).including(JiraFilter(project: "qdly", statusName: "Done, Waiting"))
-        check(options.projects == ["ISD", "qdly"] && options.statuses == ["Done", "Waiting"], "\(options)")
-        check(JiraQuery.projectChoices(configured: ["QDLY", "ISD", "QPB"], seen: ["ZED", "ISD"], selected: "abc") == ["QDLY", "ISD", "QPB", "ABC", "ZED"], "project choices")
+        let options = JiraTickets.Options(projects: ["ISD"], statuses: ["Done"]).including(JiraFilter(project: "acme", statusName: "Done, Waiting"))
+        check(options.projects == ["acme", "ISD"] && options.statuses == ["Done", "Waiting"], "\(options)")
+        check(JiraQuery.projectChoices(configured: ["ACME", "ISD", "QPB"], seen: ["ZED", "ISD"], selected: "abc") == ["ACME", "ISD", "QPB", "ABC", "ZED"], "project choices")
         check(JiraQuery.projectChoices(configured: [], seen: ["b", "a"], selected: nil) == ["A", "B"], "without workspaces")
     }),
 
@@ -83,21 +83,21 @@ let jiraFilterTests: [(name: String, run: () throws -> Void)] = [
         check(views.map(\.name) == ["ISD waiting on me", "Mine"], "order")
         check(JiraSavedViews.saving(JiraSavedView(name: "  ", tab: .assigned, filter: JiraFilter()), in: views) == views, "no name, no view")
         check(JiraSavedViews.current(.assigned, JiraFilter(query: "x", project: "ISD", statusName: "Waiting for customer"), in: views)?.name == "ISD waiting on me", "current")
-        check(JiraSavedViews.current(.assigned, JiraFilter(project: "QDLY"), in: views) == nil, "no match")
+        check(JiraSavedViews.current(.assigned, JiraFilter(project: "ACME"), in: views) == nil, "no match")
         check(JiraSavedViews.decode(JiraSavedViews.encode(views)) == views, "round trip")
         check(JiraSavedViews.removing("MINE", from: views).map(\.name) == ["ISD waiting on me"], "removing")
         check(JiraSavedViews.decode(nil).isEmpty && JiraSavedViews.decode(Data("nope".utf8)).isEmpty, "bad file")
     }),
 
     ("the page remembers its tab and filters but not the search text, and an older file without the new keys still loads", {
-        let state = JiraPageState(tab: .reported, filter: JiraFilter(status: .inReview, query: "login", project: "QDLY", assignee: "unassigned", sort: .priority, group: .status))
+        let state = JiraPageState(tab: .reported, filter: JiraFilter(status: .inReview, query: "login", project: "ACME", assignee: "unassigned", sort: .priority, group: .status))
         let back = JiraPageState.decode(JiraPageState.encode(state))
-        check(back?.tab == .reported && back?.filter.query == "" && back?.filter.project == "QDLY" && back?.filter.status == .inReview, "remembered")
+        check(back?.tab == .reported && back?.filter.query == "" && back?.filter.project == "ACME" && back?.filter.status == .inReview, "remembered")
         check(back?.filter.assignee == "unassigned" && back?.filter.sort == .priority && back?.filter.group == .status, "sort and group")
         let old = JiraPageState.decode(Data(#"{"tab":"watching","filter":{"status":"blocked","project":"ISD"}}"#.utf8))
         check(old?.tab == .watching && old?.filter.status == .blocked && old?.filter.project == "ISD" && old?.filter.sort == .updated && old?.filter.group == JiraGrouping.none, "old file")
         check(JiraPageState.decode(nil) == nil && JiraPageState.decode(Data("nope".utf8)) == nil, "bad file")
-        check(JiraQuery.summary(.assigned, JiraFilter(project: "ISD, QDLY", statusName: "Waiting", assignee: "unassigned"), people: [:]) == "ISD, QDLY \u{00B7} Waiting \u{00B7} Unassigned", "name")
+        check(JiraQuery.summary(.assigned, JiraFilter(project: "ISD, ACME", statusName: "Waiting", assignee: "unassigned"), people: [:]) == "ISD, ACME \u{00B7} Waiting \u{00B7} Unassigned", "name")
         check(JiraQuery.summary(.reported, JiraFilter(), people: [:]) == "Reported", "bare name")
     }),
 ]

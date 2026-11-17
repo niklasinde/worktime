@@ -48,7 +48,7 @@ enum ProjectPreview {
         window.orderOut(nil)
     }
 
-    /// The shape of a real day: finq.api work without a rule, a few blocks the AI guessed as the only project it knew.
+    /// The shape of a real day: orbit.api work without a rule, a few blocks the AI guessed as the only project it knew.
     private static func write(to store: MeetingStore) throws {
         let papercut = try store.addProject("Papercut")
         let waste = try store.addProject("Waste")
@@ -65,13 +65,13 @@ enum ProjectPreview {
                                               key: key, projectID: nil, aiProjectID: guess))
             cursor += minutes
         }
-        let api = "NI/QDLY-8315-reminder-fees"
-        try add(33, app: "PyCharm", repo: "finq.api", branch: api)
-        for _ in 0..<8 { try add(1, app: "PyCharm", repo: "finq.api", branch: api, guess: papercut.id) }
-        try add(40, app: "PyCharm", repo: "finq.api", branch: "develop")
-        try add(18, app: "Safari", title: "Pull request", url: "github.com/quiddly-com/finq.api/pull/2094", repo: "finq.api",
-                branch: "NI/pr-2094-review", guess: papercut.id, owner: "quiddly-com")
-        try add(26, app: "Safari", url: "quiddly.atlassian.net/browse/ISD-13089")
+        let api = "NI/ACME-8315-reminder-fees"
+        try add(33, app: "PyCharm", repo: "orbit.api", branch: api)
+        for _ in 0..<8 { try add(1, app: "PyCharm", repo: "orbit.api", branch: api, guess: papercut.id) }
+        try add(40, app: "PyCharm", repo: "orbit.api", branch: "develop")
+        try add(18, app: "Safari", title: "Pull request", url: "github.com/acme-com/orbit.api/pull/2094", repo: "orbit.api",
+                branch: "NI/pr-2094-review", guess: papercut.id, owner: "acme-com")
+        try add(26, app: "Safari", url: "acme.atlassian.net/browse/ISD-13089")
         try add(35, app: "Xcode", repo: "indemeeting", branch: "main")
         try add(22, app: "Safari", title: "Invoices", url: "papercut.work/invoices", branch: "NI/papercut-invoices")
         try add(15, app: "Safari", url: "www.youtube.com/watch")

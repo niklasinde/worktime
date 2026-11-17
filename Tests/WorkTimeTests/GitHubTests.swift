@@ -5,7 +5,7 @@ import Foundation
 
 private let now = Date(timeIntervalSince1970: 1_792_300_000)
 
-private func node(number: Int = 1, title: String = "QDLY-1: Title", repo: String = "acme/api", state: String = "OPEN", merged: Bool = false,
+private func node(number: Int = 1, title: String = "ACME-1: Title", repo: String = "acme/api", state: String = "OPEN", merged: Bool = false,
                   draft: Bool = false, updated: String = "2026-10-19T12:58:21Z", review: String = "null", rollup: String = #"{"state":"SUCCESS"}"#,
                   author: String = #"{"login":"niklas"}"#, labels: String = #"[{"name":"bug"}]"#) -> String {
     """
@@ -31,14 +31,14 @@ let githubTests: [(name: String, run: () throws -> Void)] = [
         let rows = try GitHubLogic.parse(response([node(number: 7, review: "APPROVED", labels: #"[{"name":"bug"},{"name":"ui"}]"#)]))
         check(rows.count == 1, "one row")
         let row = rows[0]
-        check(row.number == 7 && row.repo == "acme/api" && row.title == "QDLY-1: Title", "identity")
+        check(row.number == 7 && row.repo == "acme/api" && row.title == "ACME-1: Title", "identity")
         check(row.url == "https://github.com/acme/api/pull/7", "url")
         check(row.state == .open && !row.isDraft, "state")
         check(row.review == .approved && row.checks == .passed, "review and checks")
         check(row.author == "niklas" && row.additions == 10 && row.deletions == 2 && row.comments == 3, "numbers")
         check(row.labels == ["bug", "ui"], "labels")
         check(row.updated == Date(timeIntervalSince1970: 1_792_414_701), "updated \(row.updated.timeIntervalSince1970)")
-        check(row.ticket == "QDLY-1", "ticket")
+        check(row.ticket == "ACME-1", "ticket")
     }),
 
     ("a pull request can be merged, closed or a draft, and have no rollup, review or author", {
@@ -177,7 +177,7 @@ let githubTests: [(name: String, run: () throws -> Void)] = [
     ("filters match a bare or listed repository, the author or me, drafts, checks, review decision and waiting on me", {
         func row(_ number: Int, repo: String, author: String, draft: Bool = false, checks: GitHubPR.Checks = .none,
                  review: GitHubPR.Review? = nil, requested: [String] = []) -> GitHubPR {
-            GitHubPR(url: "https://github.com/\(repo)/pull/\(number)", number: number, title: "QDLY-\(number): Change", repo: repo,
+            GitHubPR(url: "https://github.com/\(repo)/pull/\(number)", number: number, title: "ACME-\(number): Change", repo: repo,
                      isDraft: draft, updated: now.addingTimeInterval(Double(-number)), review: review, checks: checks, author: author,
                      activity: GitHubActivity(me: "niklas", requested: requested))
         }
@@ -193,7 +193,7 @@ let githubTests: [(name: String, run: () throws -> Void)] = [
         check(numbers(.init(checks: .failed)) == [1] && numbers(.init(checks: .running)) == [2], "checks")
         check(numbers(.init(review: .changesRequested)) == [3], "review decision")
         check(numbers(.init(waitingOnMe: true)) == [2] && numbers(.init(waitingOnMe: false)) == [1, 3], "waiting on me")
-        check(numbers(.init(query: "qdly-3")) == [3] && numbers(.init(query: "other/api#2")) == [2], "ticket key and owner/repo#n")
+        check(numbers(.init(query: "acme-3")) == [3] && numbers(.init(query: "other/api#2")) == [2], "ticket key and owner/repo#n")
         check(numbers(.init(repo: "api", author: "elin", checks: .running)) == [2], "combined")
         let duplicate = row(2, repo: "other/api", author: "elin")
         check(GitHubLogic.unique([.created: [all[0]], .reviewRequested: [duplicate, all[2]], .mentioned: [all[1]]]).map(\.number) == [1, 2, 3],
@@ -213,8 +213,8 @@ let githubTests: [(name: String, run: () throws -> Void)] = [
     }),
 
     ("a ticket key only counts when the title starts with it", {
-        check(pr(1, title: "QDLY-8315: Store the number").ticket == "QDLY-8315", "starts with key")
-        check(pr(1, title: "FIX(QDLY-8691): Convert").ticket == nil, "key inside")
+        check(pr(1, title: "ACME-8315: Store the number").ticket == "ACME-8315", "starts with key")
+        check(pr(1, title: "FIX(ACME-8691): Convert").ticket == nil, "key inside")
         check(pr(1, title: "[Snyk] Upgrade").ticket == nil, "no key")
     }),
 
@@ -235,7 +235,7 @@ let githubTests: [(name: String, run: () throws -> Void)] = [
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try MeetingStore.open(at: folder.appendingPathComponent("meetings.sqlite"))
         check(try store.githubPRs().isEmpty && (try store.githubFetched()) == nil, "starts empty")
-        var full = pr(1, title: "QDLY-1: One", updated: 1_792_300_000, author: nil)
+        var full = pr(1, title: "ACME-1: One", updated: 1_792_300_000, author: nil)
         full.isDraft = true
         full.review = .changesRequested
         full.additions = 5
