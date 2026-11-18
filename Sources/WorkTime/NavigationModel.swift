@@ -1,4 +1,6 @@
+import AppKit
 import Combine
+import SwiftUI
 import Foundation
 
 /// Follows where the main window is and walks back and forth through it. Each page keeps its own selection; this reads them
@@ -9,6 +11,7 @@ final class NavigationModel: ObservableObject {
     private let library: RecordingLibrary
     private var restoring = false
     private var subscriptions: [AnyCancellable] = []
+    private var mouseMonitor: Any?
 
     init(library: RecordingLibrary) {
         self.library = library
@@ -20,6 +23,23 @@ final class NavigationModel: ObservableObject {
             AgentHub.shared.$selected.map { _ in }.eraseToAnyPublisher(),
         ]
         subscriptions = [Publishers.MergeMany(changes).receive(on: DispatchQueue.main).sink { [weak self] in self?.record() }]
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.handle(mouseButton: event) ?? event }
+        }
+    }
+
+    deinit {
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+    }
+
+    private func handle(mouseButton event: NSEvent) -> NSEvent? {
+        guard event.window?.contentViewController is NSHostingController<MainView> else { return event }
+        switch event.buttonNumber {
+        case 3 where canGoBack: back()
+        case 4 where canGoForward: forward()
+        default: return event
+        }
+        return nil
     }
 
     var canGoBack: Bool { history.canGoBack }
