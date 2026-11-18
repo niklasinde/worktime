@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { missingFolderError } from "./folder.js";
 import { query, type HookCallback, type PermissionResult, type Query } from "@anthropic-ai/claude-agent-sdk";
-import { chromeResultStatus, chromeServerStatus, isChromeTool } from "./chrome.js";
+import { ChromeTabs, chromeResultStatus, chromeServerStatus, isChromeTool } from "./chrome.js";
 import { mcpServers, sessionOptions, type PromptOptions } from "./options.js";
 import { parseMode, preToolDecision, selfReport, type Decision, type Mode, type RoleTier } from "./permissions.js";
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
@@ -21,6 +21,7 @@ type Input =
   | { type: "mode"; mode: string }
   | { type: "interrupt" }
   | { type: "rules"; rules: unknown }
+  | { type: "chrome_hosts"; hosts: string[] }
   | { type: "revoke_session"; key?: string }
   | { type: "allow_session"; key: string };
 
@@ -28,7 +29,10 @@ const model = process.env.WORKTIME_AGENT_MODEL ?? "claude-opus-5-5";
 /// Tool calls allowed without asking, with the rule that allowed them when it was one of the user's.
 const autoAllowed = new Map<string, string | undefined>();
 /// Claude in Chrome calls waiting for their result, which tells whether the extension is connected.
-const chromeCalls = new Set<string>();
+const chromeCalls = new Map<string, { tool: string; input: Record<string, unknown> }>();
+const chromeTabs = new ChromeTabs();
+/// The sites the user allowed Claude in Chrome on, as the app last sent them.
+let chromeHosts: string[] = [];
 let rules: Rule[] = [];
 /// The calls the user allowed for the rest of this session, by `sessionKey`.
 const sessionAllowed = new Set<string>();
@@ -87,7 +91,7 @@ async function decide(tool: string, input: Record<string, unknown>, options: Pro
   const check = tool === delegateTool && hasDelegateRules(rules, options.delegateFrom);
   const delegated = check ? matchDelegate(rules, options.delegateFrom, await resolveTarget(input)) : undefined;
   const listed = options.allowedMcpTools && [...options.allowedMcpTools, ...roleAdded];
-  return preToolDecision(tool, input, options.cwd, rules, mode, listed, delegated, sessionAllowed, options.allowAllChrome === true);
+  return preToolDecision(tool, input, options.cwd, rules, mode, listed, delegated, sessionAllowed, options.allowAllChrome === true, chromeTabs.hostFor(tool, input), chromeHosts);
 }
 
 /// Asks the user about a tool the assistant's list leaves out, and waits: the turn goes on as soon as the answer comes.
@@ -104,7 +108,7 @@ function ask(tool: string, input: Record<string, unknown>, cwd: string, toolUseI
     const id = String(++nextPermission);
     pending.set(id, resolve);
     sessionKeys.set(id, isSessionAllowable(tool) ? sessionKey(tool, input) : undefined);
-    send({ type: "permission_request", id, toolUseId, tool, input, offer: suggestRules(tool, input, cwd) });
+    send({ type: "permission_request", id, toolUseId, tool, input, offer: suggestRules(tool, input, cwd), site: isChromeTool(tool) ? chromeTabs.hostFor(tool, input) : undefined });
   });
 }
 
@@ -183,7 +187,7 @@ function forward(message: any, model: string) {
         if (block.type === "text" && block.text && !message.parent_tool_use_id) send({ type: "text", text: block.text });
         if (block.type === "tool_use") {
           send({ type: "tool_use", id: block.id, tool: block.name, input: block.input ?? {} });
-          if (isChromeTool(block.name)) chromeCalls.add(block.id);
+          if (isChromeTool(block.name)) chromeCalls.set(block.id, { tool: block.name, input: block.input ?? {} });
         }
       }
       if (!message.parent_tool_use_id && message.message?.id && message.message.id !== reportedTurn) {
@@ -200,7 +204,10 @@ function forward(message: any, model: string) {
             type: "tool_result", id: block.tool_use_id, content: resultText(block.content), isError: block.is_error === true,
             auto: autoAllowed.delete(block.tool_use_id), rule,
           });
-          const chrome = chromeCalls.delete(block.tool_use_id) ? chromeResultStatus(block.is_error === true, resultText(block.content)) : undefined;
+          const call = chromeCalls.get(block.tool_use_id);
+          chromeCalls.delete(block.tool_use_id);
+          if (call && block.is_error !== true) chromeTabs.record(call.tool, call.input, resultText(block.content));
+          const chrome = call ? chromeResultStatus(block.is_error === true, resultText(block.content)) : undefined;
           if (chrome) send({ type: "chrome", ...chrome });
         }
       }
@@ -297,6 +304,7 @@ function handle(line: string) {
   }
   switch (input.type) {
     case "prompt":
+      chromeHosts = input.allowedChromeHosts ?? chromeHosts;
       void run(input);
       break;
     case "message": {
@@ -333,6 +341,9 @@ function handle(line: string) {
       break;
     case "rules":
       rules = parseRules(input.rules);
+      break;
+    case "chrome_hosts":
+      chromeHosts = input.hosts;
       break;
     case "allow_session":
       if (isSessionAllowable(input.key) && !sessionAllowed.has(input.key)) {

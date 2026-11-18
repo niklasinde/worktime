@@ -153,6 +153,7 @@ final class AgentModel: ObservableObject {
     private var client: AgentClient?
     private var lastModel: String?
     private var rulesChanged: AnyCancellable?
+    private var chromeSitesChanged: AnyCancellable?
 
     /// Replaced by the debug preview, so it never writes the app's own settings.
     static var defaults = UserDefaults.standard
@@ -166,6 +167,7 @@ final class AgentModel: ObservableObject {
         history = AgentSessionStore.list(for: historyKey)
         loadMode()
         rulesChanged = AgentRuleStore.shared.$rules.dropFirst().sink { [weak self] in self?.sendRules($0) }
+        chromeSitesChanged = AgentChromeSiteStore.shared.$hosts.dropFirst().sink { [weak self] in self?.client?.send(.chromeHosts($0)) }
         if let main, let session = WorkspaceDefaults.session(main.id) {
             sessionID = session
             remember(session)
@@ -861,6 +863,7 @@ final class AgentModel: ObservableObject {
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
                             allowAllChrome: Self.defaults.bool(forKey: AgentLogic.chromeAllowAllKey),
+                            allowedChromeHosts: AgentChromeSiteStore.shared.hosts,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
                             delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace, locations: locations),
                             roleWaitSeconds: routine != nil ? RoleTools.waitSeconds() : nil))
@@ -869,12 +872,14 @@ final class AgentModel: ObservableObject {
 
     /// `always` first saves the rules the card offers, so this and later calls of every agent that match them run without asking.
     /// `session` allows the same tool for the rest of this session only.
-    func answer(_ item: AgentItem, allow: Bool, always: Bool = false, session: Bool = false, add: Bool = false) {
+    /// `site` first saves the website a Claude in Chrome card names, so its calls on that site run without asking.
+    func answer(_ item: AgentItem, allow: Bool, always: Bool = false, session: Bool = false, add: Bool = false, site: Bool = false) {
         guard let id = AgentLogic.permissionID(of: item.id) else { return }
         var role: AgentRule?
         if case .permission(_, _, _, let offer, nil) = item.kind {
             role = RoleTools.role(in: offer)
             if always, role == nil { AgentRuleStore.shared.add(offer) }
+            if site, let host = AgentChromeSites.site(in: offer) { AgentChromeSiteStore.shared.add(host) }
         }
         var added = false
         if add, let role {
@@ -1155,13 +1160,27 @@ final class AgentRuleStore: ObservableObject {
     }
 
     func add(_ new: [AgentRule]) {
-        let added = AgentRules.adding(new, to: rules)
+        let added = AgentRules.adding(new.filter { $0.kind != .site }, to: rules)
         if added != rules { rules = added }
     }
 
     func remove(_ rule: AgentRule) { rules.removeAll { $0 == rule } }
 
     func removeAll() { rules = [] }
+}
+
+/// The websites Claude in Chrome may act on without asking, for every agent.
+@MainActor
+final class AgentChromeSiteStore: ObservableObject {
+    static let shared = AgentChromeSiteStore()
+
+    @Published private(set) var hosts = AgentModel.defaults.stringArray(forKey: AgentChromeSites.key) ?? [] {
+        didSet { AgentModel.defaults.set(hosts, forKey: AgentChromeSites.key) }
+    }
+
+    func add(_ host: String) { hosts = AgentChromeSites.adding(host, to: hosts) }
+
+    func remove(_ host: String) { hosts.removeAll { $0 == host } }
 }
 
 /// The session history of every agent, in the app's settings.

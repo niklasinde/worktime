@@ -138,7 +138,7 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
     ("agent: requests encode as single JSON lines", {
         let prompt = AgentRequest.prompt(text: "hi\nthere", cwd: "/repo", sessionID: "s1").line
         check(prompt.hasSuffix("\n") && prompt.dropLast().contains("\n") == false, "one line")
-        check(prompt == #"{"cwd":"/repo","permissionMode":"default","sessionId":"s1","text":"hi\nthere","type":"prompt"}"# + "\n", "prompt \(prompt)")
+        check(prompt == #"{"allowedChromeHosts":[],"cwd":"/repo","permissionMode":"default","sessionId":"s1","text":"hi\nthere","type":"prompt"}"# + "\n", "prompt \(prompt)")
         check(!AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil).line.contains("sessionId"), "no session on a new one")
         check(AgentRequest.permission(id: "4", allow: true, session: true).line == #"{"allow":true,"id":"4","session":true,"type":"permission"}"# + "\n", "permission for the session")
         check(AgentRules.sessionOffered(tool: "mcp__claude-in-chrome__javascript_tool"), "a Chrome tool can be allowed for the session")
@@ -159,6 +159,23 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
         check(AgentRules.label(AgentRule(kind: .tool, value: click)) == AgentRules.toolLabel(click), "listed in Settings")
         check(AgentRules.chromeChoices.allSatisfy { $0.hasPrefix("mcp__claude-in-chrome__") } && Set(AgentRules.chromeChoices).count == AgentRules.chromeChoices.count,
               "choices are Chrome's and unique")
+    }),
+
+    ("agent: allowed Chrome sites are typed as hosts, sent with the prompt, and offered on a Chrome card", {
+        check(AgentChromeSites.host(" https://Docs.Example.com:8080/a?b ") == "docs.example.com", "scheme, port and path dropped")
+        check(AgentChromeSites.host("*.example.com") == "*.example.com" && AgentChromeSites.host("localhost") == "localhost", "wildcard and single label kept")
+        for bad in ["", "*.", "a b", "exa_mple.com", "-a.com", "*example.com"] { check(AgentChromeSites.host(bad) == nil, "refused: \(bad)") }
+        check(AgentChromeSites.adding("a.com", to: ["a.com"]) == ["a.com"] && AgentChromeSites.adding("b.com", to: ["a.com"]) == ["a.com", "b.com"], "no duplicates")
+        check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, allowedChromeHosts: ["a.com", "*.b.com"]).line.contains(#""allowedChromeHosts":["a.com","*.b.com"]"#), "sent")
+        check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil).line.contains(#""allowedChromeHosts":[]"#), "an empty list clears the sidecar's")
+        check(AgentRequest.chromeHosts(["a.com"]).line == #"{"hosts":["a.com"],"type":"chrome_hosts"}"# + "\n", "update line")
+        let line = #"{"type":"permission_request","id":"1","tool":"mcp__claude-in-chrome__computer","input":{"action":"type","tabId":3},"offer":[{"kind":"tool","value":"mcp__claude-in-chrome__computer:type"}],"site":"a.com"}"#
+        guard case .permissionRequest(_, _, _, _, let offer, _)? = AgentEvent.decode(line, cwd: cwd) else { return check(false, "decodes") }
+        check(AgentChromeSites.site(in: offer) == "a.com" && offer.first?.kind == .tool, "site offered after the tool rule")
+        check(AgentRules.offer(offer) == "Always allow " + AgentRules.toolLabel("mcp__claude-in-chrome__computer:type"), "Always allow line unchanged")
+        let none = line.replacingOccurrences(of: #","site":"a.com""#, with: "")
+        guard case .permissionRequest(_, _, _, _, let plain, _)? = AgentEvent.decode(none, cwd: cwd) else { return check(false, "decodes") }
+        check(AgentChromeSites.site(in: plain) == nil, "no site, no button")
     }),
 
     ("agent: Claude in Chrome is off unless saved for the agent, sent with the prompt, and its connection decoded", {

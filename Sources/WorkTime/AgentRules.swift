@@ -6,6 +6,8 @@ struct AgentRule: Codable, Hashable {
         case bash, edits, tool, delegate
         /// Not a saved rule: the question about a tool the assistant's list leaves out. `value` is the tool, `title` its tier.
         case role
+        /// Not a saved rule: the site a Claude in Chrome call acts on, offered as Allow for this site. `value` is the host.
+        case site
     }
 
     let kind: Kind
@@ -68,6 +70,7 @@ enum AgentRules {
         case .tool: return toolLabel(rule.value)
         case .delegate: return rule.delegateLabel
         case .role: return "Add " + toolLabel(rule.value) + " to the assistant\u{2019}s tools"
+        case .site: return "Allow " + rule.value
         }
     }
 
@@ -135,7 +138,7 @@ enum AgentRules {
         case .edits: return "Always allow edits in " + abbreviated(first.value)
         case .tool: return "Always allow " + toolLabel(first.value)
         case .delegate: return first.delegateLabel + " without asking"
-        case .role: return nil
+        case .role, .site: return nil
         }
     }
 
@@ -177,6 +180,29 @@ enum AgentRules {
     private static func abbreviated(_ path: String, home: String = NSHomeDirectory()) -> String {
         path == home ? "~" : path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
+}
+
+/// The websites Claude in Chrome may act on without asking: exact hosts, or `*.example.com` for the subdomains of one.
+enum AgentChromeSites {
+    static let key = "agentChromeAllowedHosts"
+
+    /// The host a site was typed or offered as: no scheme, path or port, lower case; nil when it is not one.
+    static func host(_ text: String) -> String? {
+        var site = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if let scheme = site.range(of: "://") { site = String(site[scheme.upperBound...]) }
+        site = String(site.prefix { !"/?#".contains($0) })
+        if let port = site.lastIndex(of: ":"), site[site.index(after: port)...].allSatisfy(\.isNumber) { site = String(site[..<port]) }
+        let name = site.hasPrefix("*.") ? String(site.dropFirst(2)) : site
+        guard name.wholeMatch(of: #/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*/#) != nil else { return nil }
+        return site
+    }
+
+    static func adding(_ new: String, to hosts: [String]) -> [String] {
+        hosts.contains(new) ? hosts : hosts + [new]
+    }
+
+    /// The site a permission card offers to allow.
+    static func site(in offer: [AgentRule]) -> String? { offer.first { $0.kind == .site }?.value }
 }
 
 /// Main's send_to_agent, which is asked about unless the user allowed Main of that workspace to message that agent.

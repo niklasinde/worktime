@@ -787,6 +787,7 @@ struct AgentPanel: View {
     private func row(_ item: AgentItem) -> AgentItemRow {
         AgentItemRow(item: item, folder: model.folder, answer: { model.answer(item, allow: $0, always: $1, session: $2) },
                      addTool: { model.answer(item, allow: true, add: true) },
+                     allowSite: { model.answer(item, allow: true, site: true) },
                      move: { if let folder = $0 { model.move(to: folder) } else { model.changeFolder() } })
     }
 
@@ -968,6 +969,8 @@ struct AgentItemRow: View {
     let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
     /// Puts the tool a permission card asks about on the assistant's list.
     var addTool: () -> Void = {}
+    /// Allows the website a Claude in Chrome card names, for every agent.
+    var allowSite: () -> Void = {}
     /// Moves the agent to the folder, or asks for one when nil.
     let move: (String?) -> Void
     @Environment(\.transcriptTypography) private var typography
@@ -1019,7 +1022,7 @@ struct AgentItemRow: View {
             AgentToolRow(name: name, summary: summary, detail: detail, result: result, isError: isError, auto: auto, rule: rule,
                          decision: item.decision, repeats: item.repeats)
         case .permission(let tool, let summary, let detail, let offer, let allowed):
-            AgentPermissionRow(tool: tool, summary: summary, detail: detail, offer: offer, allowed: allowed, answer: answer, addTool: addTool)
+            AgentPermissionRow(tool: tool, summary: summary, detail: detail, offer: offer, allowed: allowed, answer: answer, addTool: addTool, allowSite: allowSite)
         case .status(let text):
             Text(text).font(.caption).foregroundStyle(.secondary)
         case .error(let text):
@@ -1135,6 +1138,7 @@ private struct AgentPermissionRow: View {
     let allowed: Bool?
     let answer: (_ allow: Bool, _ always: Bool, _ session: Bool) -> Void
     let addTool: () -> Void
+    let allowSite: () -> Void
 
     private var role: AgentRule? { RoleTools.role(in: offer) }
 
@@ -1173,9 +1177,13 @@ private struct AgentPermissionRow: View {
                         Button("Allow for this session") { answer(true, false, true) }
                             .help("Runs this tool without asking until the agent is restarted")
                     }
-                    if role == nil, !offer.isEmpty {
+                    if role == nil, offer.contains(where: { $0.kind != .site }) {
                         Button(AgentRules.offerButton(offer)) { answer(true, true, false) }
                             .help("Saved in Settings \u{203A} Agent, for every agent")
+                    }
+                    if let site = AgentChromeSites.site(in: offer) {
+                        Button("Allow for \(site)") { allowSite() }
+                            .help("Claude in Chrome runs without asking on this website, for every agent. Saved in Settings \u{203A} Agent")
                     }
                     Button("Deny") { answer(false, false, false) }
                 }
@@ -1293,6 +1301,7 @@ struct AgentSettingsSection: View {
             SettingsRow("Allow all Claude in Chrome actions", detail: "Lets agents click, type, navigate and run scripts in your real Chrome without asking, in every permission mode. Applies to all agents.") {
                 Toggle("Allow all Claude in Chrome actions", isOn: $chromeAllowAll).labelsHidden()
             }
+            ChromeSitesRows()
         }
         transcriptSection
         SettingsSection("Notifications", footer: "A system notification when an agent you are not looking at needs approval for a call or ends on a question. "
@@ -1410,6 +1419,38 @@ struct AgentSettingsSection: View {
 }
 
 /// Adds a rule by hand: a command prefix typed in, edits in a folder, or one of WorkTime's tools.
+/// The websites Claude in Chrome may act on without asking, with Remove for each and a field to add one.
+private struct ChromeSitesRows: View {
+    @ObservedObject private var store = AgentChromeSiteStore.shared
+    @State private var text = ""
+
+    private var typed: String? { AgentChromeSites.host(text) }
+
+    var body: some View {
+        ForEach(store.hosts, id: \.self) { host in
+            Divider().padding(.leading, 14)
+            SettingsRow("Allowed site \(host)", detail: host.hasPrefix("*.") ? "Its subdomains, not the site itself" : nil) {
+                Button("Remove") { store.remove(host) }
+            }
+        }
+        Divider().padding(.leading, 14)
+        HStack {
+            TextField("Allow a site", text: $text, prompt: Text("example.com or *.example.com"))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(add)
+            Button("Add", action: add).disabled(typed == nil)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func add() {
+        guard let typed else { return }
+        store.add(typed)
+        text = ""
+    }
+}
+
 private struct AgentAddRuleRow: View {
     @ObservedObject var store: AgentRuleStore
     let builtIn: AgentBuiltIn?

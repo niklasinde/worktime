@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { chromeResultStatus, chromeServerStatus, isChromeRead, isChromeTool } from "./chrome.js";
+import { ChromeTabs, chromeResultStatus, chromeServerStatus, hostOf, isChromeRead, isChromeTool, siteAllowed } from "./chrome.js";
 import { sessionOptions } from "./options.js";
 import { modes, preToolDecision } from "./permissions.js";
 import { matchRules, suggestRules } from "./rules.js";
@@ -76,4 +76,47 @@ test("the connection is read from the server list and from tool errors that are 
   assert.deepEqual(chromeResultStatus(true, offline), { connected: false, message: offline });
   assert.equal(chromeResultStatus(true, "The user denied this tool call."), undefined);
   assert.equal(chromeResultStatus(true, "Element ref_12 not found"), undefined);
+});
+
+test("hosts are read from URLs and matched exactly or by a listed wildcard", () => {
+  assert.equal(hostOf("https://Docs.Example.com/a?b=1"), "docs.example.com");
+  assert.equal(hostOf("example.com/path"), "example.com");
+  for (const bad of ["back", "forward", "", "about:blank", "chrome://settings", undefined, 3]) assert.equal(hostOf(bad), undefined, String(bad));
+  assert.ok(siteAllowed("example.com", ["example.com"]));
+  assert.ok(!siteAllowed("docs.example.com", ["example.com"]) && !siteAllowed("evil-example.com", ["example.com"]));
+  assert.ok(siteAllowed("docs.example.com", ["*.example.com"]) && !siteAllowed("example.com", ["*.example.com"]) && !siteAllowed("badexample.com", ["*.example.com"]));
+  assert.ok(!siteAllowed(undefined, ["example.com"]) && !siteAllowed("example.com", []));
+});
+
+test("tab hosts come from navigate and the tab lists only, never from page text", () => {
+  const tabs = new ChromeTabs();
+  tabs.record(chrome("tabs_context_mcp"), {}, 'Available tabs:\n- tabId 12: "Home" (https://app.example.com/home)\n- tabId 13: "New" (about:blank)');
+  assert.equal(tabs.hostFor(chrome("computer"), { tabId: 12 }), "app.example.com");
+  assert.equal(tabs.hostFor(chrome("computer"), { tabId: 13 }), undefined);
+  tabs.record(chrome("navigate"), { tabId: 13, url: "github.com" }, "Navigated to https://github.com/");
+  assert.equal(tabs.hostFor(chrome("computer"), { tabId: 13 }), "github.com");
+  tabs.record(chrome("navigate"), { tabId: 12, url: "short.example" }, "Navigated to https://long.example/landing");
+  assert.equal(tabs.hostFor(chrome("computer"), { tabId: 12 }), "long.example");
+  tabs.record(chrome("get_page_text"), { tabId: 12 }, "tabId 12 https://evil.test/");
+  tabs.record(chrome("read_page"), { tabId: 14 }, "tabId 14 https://evil.test/");
+  assert.equal(tabs.hostFor(chrome("computer"), { tabId: 12 }), "long.example");
+  assert.equal(tabs.hostFor(chrome("computer"), { tabId: 14 }), undefined);
+  assert.equal(tabs.hostFor(chrome("navigate"), { tabId: 12, url: "https://other.test/x" }), "other.test");
+  assert.equal(tabs.hostFor(chrome("navigate"), { tabId: 12, url: "back" }), undefined);
+  assert.equal(tabs.hostFor(chrome("computer"), {}), undefined);
+});
+
+test("a call on an allowed site runs, an unknown or other site asks, and Chrome reads keep their place", () => {
+  const allowed = ["example.com", "*.corp.test"];
+  const decide = (tool: string, input: Record<string, unknown>, mode: (typeof modes)[number], host?: string) =>
+    preToolDecision(tool, input, "/repo", [], mode, undefined, undefined, new Set(), false, host, allowed);
+  for (const mode of modes) {
+    assert.deepEqual(decide(chrome("computer"), { action: "left_click" }, mode, "example.com"), { kind: "allow", rule: "Allowed site example.com" }, mode);
+    assert.equal(decide(chrome("navigate"), {}, mode, "a.corp.test").kind, "allow");
+    assert.deepEqual(decide(chrome("computer"), { action: "type" }, mode, "other.test"), { kind: "ask" });
+    assert.deepEqual(decide(chrome("computer"), { action: "type" }, mode), { kind: "ask" });
+    assert.deepEqual(decide(chrome("read_page"), {}, mode, "other.test"), { kind: "allow", readOnly: true });
+  }
+  const role = ["mcp__worktime__x"];
+  assert.equal(preToolDecision(chrome("computer"), { action: "type" }, "/repo", [], "default", role, undefined, new Set(), false, "example.com", allowed).kind, "allow");
 });

@@ -49,7 +49,8 @@ enum AgentEvent: Equatable {
                 ? [RoleTools.offer(tool: string("tool"), tier: RoleTools.Tier(rawValue: string("tier")) ?? .read)] : []
             return .permissionRequest(id: string("id"), tool: string("tool"), summary: AgentLogic.summary(tool: string("tool"), input: input, cwd: cwd),
                                       detail: AgentLogic.detail(tool: string("tool"), input: input),
-                                      offer: role + (object["offer"] as? [Any] ?? []).compactMap(AgentRule.init),
+                                      offer: role + (object["offer"] as? [Any] ?? []).compactMap(AgentRule.init)
+                                          + ((object["site"] as? String).map { [AgentRule(kind: .site, value: $0)] } ?? []),
                                       toolUse: (object["toolUseId"] as? String).flatMap { $0.isEmpty ? nil : $0 })
         case "result":
             return .result(sessionID: object["sessionId"] as? String, isError: object["isError"] as? Bool ?? false, text: string("text"),
@@ -131,7 +132,7 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
 /// What the window sends the sidecar, one JSON object per line.
 enum AgentRequest {
     case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
-                chrome: Bool = false, allowAllChrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
+                chrome: Bool = false, allowAllChrome: Bool = false, allowedChromeHosts: [String] = [], fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
                 instructions: [String: String]? = nil, roleWaitSeconds: Int? = nil)
     /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
     case message(id: String, text: String, images: [AgentImage] = [])
@@ -145,6 +146,8 @@ enum AgentRequest {
     case target(id: String, key: String?)
     case mode(AgentPermissionMode)
     case rules([AgentRule])
+    /// The websites Claude in Chrome may act on without asking.
+    case chromeHosts([String])
     /// Takes back one call allowed for the session, or all of them when `key` is nil.
     case revokeSession(key: String?)
     case interrupt
@@ -152,7 +155,7 @@ enum AgentRequest {
     var line: String {
         var object: [String: Any]
         switch self {
-        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let allowAllChrome, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
+        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let allowAllChrome, let allowedChromeHosts, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
             object = ["type": "prompt", "text": text, "cwd": cwd, "permissionMode": mode.rawValue]
             if let roleWaitSeconds { object["roleWaitSeconds"] = roleWaitSeconds }
             if let allowedTools { object["allowedMcpTools"] = allowedTools }
@@ -160,6 +163,7 @@ enum AgentRequest {
             if !images.isEmpty { object["images"] = images.map(\.json) }
             if chrome { object["chrome"] = true }
             if allowAllChrome { object["allowAllChrome"] = true }
+            object["allowedChromeHosts"] = allowedChromeHosts
             if let sessionID {
                 object["sessionId"] = sessionID
                 if fork { object["forkSession"] = true }
@@ -182,6 +186,7 @@ enum AgentRequest {
             object = ["type": "target", "id": id]
             if let key { object["key"] = key }
         case .rules(let rules): object = ["type": "rules", "rules": rules.map(\.json)]
+        case .chromeHosts(let hosts): object = ["type": "chrome_hosts", "hosts": hosts]
         case .revokeSession(let key):
             object = ["type": "revoke_session"]
             if let key { object["key"] = key }
