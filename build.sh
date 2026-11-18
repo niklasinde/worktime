@@ -25,6 +25,8 @@ fi
 
 [ -d .deps/ggml.xcframework ] || scripts/build-ggml.sh
 
+source scripts/clt-sdk.sh
+
 if swift build -c release $ARCHS; then
     BIN="$(swift build -c release $ARCHS --show-bin-path)/WorkTime"
 elif [ $RELEASE = 1 ]; then

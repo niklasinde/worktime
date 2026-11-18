@@ -454,8 +454,15 @@ private struct DecisionBanner: View {
     }
 }
 
+private struct NotchListCapKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 420
+}
+
 extension EnvironmentValues {
-    @Entry var notchListCap: CGFloat = 420
+    var notchListCap: CGFloat {
+        get { self[NotchListCapKey.self] }
+        set { self[NotchListCapKey.self] = newValue }
+    }
 }
 
 /// The rows of a notch list, as tall as they are up to the space left on screen, then scrolling. Headers and chips go above it.
