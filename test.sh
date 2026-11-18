@@ -60,6 +60,11 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/GitHubLink.swift \
     Sources/WorkTime/RequestLogLogic.swift \
     Sources/WorkTime/RequestLog.swift \
+    Sources/WorkTime/LinkTable.swift \
+    Sources/WorkTime/LinkDerivation.swift \
+    Sources/WorkTime/LinkRowsLogic.swift \
+    Sources/WorkTime/LinkMarkdown.swift \
+    Sources/WorkTime/LinkStore.swift \
     Sources/WorkTime/GitHubClient.swift \
     Sources/WorkTime/JiraLogic.swift \
     Sources/WorkTime/JiraClient.swift \
@@ -263,6 +268,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/SpaceTests.swift \
     Tests/WorkTimeTests/CoordinatorTests.swift \
     Tests/WorkTimeTests/RequestLogTests.swift \
+    Tests/WorkTimeTests/LinkTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

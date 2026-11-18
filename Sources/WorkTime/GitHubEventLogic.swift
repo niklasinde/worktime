@@ -13,15 +13,17 @@ struct GitHubEvent: Equatable, Decodable {
     var state: String?
     var merged: Bool?
     var draft: Bool?
+    var headRef: String?
 
     enum CodingKeys: String, CodingKey {
         case event, action, repo, sender, number, title, state, merged, draft
-        case deliveryID = "delivery_id", htmlURL = "html_url"
+        case deliveryID = "delivery_id", htmlURL = "html_url", headRef = "head_ref"
     }
 
     init(event: String? = nil, action: String? = nil, repo: String? = nil, number: Int? = nil, htmlURL: String? = nil,
-         merged: Bool? = nil) {
+         merged: Bool? = nil, title: String? = nil, headRef: String? = nil) {
         (self.event, self.action, self.repo, self.number, self.htmlURL, self.merged) = (event, action, repo, number, htmlURL, merged)
+        (self.title, self.headRef) = (title, headRef)
     }
 
     init(from decoder: Decoder) throws {
@@ -37,6 +39,7 @@ struct GitHubEvent: Equatable, Decodable {
         state = try? values.decodeIfPresent(String.self, forKey: .state)
         merged = try? values.decodeIfPresent(Bool.self, forKey: .merged)
         draft = try? values.decodeIfPresent(Bool.self, forKey: .draft)
+        headRef = try? values.decodeIfPresent(String.self, forKey: .headRef)
     }
 
     var isClosing: Bool { event == "pull_request" && action == "closed" }

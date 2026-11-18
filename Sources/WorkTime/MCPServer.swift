@@ -37,7 +37,7 @@ struct MCPServer {
         under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
         second. send_to_agent, send_to_main, complete_reminder, compile_routine and every routine, automation, assistant and workspace change ask the user to approve, unless the user switched that tool to not ask. \
         To coordinate WorkTime from outside it: send_to_agent with agent Main talks to a workspace's Main; async true returns a request_id for request_status and wait_for; \
-        pending_decisions lists what waits for the user (read-only: only the user answers those, in the app); ticket_timeline, outcomes, usage_summary, request_log, app_info and \
+        pending_decisions lists what waits for the user (read-only: only the user answers those, in the app); ticket_timeline, outcomes, usage_summary, request_log, links, app_info and \
         events_since read what the app publishes; workspaces with create_workspace, update_workspace, create_space, update_space, delete_space and tag_session configure workspaces; \
         open_in_app brings the app to an item. After updating WorkTime, reconnect this MCP server (/mcp) to pick up new tools. schema_version: \(schemaVersion).
         """

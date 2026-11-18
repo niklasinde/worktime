@@ -59,6 +59,8 @@ struct GitHubPR: Equatable, Identifiable {
     var activity: GitHubActivity?
     var mergeable = GitHubPRDetail.Mergeable.unknown
     var mergeState = GitHubPRDetail.MergeState.unknown
+    /// The branch the pull request comes from; known after a fetch, not kept in the store.
+    var head: String?
 
     var ticket: String? {
         ActivityLogic.ticket(in: title).flatMap { title.hasPrefix($0) ? $0 : nil }
@@ -150,7 +152,7 @@ enum GitHubLogic {
 
     private static func fields(discussion: Bool) -> String {
         """
-        number title url isDraft state merged updatedAt reviewDecision additions deletions
+        number title url isDraft state merged updatedAt headRefName reviewDecision additions deletions
         repository { nameWithOwner }
         author { login __typename }
         comments { totalCount }
@@ -230,6 +232,7 @@ enum GitHubLogic {
             let state: String?
             let merged: Bool?
             let updatedAt: String?
+            let headRefName: String?
             let reviewDecision: String?
             let additions: Int?
             let deletions: Int?
@@ -330,7 +333,7 @@ enum GitHubLogic {
                         additions: node.additions ?? 0, deletions: node.deletions ?? 0, comments: node.comments?.totalCount ?? 0,
                         labels: node.labels?.nodes?.compactMap { $0?.name } ?? [], activity: activity(node, me: me),
                         mergeable: GitHubPRDetail.Mergeable(rawValue: node.mergeable?.lowercased() ?? "") ?? .unknown,
-                        mergeState: GitHubPRDetail.MergeState(rawValue: node.mergeStateStatus ?? "") ?? .unknown)
+                        mergeState: GitHubPRDetail.MergeState(rawValue: node.mergeStateStatus ?? "") ?? .unknown, head: node.headRefName)
     }
 
     static func review(_ decision: String) -> GitHubPR.Review? {

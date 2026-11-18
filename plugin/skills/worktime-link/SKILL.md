@@ -21,6 +21,7 @@ instructions it started with, and `app_info` says when its schema is older than 
 - `wait_for`: long poll (at most 600 s) on a session, request or ticket until it is idle, finished, needs the user or changes.
 - `events_since`: a polling feed of events with a cursor (sessions started, finished, errored or waiting; decisions raised and answered; reviews posted; automations fired; routines run; app restarts). The alternative to `wait_for`.
 - `app_info`: version, commit, pid, uptime, data folder, workspaces, working and waiting sessions, sidecar status, and whether a restart would interrupt running work.
+- `links`: how agents, Jira tickets, pull requests, branches and Slack threads are linked; give `entity` as `jira:KEY`, `github_pr:owner/repo#12` or `agent:<key>`, and `depth: 2` for what is related through the neighbors.
 - `request_log`: the last 50 requests WorkTime made to GitHub, Slack, Jira and Claude with response sizes, plus totals per service and the bytes of the last hour.
 - `usage_summary`: what Claude calls cost by range (today, 7d, 30d) and group (workspace, agent, routine, automation, model), with the plan's windows when cached.
 - `workspaces`: workspaces with folders, GitHub owners, Jira projects, Slack and spaces.

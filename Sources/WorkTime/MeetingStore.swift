@@ -53,6 +53,8 @@ enum AppPaths {
     static var decisionState: URL { support.appendingPathComponent(PendingDecisions.fileName) }
     static var timelineState: URL { support.appendingPathComponent(TimelineSnapshots.fileName) }
     static var appInfo: URL { support.appendingPathComponent(AppInfos.fileName) }
+    /// Every link between agents, tickets and pull requests; the MCP server reads the same file.
+    static var links: URL { support.appendingPathComponent(LinkTables.fileName) }
     static var requestLog: URL { support.appendingPathComponent(RequestLogs.fileName) }
     static var eventLog: URL { support.appendingPathComponent(AppEvents.fileName) }
     /// The tool set the last `--mcp` run offered, to tell a client when it changed.

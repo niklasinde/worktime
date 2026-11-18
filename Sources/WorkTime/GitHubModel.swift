@@ -131,6 +131,7 @@ final class GitHubModel: ObservableObject {
         }
         if fetch.error == nil { await refreshWatched() }
         refreshing = false
+        LinkIndexer.shared.schedule()
         await NoticeCenter.shared.resolveClosedPullRequests()
     }
 
@@ -147,6 +148,7 @@ final class GitHubModel: ObservableObject {
     }
 
     private func receive(_ event: GitHubEvent) {
+        LinkIndexer.shared.ingest(event: event)
         guard let action = GitHubEventLogic.action(for: event, settings: GitHubEventStream.shared.settings, tracked: trackedURLs) else { return }
         pendingEvents.add(action.url, now: Date())
         guard !flushingEvents else { return }

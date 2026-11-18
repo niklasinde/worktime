@@ -190,6 +190,7 @@ final class AgentStateWriter: ObservableObject {
         revision += 1
         guard let url else { return }
         let current = states()
+        LinkIndexer.shared.schedule()
         StatePublisher.shared.publish(states: current)
         let data = AgentOverview.encode(current, now: Date())
         DispatchQueue.global(qos: .utility).async {

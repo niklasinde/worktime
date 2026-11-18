@@ -19,6 +19,7 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     @AppStorage(AgentListFilter.showDoneKey) private var showDone = false
     @AppStorage(AgentListFilter.olderOpenKey) private var olderOpen = false
     @ObservedObject private var directory = SessionRefDirectory.shared
+    @State private var showLinks = false
 
     var body: some View {
         let searching = AgentSearch.isActive(query)
@@ -89,6 +90,10 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
             .buttonStyle(.plain)
             .help(isCollapsed ? "Show the agents of \(workspace.name)" : "Hide the agents of \(workspace.name)")
             Spacer()
+            Button { showLinks = true } label: { Image(systemName: "link").font(.caption) }
+                .buttonStyle(.plain)
+                .help("Links: the tickets, pull requests and branches each agent has to do with")
+                .sheet(isPresented: $showLinks) { LinksView(agents: agents) }
             Button(action: onNew) { Image(systemName: "plus").font(.caption) }
                 .buttonStyle(.plain)
                 .help("New Agent: an agent for a support case or other topic, linked to a Jira ticket or Slack thread")
