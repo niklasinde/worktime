@@ -388,7 +388,7 @@ private struct NoticeRow: View {
     var body: some View {
         if let reviews = notice.reviews, open != nil, !reviews.isEmpty {
             if reviews.count == 1 {
-                ReviewDecisionRow(draft: reviews[0], notice: notice, onOpen: onOpen, dismiss: remove)
+                ReviewDecisionRow(draft: reviews[0], notice: notice, onOpen: onOpen)
             } else {
                 ReviewSetTable(notice: notice, drafts: reviews, onOpen: onOpen, dismiss: remove).padding(.vertical, 6).padding(.horizontal, 8)
             }

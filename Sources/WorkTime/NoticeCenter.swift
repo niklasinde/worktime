@@ -135,7 +135,7 @@ final class NoticeCenter: ObservableObject {
 
     /// A notification for the reviews an agent drafted and did not post, with buttons that post them; one for the same drafts is updated.
     func addReview(_ drafts: [ReviewDraft], agent: String, agentTitle: String) {
-        let open = drafts.filter { ReviewPostStore.shared.posted($0.id)?.ok != true }
+        let open = ReviewDismissedBook.remaining(drafts, in: ReviewPostStore.shared.dismissed).filter { ReviewPostStore.shared.posted($0.id)?.ok != true }
         guard !open.isEmpty else { return }
         let now = Date()
         var notice = ReviewNotices.notice(drafts: open, agent: agent, agentTitle: agentTitle, now: now)
@@ -160,6 +160,21 @@ final class NoticeCenter: ObservableObject {
         save()
     }
 
+    /// Puts a drafted review aside for good: it is not posted and does not come back unless the agent drafts one for a new commit.
+    func dismissReview(_ draft: ReviewDraft) {
+        ReviewPostStore.shared.dismiss(draft.id)
+        GitHubModel.shared.cancelGreenWait(draft.id)
+        reviewWaiting.remove(draft.id)
+        reviewResults[draft.id] = nil
+        reviewRefusals[draft.id] = nil
+        reviewExcluded[draft.id] = nil
+        guard let notice = notices.first(where: { $0.reviews?.contains { $0.id == draft.id } == true }) else { return }
+        guard let updated = ReviewNotices.afterDismissing(notice, draft: draft), let index = notices.firstIndex(where: { $0.id == notice.id }) else {
+            return dismissUnanswered(notice.id)
+        }
+        replace(updated, at: index, show: false)
+    }
+
     /// A button of a notification about one drafted review.
     func postFromNotification(_ id: String, _ action: ReviewAction) async {
         guard let drafts = notices.first(where: { $0.id == id })?.reviews, drafts.count == 1 else { return }
@@ -170,6 +185,7 @@ final class NoticeCenter: ObservableObject {
     /// the page's confirmation is decided by what the pull request is like now.
     @discardableResult
     func post(_ draft: ReviewDraft, _ action: ReviewAction, via: String, mode: ReviewPostMode = .normal) async -> ReviewOutcome {
+        guard !ReviewPostStore.shared.isDismissed(draft.id) else { return .failed("The review was dismissed.") }
         reviewWorking.insert(draft.id)
         reviewResults[draft.id] = nil
         reviewRefusals[draft.id] = nil

@@ -95,7 +95,6 @@ struct ReviewDecisionRow: View {
     let draft: ReviewDraft
     let notice: AgentNotice
     let onOpen: () -> Void
-    let dismiss: () -> Void
     @ObservedObject private var model = DecisionRowsModel.shared
     @ObservedObject private var known = GitHubModel.shared
 
@@ -113,7 +112,7 @@ struct ReviewDecisionRow: View {
                         DecisionChevron(id: id)
                     }
                     summary
-                    ReviewActionBar(draft: draft, via: "notch", dismiss: dismiss)
+                    ReviewActionBar(draft: draft, via: "notch", dismiss: { NoticeCenter.shared.dismissReview(draft) })
                     links
                     if model.isExpanded(id) { ReviewDetailView(draft: draft, info: info, agent: notice.source.title, date: notice.created) }
                 }
@@ -184,7 +183,7 @@ struct ReviewSetTable: View {
             Text("Review ready: \(drafts.count) pull requests").fontWeight(.medium)
             ForEach(drafts) { draft in
                 if model.isExpanded(DecisionIDs.review(draft.id)) {
-                    ReviewDecisionRow(draft: draft, notice: notice, onOpen: onOpen, dismiss: dismiss)
+                    ReviewDecisionRow(draft: draft, notice: notice, onOpen: onOpen)
                 } else {
                     ReviewSetLine(draft: draft)
                 }

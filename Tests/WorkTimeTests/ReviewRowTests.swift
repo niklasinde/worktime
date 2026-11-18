@@ -22,6 +22,26 @@ private func notice(_ id: String, _ drafts: [ReviewDraft]) -> AgentNotice {
 }
 
 let reviewRowTests: [(name: String, run: () throws -> Void)] = [
+    ("review dismissed: a dismissed draft is left out, a draft for a new commit is not, and the book is kept between runs", {
+        let stale = draft(sha: "754124e0000"), fresh = draft(sha: "78a0e7c0000"), other = draft(pr: two)
+        let book = ReviewDismissedBook.record(stale.id, date: at, in: [:])
+        check(ReviewDismissedBook.remaining([stale, fresh, other], in: book) == [fresh, other], "only the dismissed commit goes")
+        let decoded = ReviewDismissedBook.decode(ReviewDismissedBook.encode(book))
+        check(decoded[stale.id] == at && ReviewDismissedBook.remaining([stale], in: decoded).isEmpty, "kept between runs")
+        check(ReviewDismissedBook.decode(nil).isEmpty && ReviewDismissedBook.decode(Data("junk".utf8)).isEmpty, "nothing or junk")
+        var many = ReviewDismissedBook.Book()
+        for index in 0..<(ReviewDismissedBook.limit + 3) { many = ReviewDismissedBook.record("d\(index)", date: Date(timeIntervalSince1970: Double(index)), in: many) }
+        check(many.count == ReviewDismissedBook.limit && many["d0"] == nil && many["d\(ReviewDismissedBook.limit + 2)"] != nil, "the oldest go")
+    }),
+
+    ("review dismissed: the notification keeps the other drafts and goes with the last one", {
+        let a = draft(), b = draft(pr: two)
+        let set = notice("n", [a, b])
+        let left = ReviewNotices.afterDismissing(set, draft: a)
+        check(left?.reviews == [b] && left?.link == two && left?.title == ReviewNotices.title(for: [b]), "the other stays")
+        check(ReviewNotices.afterDismissing(notice("m", [a]), draft: a) == nil, "nothing left")
+    }),
+
     ("review rows: the reason is the first two sentences of the summary, without the tag, on one line", {
         check(ReviewRows.reason(draft()) == "The sync drops rows. Fix the order first.", ReviewRows.reason(draft()))
         check(ReviewRows.reason(draft(summary: "One sentence only")) == "One sentence only", "no full stop")

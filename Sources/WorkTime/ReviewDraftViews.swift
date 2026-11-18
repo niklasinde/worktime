@@ -5,12 +5,25 @@ import SwiftUI
 final class ReviewPostStore: ObservableObject {
     static let shared = ReviewPostStore()
     static let key = "reviewDraftPosted"
+    static let dismissedKey = "reviewDraftDismissed"
 
     @Published private(set) var book: ReviewPostedBook.Book
 
-    init() { book = ReviewPostedBook.decode(AgentModel.defaults.data(forKey: Self.key)) }
+    private(set) var dismissed: ReviewDismissedBook.Book
+
+    init() {
+        book = ReviewPostedBook.decode(AgentModel.defaults.data(forKey: Self.key))
+        dismissed = ReviewDismissedBook.decode(AgentModel.defaults.data(forKey: Self.dismissedKey))
+    }
 
     func posted(_ draft: String) -> ReviewPosted? { book[draft] }
+
+    func isDismissed(_ draft: String) -> Bool { dismissed[draft] != nil }
+
+    func dismiss(_ draft: String) {
+        dismissed = ReviewDismissedBook.record(draft, date: Date(), in: dismissed)
+        AgentModel.defaults.set(ReviewDismissedBook.encode(dismissed), forKey: Self.dismissedKey)
+    }
 
     func record(_ posted: ReviewPosted, draft: String) {
         book = ReviewPostedBook.record(posted, draft: draft, in: book)
@@ -43,7 +56,11 @@ struct ReviewActionBar: View {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Posting\u{2026}").font(.caption).foregroundStyle(.secondary) }
             case .failed(let reason, let action):
                 Text(reason).font(.caption).foregroundStyle(.red).lineLimit(4)
-                Button("Retry") { Task { await notices.post(draft, action, via: via) } }.buttonStyle(.bordered).controlSize(.small)
+                HStack(spacing: 8) {
+                    Button("Retry") { Task { await notices.post(draft, action, via: via) } }.buttonStyle(.bordered)
+                    dismissButton
+                }
+                .controlSize(.small)
             case .waiting, .ready:
                 if state == .ready { ready }
                 ReviewWays(draft: draft, via: via)
@@ -59,10 +76,19 @@ struct ReviewActionBar: View {
                 .tint(tint)
                 .help(GitHubActions.isReviewFromNotifications() ? "Posts the review with this click" : "Opens the confirmation with the review in it")
             more
+            dismissButton
         }
         .controlSize(.small)
         Text(ReviewRows.preview(draft, action: primary, excluded: excluded)).font(.caption2).foregroundStyle(.tertiary)
         if let note = notices.reviewResults[draft.id] { Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+    }
+
+    @ViewBuilder private var dismissButton: some View {
+        if let dismiss {
+            Button(action: dismiss) { Image(systemName: "xmark").font(.caption.bold()).foregroundStyle(.secondary) }
+                .buttonStyle(.plain)
+                .help("Dismiss this review without posting it")
+        }
     }
 
     private var more: some View {

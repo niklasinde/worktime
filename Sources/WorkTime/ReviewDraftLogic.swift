@@ -377,6 +377,18 @@ enum ReviewNotices {
         return notice
     }
 
+    /// The notification without a dismissed draft, nil when it held only that one.
+    static func afterDismissing(_ notice: AgentNotice, draft: ReviewDraft) -> AgentNotice? {
+        var notice = notice
+        let rest = (notice.reviews ?? []).filter { $0.id != draft.id }
+        guard !rest.isEmpty else { return nil }
+        notice.reviews = rest
+        notice.title = title(for: rest)
+        notice.body = body(for: rest)
+        notice.link = rest.count == 1 ? rest[0].pr : notice.source.agent
+        return notice
+    }
+
     /// The notification after several were approved at once: what is left, or the result when everything was approved.
     static func afterApproving(_ notice: AgentNotice, results: [(draft: ReviewDraft, outcome: ReviewOutcome)]) -> AgentNotice {
         var notice = notice
@@ -437,6 +449,37 @@ enum ReviewPostedBook {
         let extra = book.count - limit
         if extra > 0 { for old in book.sorted(by: { $0.value.date < $1.value.date }).prefix(extra) { book[old.key] = nil } }
         return book
+    }
+
+    static func encode(_ book: Book) -> Data? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
+        return try? encoder.encode(book)
+    }
+
+    static func decode(_ data: Data?) -> Book {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return data.flatMap { try? decoder.decode(Book.self, from: $0) } ?? [:]
+    }
+}
+
+/// The drafted reviews the user dismissed, by draft id (the pull request and the commit it covered): a new draft for a new commit is a new id.
+enum ReviewDismissedBook {
+    typealias Book = [String: Date]
+    static let limit = 500
+
+    static func record(_ draft: String, date: Date, in book: Book) -> Book {
+        var book = book
+        book[draft] = date
+        let extra = book.count - limit
+        if extra > 0 { for old in book.sorted(by: { $0.value < $1.value }).prefix(extra) { book[old.key] = nil } }
+        return book
+    }
+
+    static func remaining(_ drafts: [ReviewDraft], in book: Book) -> [ReviewDraft] {
+        drafts.filter { book[$0.id] == nil }
     }
 
     static func encode(_ book: Book) -> Data? {
