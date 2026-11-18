@@ -99,4 +99,34 @@ let agentListTests: [(name: String, run: () throws -> Void)] = [
         check(stays { $0.status = .error }, "error")
         check(stays { $0.lastResult = "Done"; $0.seen = false }, "unseen result")
     }),
+    ("agent list: rows not active since the start of today go under Older unless they need the user", {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let startOfToday = calendar.startOfDay(for: now)
+        func agent(_ url: String, _ updated: Date?, _ change: (inout AgentState) -> Void = { _ in }) -> TicketRow {
+            var state = pullRequest(url)
+            state.updatedAt = updated
+            change(&state)
+            return .agent(state)
+        }
+        let fresh = agent("https://github.com/acme-com/api/pull/1", now.addingTimeInterval(-3600))
+        let midnight = agent("https://github.com/acme-com/api/pull/2", startOfToday)
+        let lastNight = agent("https://github.com/acme-com/api/pull/3", startOfToday.addingTimeInterval(-1))
+        let old = agent("https://github.com/acme-com/api/pull/4", now.addingTimeInterval(-6 * 86_400))
+        let working = agent("https://github.com/acme-com/api/pull/5", now.addingTimeInterval(-6 * 86_400)) { $0.status = .working }
+        let waiting = agent("https://github.com/acme-com/api/pull/6", now.addingTimeInterval(-6 * 86_400)) { $0.status = .waiting }
+        let unseen = agent("https://github.com/acme-com/api/pull/7", now.addingTimeInterval(-6 * 86_400)) { $0.lastResult = "Done"; $0.seen = false }
+        let unknown = agent("https://github.com/acme-com/api/pull/8", nil)
+        let split = AgentListFilter.splitOlder([fresh, midnight, lastNight, old, working, waiting, unseen, unknown], now: now, calendar: calendar)
+        check(split.today.map(\.id) == [fresh, midnight, working, waiting, unseen, unknown].map(\.id), "today's and the ones that need the user")
+        check(split.older.map(\.id) == [lastNight, old].map(\.id), "before today is older")
+
+        var member = pullRequest("https://github.com/acme-com/api/pull/9")
+        member.updatedAt = now.addingTimeInterval(-3 * 86_400)
+        var recent = member
+        recent.updatedAt = now.addingTimeInterval(-60)
+        let mixed = TicketRow.group(TicketGroup(subject: .ticket("PROJ-1"), members: [member, recent]))
+        check(AgentListFilter.splitOlder([mixed], now: now, calendar: calendar).older.isEmpty, "a group follows its latest session")
+    }),
 ]

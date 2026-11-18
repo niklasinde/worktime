@@ -7,6 +7,7 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
     static let storageKey = "agentListFilter"
     static let collapsedKey = "agentListCollapsed"
     static let showDoneKey = "agentListShowDone"
+    static let olderOpenKey = "agentListOlderOpen"
 
     var id: String { rawValue }
 
@@ -69,6 +70,21 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
                            infos: [String: SessionRefInfo]) -> [AgentState] {
         guard !showDone, !searching else { return states }
         return states.filter { !isFinished($0, projects: projects, titles: titles, infos: infos) }
+    }
+
+    /// The rows split into today's and the older ones. Anything not active since the start of today is older, so yesterday evening is
+    /// already tucked away; a row that works, waits, errors, has an unseen result, or has no known activity stays with today's.
+    static func splitOlder(_ rows: [TicketRow], now: Date, calendar: Calendar = .current) -> (today: [TicketRow], older: [TicketRow]) {
+        let startOfToday = calendar.startOfDay(for: now)
+        func isOlder(_ row: TicketRow) -> Bool {
+            let (activity, need): (Date?, AgentOverview.Need) = switch row {
+            case .agent(let state): (state.updatedAt, AgentOverview.need(state))
+            case .group(let group): (group.latest, group.need)
+            }
+            guard let activity else { return false }
+            return need == .idle && activity < startOfToday
+        }
+        return (rows.filter { !isOlder($0) }, rows.filter(isOlder))
     }
 
     /// The comma separated ids with `id` taken out when it is in, put in when it is not.

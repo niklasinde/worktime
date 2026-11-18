@@ -17,6 +17,7 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     @AppStorage(AgentListFilter.collapsedKey) private var collapsed = ""
     @AppStorage(AgentListFilter.storageKey) private var chosen = AgentListFilter.all.rawValue
     @AppStorage(AgentListFilter.showDoneKey) private var showDone = false
+    @AppStorage(AgentListFilter.olderOpenKey) private var olderOpen = false
     @ObservedObject private var directory = SessionRefDirectory.shared
 
     var body: some View {
@@ -36,17 +37,42 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         if !isCollapsed {
             let chips = searching ? [] : AgentListFilter.chips(counts: counts)
             if !searching, !chips.isEmpty || hidden > 0 || showDone { chipRow(chips, counts: counts, selected: filter, hidden: hidden) }
-            ForEach(TicketGrouping.rows(AgentListFilter.shown(scoped, filter: filter), projects: projects, titles: titles)) { entry in
-                switch entry {
-                case .agent(let state): row(state)
-                case .group(let ticket): group(ticket)
-                }
+            let rows = TicketGrouping.rows(AgentListFilter.shown(scoped, filter: filter), projects: projects, titles: titles)
+            let split = AgentListFilter.splitOlder(rows, now: Date())
+            ForEach(split.today) { rowView($0) }
+            if !split.older.isEmpty {
+                let isOpen = olderOpen || searching
+                olderHeader(count: split.older.count, isOpen: isOpen)
+                if isOpen { ForEach(split.older) { rowView($0) } }
             }
         }
         Color.clear.frame(height: 0).task(id: everything.map(\.key)) {
             let refs = everything.compactMap { AgentListFilter.ref(of: $0, projects: projects, titles: titles) }
             await directory.ensure(refs, skip: [])
         }
+    }
+
+    @ViewBuilder private func rowView(_ entry: WorkTime.TicketRow) -> some View {
+        switch entry {
+        case .agent(let state): row(state)
+        case .group(let ticket): group(ticket)
+        }
+    }
+
+    private func olderHeader(count: Int, isOpen: Bool) -> some View {
+        Button { olderOpen.toggle() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.right").font(.system(size: 7, weight: .bold)).rotationEffect(.degrees(isOpen ? 90 : 0))
+                Text("Older").font(.caption2.weight(.medium))
+                Text("\(count)").font(.caption2).foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.leading, 26)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isOpen ? "Hide the agents last active before today" : "Show the agents last active before today")
     }
 
     static func scoped(_ agents: [AgentState], workspace: Workspace, space: String?, titles: [String: String], query: String) -> [AgentState] {
