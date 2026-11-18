@@ -7,5 +7,5 @@ if ! ls "$(dirname "$(xcrun --find swiftc)")"/../lib/swift/host/plugins/libSwift
     [ "${RELEASE:-0}" = 1 ] && { echo "error: a universal release build needs Xcode; the Command Line Tools have no x86_64 Swift libraries"; exit 1; }
     echo "warning: no Xcode, building against $SDKROOT"
     swift package resolve
-    grep -rl 'compiler(>=6\.4)' .build/checkouts/SwiftTerm/Sources | xargs -n1 sed -i '' 's/compiler(>=6\.4)/compiler(>=7.0)/'
+    { grep -rl 'compiler(>=6\.4)' .build/checkouts/SwiftTerm/Sources || true; } | xargs -n1 sed -i '' 's/compiler(>=6\.4)/compiler(>=7.0)/'
 fi
