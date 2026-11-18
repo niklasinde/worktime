@@ -18,8 +18,8 @@ test("prefix rules take the command and its subcommand", () => {
 });
 
 test("Always allow offers a rule for each part that is not read-only", () => {
-  assert.deepEqual(suggestRules("Bash", { command: "git status && git fetch -q origin; npm test 2>&1 | tail -5" }, cwd),
-    bash("git fetch", "npm test"));
+  assert.deepEqual(suggestRules("Bash", { command: "git status && git pull -q origin; npm test 2>&1 | tail -5" }, cwd),
+    bash("git pull", "npm test"));
   assert.deepEqual(suggestRules("Bash", { command: "./test.sh && ./test.sh --fast" }, cwd), bash("./test.sh"));
   assert.deepEqual(suggestRules("Bash", { command: "npm test > out.txt" }, cwd), [], "a line it cannot parse");
   assert.deepEqual(suggestRules("Bash", { command: "FOO=1 npm test" }, cwd), []);
@@ -30,13 +30,13 @@ test("Always allow offers a rule for each part that is not read-only", () => {
 });
 
 test("a Bash call is allowed only when every part that is not read-only matches a rule", () => {
-  const rules = bash("git fetch", "npm test");
-  assert.equal(run(rules, "git fetch -q origin main"), "git fetch");
-  assert.equal(run(rules, "git status && git fetch && npm test -- --watch=false | tail"), "git fetch, npm test");
-  assert.equal(run(rules, "git fetch; rm -rf /"), undefined, "one part matches, the other does not");
+  const rules = bash("git pull", "npm test");
+  assert.equal(run(rules, "git pull -q origin main"), "git pull");
+  assert.equal(run(rules, "git status && git pull && npm test -- --watch=false | tail"), "git pull, npm test");
+  assert.equal(run(rules, "git pull; rm -rf /"), undefined, "one part matches, the other does not");
   assert.equal(run(rules, "npm test && npm publish"), undefined);
-  assert.equal(run(rules, "git fetch | sh"), undefined);
-  assert.equal(run(rules, "git fetchall"), undefined, "whole words only");
+  assert.equal(run(rules, "git pull | sh"), undefined);
+  assert.equal(run(rules, "git pullall"), undefined, "whole words only");
   assert.equal(run(rules, "git"), undefined);
   assert.equal(run(rules, "npm test & rm x"), undefined, "a line it cannot parse is never matched");
   assert.equal(run(rules, "npm test > /etc/hosts"), undefined);

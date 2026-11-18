@@ -96,13 +96,28 @@ function tokenize(command: string): Token[] | undefined {
 const anyArgs = new Set(builtInAllowed.commands.filter((c) => c.anyArgs).map((c) => c.name));
 const gitSubcommands = new Set([
   "status", "log", "diff", "show", "branch", "rev-parse", "remote", "ls-files", "blame",
-  "grep", "ls-tree", "cat-file", "show-ref", "merge-base", "rev-list", "describe", "shortlog", "config",
+  "grep", "ls-tree", "cat-file", "show-ref", "merge-base", "rev-list", "describe", "shortlog", "config", "fetch",
 ]);
 const findActions = new Set(["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"]);
 const branchChanges = /^(-[dDmMcCfu]|--delete|--move|--copy|--force|--set-upstream-to.*|--unset-upstream|--edit-description|--track.*|--no-track)$/;
 const branchListing = /^(-l|--list|--contains|--no-contains|--merged|--no-merged|--points-at)$/;
 const configReads = /^(--get|--get-all|--get-regexp|--get-urlmatch|--list|-l)$/;
 const configWrites = /^(--add|--unset|--unset-all|--replace-all|--rename-section|--remove-section|-e|--edit)$/;
+
+const fetchFlags = /^(-q|--quiet|-v|--verbose|-p|--prune|-P|--prune-tags|-t|--tags|--no-tags|-a|--all|-f|--force|--no-progress|--progress|--depth=\d+|--unshallow|--no-recurse-submodules|--no-write-fetch-head|--dry-run)$/;
+const fetchRemote = /^[A-Za-z0-9_][\w.-]*$/;
+
+/// A fetch that only updates remote-tracking refs: a plain remote name, and refspecs whose destination, if any, is under refs/remotes/.
+function isReadOnlyFetch(args: string[]): boolean {
+  const positionals = args.filter((a) => !a.startsWith("-"));
+  if (!args.every((a) => !a.startsWith("-") || fetchFlags.test(a))) return false;
+  const [remote, ...refspecs] = positionals;
+  if (remote !== undefined && !fetchRemote.test(remote)) return false;
+  return refspecs.every((spec) => {
+    const destination = spec.split(":")[1];
+    return destination === undefined || destination === "" || destination.startsWith("refs/remotes/");
+  });
+}
 
 function isReadOnlyGit(args: string[]): boolean {
   let i = 0;
@@ -111,6 +126,7 @@ function isReadOnlyGit(args: string[]): boolean {
   if (!sub || !gitSubcommands.has(sub)) return false;
   if (rest.some((a) => a.startsWith("--output") || a === "--ext-diff")) return false;
   switch (sub) {
+    case "fetch": return isReadOnlyFetch(rest);
     case "remote": return rest.length === 0 || (rest.length === 1 && ["-v", "--verbose"].includes(rest[0]));
     case "branch":
       if (rest.some((a) => branchChanges.test(a))) return false;

@@ -27,7 +27,7 @@
     { "name": "false", "anyArgs": true },
     { "name": "test", "anyArgs": true },
     { "name": "[", "anyArgs": true },
-    { "name": "git", "note": "status, log, diff, show, blame, ls-files, ls-tree, rev-parse, rev-list, merge-base, describe, shortlog, show-ref; branch and remote -v listing; grep (not -O); cat-file -p/-t/-s; config reads; no --output" },
+    { "name": "git", "note": "status, log, diff, show, blame, ls-files, ls-tree, rev-parse, rev-list, merge-base, describe, shortlog, show-ref; branch and remote -v listing; fetch (updates remote-tracking refs only, never a local branch); grep (not -O); cat-file -p/-t/-s; config reads; no --output" },
     { "name": "gh", "note": "pr view, diff, checks, list, status; api GET without fields" },
     { "name": "rg", "note": "not --pre" },
     { "name": "find", "note": "no -delete, -exec, -ok or -fprint" },

@@ -59,6 +59,18 @@ test("read-only commands are allowed", () => {
     "cd x 2>/dev/null || { echo 'no repo'; exit 1; }",
     "{ git status; git log -1; } 2>&1 | head",
     "exit",
+    "git fetch",
+    "git fetch origin",
+    "git fetch -q origin",
+    "git fetch --quiet --prune --tags origin",
+    "git fetch --all -p",
+    "git fetch origin develop",
+    "git fetch origin develop NI/QDLY-1",
+    "git fetch origin +refs/heads/*:refs/remotes/origin/*",
+    "git fetch -f origin develop:refs/remotes/origin/develop",
+    "git -C ~/git/quiddly/finq.api fetch origin -q",
+    "cd ~/git/quiddly/finq.api && git fetch origin -q && git rev-parse --short origin/develop && git cat-file -t origin/develop",
+    "cd ~/git/quiddly/finq.api && git fetch origin -q && git rev-parse --short origin/develop && git cat-file -p origin/develop:README.md | head",
   ]) {
     assert.equal(isReadOnlyCommand(command), true, command);
   }
@@ -101,7 +113,22 @@ test("anything that writes, runs other code or is unclear asks", () => {
     "for f in *; do ls $f",
     "cat <<EOF\nx\nEOF",
     "ls 'unterminated",
-    "git fetch origin",
+    "git fetch origin x:main",
+    "git fetch origin +develop:develop",
+    "git fetch origin origin/x:main",
+    "git fetch -u origin develop:main",
+    "git fetch --update-head-ok origin",
+    "git fetch --force origin develop:refs/heads/develop",
+    "git fetch origin develop:refs/heads/develop",
+    "git fetch --upload-pack=sh origin",
+    "git fetch ext::sh",
+    "git fetch git@github.com:o/r.git",
+    "git fetch -o foo origin",
+    "git pull",
+    "git pull origin develop",
+    "git push origin develop",
+    "cd x && git fetch origin develop:develop",
+    "cd x && git fetch origin && git pull",
     "git grep -O foo",
     "git grep -nOvim foo",
     "git grep --open-files-in-pager=vim foo",
@@ -153,8 +180,8 @@ test("anything that writes, runs other code or is unclear asks", () => {
 });
 
 test("nonReadOnlyParts names only the parts that are not read-only", () => {
-  const command = `cd ~/git/acme/orbit.api 2>/dev/null || { echo "no local repo"; exit 1; }; git fetch -q origin claude/ACME-9052-escape-pdf-einvoice 2>&1 | tail -2; R=FETCH_HEAD; echo "== x"; git grep -n "OrbitExtension\\|jinja_extension" $R -- 'orbit/*.py' | grep -v "^.*jinja_extension.py:" ; git grep -n -A6 "URL_FETCHER_INCLUDED =" $R -- orbit/jobs/pdf/base.py; git grep -n -o '<img[^>]*src="[^"]*"' $R -- orbit/jobs/pdf/templates | sed 's/^[^:]*:\\([^:]*\\):/\\1:/' | sort | uniq -c | sort -rn | head -20; git ls-tree -r --name-only $R orbit/templates 2>/dev/null | sed 's/.*\\.//' | sort | uniq -c`;
-  assert.deepEqual(nonReadOnlyParts(command), ["git fetch -q origin claude/ACME-9052-escape-pdf-einvoice"]);
+  const command = `cd ~/git/acme/orbit.api 2>/dev/null || { echo "no local repo"; exit 1; }; git pull -q origin claude/ACME-9052-escape-pdf-einvoice 2>&1 | tail -2; R=FETCH_HEAD; echo "== x"; git grep -n "OrbitExtension\\|jinja_extension" $R -- 'orbit/*.py' | grep -v "^.*jinja_extension.py:" ; git grep -n -A6 "URL_FETCHER_INCLUDED =" $R -- orbit/jobs/pdf/base.py; git grep -n -o '<img[^>]*src="[^"]*"' $R -- orbit/jobs/pdf/templates | sed 's/^[^:]*:\\([^:]*\\):/\\1:/' | sort | uniq -c | sort -rn | head -20; git ls-tree -r --name-only $R orbit/templates 2>/dev/null | sed 's/.*\\.//' | sort | uniq -c`;
+  assert.deepEqual(nonReadOnlyParts(command), ["git pull -q origin claude/ACME-9052-escape-pdf-einvoice"]);
   assert.equal(isReadOnlyCommand(command), false);
   assert.deepEqual(nonReadOnlyParts("git status && rm x | head; npm test"), ["rm x", "npm test"]);
   assert.deepEqual(nonReadOnlyParts("ls; echo `rm x`"), ["ls; echo `rm x`"]);
