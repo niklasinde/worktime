@@ -405,7 +405,11 @@ struct SettingsView: View {
         case .privacy: PrivacySettingsView(tracker: tracker, projects: projects)
         case .projects: ProjectsSettingsView(projects: projects)
         case .notchBar: NotchBarSettingsSection(model: .shared)
-        case .gitHub: GitHubSettingsSection(model: .shared)
+        case .gitHub:
+            VStack(alignment: .leading, spacing: 22) {
+                GitHubSettingsSection(model: .shared)
+                GitHubEventSettingsSection(stream: .shared)
+            }
         case .jira: JiraSettingsSection(model: .shared).id(SettingsAnchor.jira)
         case .slack:
             VStack(alignment: .leading, spacing: 22) {

@@ -152,7 +152,7 @@ let claudeAPITests: [(name: String, run: () throws -> Void)] = [
         let done = DispatchSemaphore(value: 0)
         Task {
             var lines: [String] = []
-            for try await line in ClaudeAPIClient.lines(of: source) { lines.append(line) }
+            for try await line in SSEParser.lines(of: source) { lines.append(line) }
             box.lines = lines
             done.signal()
         }

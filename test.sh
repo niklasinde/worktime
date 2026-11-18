@@ -124,6 +124,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/ReviewAnchorLogic.swift \
     Sources/WorkTime/ReviewRowLogic.swift \
     Sources/WorkTime/ClosedPullRequestLogic.swift \
+    Sources/WorkTime/GitHubEventLogic.swift \
     Sources/WorkTime/DecisionDetailLogic.swift \
     Sources/WorkTime/QuickChatLogic.swift \
     Sources/WorkTime/MainWindowLogic.swift \
@@ -248,6 +249,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/ReviewAnchorTests.swift \
     Tests/WorkTimeTests/ReviewRowTests.swift \
     Tests/WorkTimeTests/ClosedPullRequestTests.swift \
+    Tests/WorkTimeTests/GitHubEventTests.swift \
     Tests/WorkTimeTests/AgentTranscriptTests.swift \
     Tests/WorkTimeTests/QuickChatTests.swift \
     Tests/WorkTimeTests/MainWindowTests.swift \

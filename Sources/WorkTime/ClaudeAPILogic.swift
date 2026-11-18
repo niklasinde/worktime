@@ -86,12 +86,18 @@ enum ClaudeAPIRequest {
 struct ServerSentEvent: Equatable {
     let event: String?
     let data: String
+    /// The resumable id of the event, or else the last one seen.
+    var id: String? = nil
 }
 
 struct SSEParser {
     private var buffer = ""
     private var event: String?
     private var data: [String] = []
+    private var id: String?
+    private(set) var lastID: String?
+
+    init(lastID: String? = nil) { self.lastID = lastID }
 
     mutating func feed(_ chunk: String) -> [ServerSentEvent] {
         buffer += chunk
@@ -103,11 +109,15 @@ struct SSEParser {
             let line = String(buffer[..<end])
             buffer.removeSubrange(...end)
             if line.isEmpty {
-                if !data.isEmpty { events.append(ServerSentEvent(event: event, data: data.joined(separator: "\n"))) }
+                if !data.isEmpty { events.append(ServerSentEvent(event: event, data: data.joined(separator: "\n"), id: id ?? lastID)) }
                 event = nil
+                id = nil
                 data = []
             } else if line.hasPrefix("event:") {
                 event = Self.value(of: line, after: "event:")
+            } else if line.hasPrefix("id:") {
+                id = Self.value(of: line, after: "id:")
+                lastID = id
             } else if line.hasPrefix("data:") {
                 data.append(Self.value(of: line, after: "data:"))
             }
@@ -118,6 +128,60 @@ struct SSEParser {
     private static func value(of line: String, after field: String) -> String {
         let value = line.dropFirst(field.count)
         return value.hasPrefix(" ") ? String(value.dropFirst()) : String(value)
+    }
+
+    /// The lines of a byte stream, with the blank lines that end SSE events kept. `AsyncBytes.lines` drops them.
+    static func lines<Bytes: AsyncSequence>(of bytes: Bytes, finished: ((Int, Error?) -> Void)? = nil) -> AsyncThrowingStream<String, Error> where Bytes.Element == UInt8 {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                var received = 0
+                do {
+                    var line: [UInt8] = []
+                    for try await byte in bytes {
+                        received += 1
+                        guard byte == UInt8(ascii: "\n") else {
+                            line.append(byte)
+                            continue
+                        }
+                        if line.last == UInt8(ascii: "\r") { line.removeLast() }
+                        continuation.yield(String(decoding: line, as: UTF8.self))
+                        line.removeAll(keepingCapacity: true)
+                    }
+                    if !line.isEmpty { continuation.yield(String(decoding: line, as: UTF8.self)) }
+                    finished?(received, nil)
+                    continuation.finish()
+                } catch {
+                    finished?(received, error)
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// The lines of a byte stream, with the blank lines that end SSE events kept. `AsyncBytes.lines` drops them.
+    static func lines<Bytes: AsyncSequence>(of bytes: Bytes) -> AsyncThrowingStream<String, Error> where Bytes.Element == UInt8 {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var line: [UInt8] = []
+                    for try await byte in bytes {
+                        guard byte == UInt8(ascii: "\n") else {
+                            line.append(byte)
+                            continue
+                        }
+                        if line.last == UInt8(ascii: "\r") { line.removeLast() }
+                        continuation.yield(String(decoding: line, as: UTF8.self))
+                        line.removeAll(keepingCapacity: true)
+                    }
+                    if !line.isEmpty { continuation.yield(String(decoding: line, as: UTF8.self)) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }
 

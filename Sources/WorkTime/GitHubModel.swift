@@ -45,6 +45,9 @@ final class GitHubModel: ObservableObject {
     private let noticeTimer = Debouncer()
     private var prefetching = Set<String>()
     private var patches: [String: GitHubActions.Patch] = [:]
+    private var polled = Date.distantPast
+    private var pendingEvents = PendingRefreshes()
+    private var flushingEvents = false
 
     var interval: Int { Self.storedInterval(Self.intervalKey) }
 
@@ -88,13 +91,17 @@ final class GitHubModel: ObservableObject {
         guard enabled else { return }
         loop?.cancel()
         loop = Task { [weak self] in
+            await self?.refresh()
             while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(GitHubEventLogic.tick * 1_000_000_000))
                 guard let self else { return }
-                await self.refresh()
-                try? await Task.sleep(nanoseconds: UInt64(self.interval) * 60 * 1_000_000_000)
+                if GitHubEventLogic.isDue(last: self.polled, now: Date(), minutes: self.pollingMinutes) { await self.refresh() }
             }
         }
     }
+
+    /// Minutes between timed fetches: the chosen interval, or what the event stream's settings make of it.
+    private var pollingMinutes: Int? { GitHubEventStream.shared.pollingMinutes(base: interval) }
 
     func setEnabled(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Self.enabledKey)
@@ -112,6 +119,7 @@ final class GitHubModel: ObservableObject {
     func refresh() async {
         guard enabled, !refreshing else { return }
         refreshing = true
+        polled = Date()
         let cli = GitHubLogic.findCLI()
         let fetch = await Task.detached { GitHubClient.fetchAll(cli: cli) }.value
         guard enabled else { return refreshing = false }
@@ -123,6 +131,58 @@ final class GitHubModel: ObservableObject {
         }
         if fetch.error == nil { await refreshWatched() }
         refreshing = false
+        await NoticeCenter.shared.resolveClosedPullRequests()
+    }
+
+    // MARK: Webhook events
+
+    func listenToEvents() {
+        GitHubEventStream.shared.onEvent = { [weak self] event in self?.receive(event) }
+        GitHubEventStream.shared.start()
+    }
+
+    private var trackedURLs: Set<String> {
+        Set(prs.values.flatMap { $0.map(\.url) } + watchedURLs
+            + ClosedPullRequests.urls(notices: NoticeCenter.shared.notices, reminders: TodoModel.shared.reminders))
+    }
+
+    private func receive(_ event: GitHubEvent) {
+        guard let action = GitHubEventLogic.action(for: event, settings: GitHubEventStream.shared.settings, tracked: trackedURLs) else { return }
+        pendingEvents.add(action.url, now: Date())
+        guard !flushingEvents else { return }
+        flushingEvents = true
+        Task { [weak self] in
+            while self?.pendingEvents.isEmpty == false {
+                try? await Task.sleep(nanoseconds: UInt64(GitHubEventLogic.debounce * 1_000_000_000))
+                guard let self else { return }
+                let urls = self.pendingEvents.take(now: Date())
+                if !urls.isEmpty { await self.refreshPullRequests(urls) }
+            }
+            self?.flushingEvents = false
+        }
+    }
+
+    /// Fetches just these pull requests and puts them in the lists, where a full refresh would fetch every list.
+    func refreshPullRequests(_ urls: [String]) async {
+        let cli = GitHubLogic.findCLI()
+        guard let found = await Task.detached(priority: .utility, operation: { GitHubClient.fetchLookup(cli: cli, urls: urls) }).value,
+              !found.isEmpty else { return }
+        let fresh = Dictionary(found.map { ($0.url, $0) }, uniquingKeysWith: { $1 })
+        func merged(_ pr: GitHubPR) -> GitHubPR {
+            guard var next = fresh[pr.url] else { return pr }
+            (next.activity, next.mergeable, next.mergeState) = (pr.activity, pr.mergeable, pr.mergeState)
+            return next
+        }
+        let changed = prs.filter { $0.value.contains { fresh[$0.url] != nil } }.mapValues { $0.map(merged) }
+        if !changed.isEmpty {
+            prs = GitHubActions.overlay(prs.merging(changed) { $1 }, patches, now: Date())
+            try? store?.saveGitHubPRs(changed)
+        }
+        if watchedPRs.contains(where: { fresh[$0.url] != nil }) {
+            watchedPRs = watchedPRs.map(merged)
+            try? store?.saveGitHubWatchedPRs(watchedPRs)
+        }
+        if let page, urls.contains(page.pr.url) { page.start() }
         await NoticeCenter.shared.resolveClosedPullRequests()
     }
 

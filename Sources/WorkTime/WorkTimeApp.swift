@@ -231,6 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         GitHubModel.shared.store = store
         GitHubModel.shared.start()
+        GitHubModel.shared.listenToEvents()
         JiraModel.shared.start()
         JiraPageModel.shared.start()
         SlackModel.shared.start()

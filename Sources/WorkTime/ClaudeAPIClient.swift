@@ -78,39 +78,10 @@ struct ClaudeAPIClient {
         let http = response as? HTTPURLResponse
         let retryAfter = http?.value(forHTTPHeaderField: "retry-after").flatMap { Int($0) }
         let status = RequestLogs.httpStatus(http?.statusCode ?? 0)
-        let stream = lines(of: bytes) { size, error in
+        let stream = SSEParser.lines(of: bytes) { size, error in
             RequestLog.shared.record(service: .anthropic, what: what, bytes: size, started: started, status: (status.text, status.failed || error != nil))
         }
         return ClaudeTransportResponse(status: http?.statusCode ?? 0, retryAfter: retryAfter, lines: stream)
-    }
-
-    /// The lines of a byte stream, with the blank lines that end SSE events kept. `AsyncBytes.lines` drops them.
-    static func lines<Bytes: AsyncSequence>(of bytes: Bytes, finished: ((Int, Error?) -> Void)? = nil) -> AsyncThrowingStream<String, Error> where Bytes.Element == UInt8 {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                var received = 0
-                do {
-                    var line: [UInt8] = []
-                    for try await byte in bytes {
-                        received += 1
-                        guard byte == UInt8(ascii: "\n") else {
-                            line.append(byte)
-                            continue
-                        }
-                        if line.last == UInt8(ascii: "\r") { line.removeLast() }
-                        continuation.yield(String(decoding: line, as: UTF8.self))
-                        line.removeAll(keepingCapacity: true)
-                    }
-                    if !line.isEmpty { continuation.yield(String(decoding: line, as: UTF8.self)) }
-                    finished?(received, nil)
-                    continuation.finish()
-                } catch {
-                    finished?(received, error)
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
     }
 }
 

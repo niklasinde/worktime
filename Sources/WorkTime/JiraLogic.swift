@@ -356,6 +356,8 @@ struct TokenStore {
     static let slack = TokenStore(secrets: AppSecretStore(service: slackService), account: "user-token")
     /// The app-level token (`xapp-`) Slack's Socket Mode connects with.
     static let slackApp = TokenStore(secrets: AppSecretStore(service: slackService), account: "app-token")
+    /// The bearer token of the server that streams GitHub webhook events.
+    static let githubEvents = TokenStore(secrets: AppSecretStore(service: "com.niklasinde.MeetingRecorder.github-events"), account: "stream-token")
 
     let secrets: PhoneSecretStore
     let account: String
