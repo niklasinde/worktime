@@ -133,9 +133,9 @@ final class GitHubEventStream: ObservableObject {
             let (bytes, response) = try await session.bytes(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let outcome = GitHubStreamOutcome(status: code)
-            let status = RequestLogs.httpStatus(code)
+            let http = RequestLogs.httpStatus(code)
             guard outcome == .connected else {
-                RequestLog.shared.record(service: .github, what: "event stream", bytes: 0, started: started, status: status)
+                RequestLog.shared.record(service: .github, what: "event stream", bytes: 0, started: started, status: http)
                 return (outcome, nil)
             }
             opened = Date()
@@ -143,7 +143,7 @@ final class GitHubEventStream: ObservableObject {
             downSince = nil
             var parser = SSEParser(lastID: defaults.string(forKey: Self.lastIDKey))
             let lines = SSEParser.lines(of: bytes) { size, error in
-                RequestLog.shared.record(service: .github, what: "event stream", bytes: size, started: started, status: (status.text, error != nil))
+                RequestLog.shared.record(service: .github, what: "event stream", bytes: size, started: started, status: (http.text, error != nil))
             }
             for try await line in lines { parser.feed(line + "\n").forEach(receive) }
             return (.connected, opened.map { Date().timeIntervalSince($0) })
