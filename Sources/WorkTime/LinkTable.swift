@@ -25,8 +25,8 @@ enum LinkSource: String, Codable, Sendable {
     case auto, manual
 }
 
-/// One end of a link, with its id normalized: a Jira key in upper case, a pull request as `owner/repo#12`, a branch as `repo:branch`,
-/// a Slack thread as its permalink, an agent as its `AgentState.key`.
+/// One end of a link as callers name it, with its id normalized: a Jira key in upper case, a pull request as `owner/repo#12`, a branch as
+/// `repo:branch`, a Slack thread as its permalink, an agent as its `AgentState.key`. The table resolves it to an entity uuid.
 struct LinkEntity: Hashable, Codable, Comparable, Sendable {
     let kind: LinkKind
     let id: String
@@ -36,7 +36,7 @@ struct LinkEntity: Hashable, Codable, Comparable, Sendable {
         self.id = id
     }
 
-    /// `kind:id`, the form the MCP tool and the view's ids use.
+    /// `kind:id`, the form the MCP tool uses.
     var key: String { "\(kind.rawValue):\(id)" }
 
     init?(key: String) {
@@ -64,173 +64,268 @@ struct LinkPair: Hashable, Sendable {
     }
 }
 
-/// A link between two entities. Links are undirected: the pair is stored once, the smaller end as `from`.
-struct LinkEdge: Codable, Equatable, Identifiable, Sendable {
-    var fromKind: LinkKind
-    var fromID: String
-    var toKind: LinkKind
-    var toID: String
+/// A thing that can be linked, under a uuid that outlives a change of its natural id: `ref` is the id as `LinkEntity` writes it, `aliases`
+/// the refs it had before (a Jira key after a move) that still resolve to it.
+struct LinkEntityRecord: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var kind: LinkKind
+    var ref: String
+    var aliases: [String]
+    var title: String?
+    var createdAt: Date
+
+    init(id: UUID = UUID(), kind: LinkKind, ref: String, aliases: [String] = [], title: String? = nil, createdAt: Date) {
+        (self.id, self.kind, self.ref, self.aliases, self.title, self.createdAt) = (id, kind, ref, aliases, title, createdAt)
+    }
+
+    var entity: LinkEntity { LinkEntity(kind: kind, id: ref) }
+}
+
+/// The two ends of a link in canonical order, so that a pair has one key whichever end is named first.
+struct LinkEnds: Hashable, Sendable {
+    let from: UUID
+    let to: UUID
+
+    init(_ first: UUID, _ second: UUID) {
+        (from, to) = first.uuidString <= second.uuidString ? (first, second) : (second, first)
+    }
+}
+
+/// A link between two entities. Links are undirected: the pair is stored once, the smaller uuid as `fromEntity`.
+struct LinkRecord: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var fromEntity: UUID
+    var toEntity: UUID
     var source: LinkSource
     /// A removal by the user: the row stays so that auto-linking does not add the link again.
     var removed: Bool
     var createdAt: Date
     var lastSeenAt: Date
 
-    init(_ pair: LinkPair, source: LinkSource, removed: Bool = false, now: Date) {
-        let (from, to) = pair.first <= pair.second ? (pair.first, pair.second) : (pair.second, pair.first)
-        (fromKind, fromID, toKind, toID) = (from.kind, from.id, to.kind, to.id)
-        (self.source, self.removed, createdAt, lastSeenAt) = (source, removed, now, now)
+    init(id: UUID = UUID(), ends: LinkEnds, source: LinkSource, removed: Bool = false, createdAt: Date, lastSeenAt: Date? = nil) {
+        (self.id, fromEntity, toEntity, self.source, self.removed, self.createdAt) = (id, ends.from, ends.to, source, removed, createdAt)
+        self.lastSeenAt = lastSeenAt ?? createdAt
     }
 
-    var from: LinkEntity { LinkEntity(kind: fromKind, id: fromID) }
-    var to: LinkEntity { LinkEntity(kind: toKind, id: toID) }
-    var id: String { from.key + "|" + to.key }
+    var ends: LinkEnds { LinkEnds(fromEntity, toEntity) }
 
-    func other(than entity: LinkEntity) -> LinkEntity? {
-        if from == entity { return to }
-        return to == entity ? from : nil
+    func other(than entity: UUID) -> UUID? {
+        if fromEntity == entity { return toEntity }
+        return toEntity == entity ? fromEntity : nil
     }
 
-    static func id(_ pair: LinkPair) -> String { LinkEdge(pair, source: .auto, now: .distantPast).id }
+    func repointed(from old: UUID, to new: UUID) -> LinkRecord {
+        LinkRecord(id: id, ends: LinkEnds(fromEntity == old ? new : fromEntity, toEntity == old ? new : toEntity),
+                   source: source, removed: removed, createdAt: createdAt, lastSeenAt: lastSeenAt)
+    }
+
+    /// The same pair seen twice: a manual link beats an auto one, and between two manual ones a removal only holds when both are removals.
+    func merged(with other: LinkRecord) -> LinkRecord {
+        var winner = self
+        if source != other.source {
+            winner = source == .manual ? self : other
+        } else if source == .manual {
+            winner.removed = removed && other.removed
+        }
+        winner.createdAt = min(createdAt, other.createdAt)
+        winner.lastSeenAt = max(lastSeenAt, other.lastSeenAt)
+        return winner
+    }
 }
 
 /// An entity reached from another through links.
-struct LinkReach: Equatable, Sendable {
+struct LinkReach: Equatable, Identifiable, Sendable {
+    let id: UUID
     let entity: LinkEntity
     let depth: Int
     /// The entity it was reached through: the start itself at depth 1.
     let via: LinkEntity
 }
 
-/// Every link between agents, tickets, pull requests and the rest. Status (a ticket Done, a pull request merged) is not kept here.
+/// Every link between agents, tickets, pull requests and the rest, as entities and links under uuids. Callers name things by `LinkEntity`
+/// (kind and natural id, an alias included) and the table resolves them. Status (a ticket Done, a pull request merged) is not kept here.
 struct LinkTable: Equatable, Sendable {
     /// Links that nothing has confirmed for this long are dropped, unless the user made them or removed them.
     static let staleAfter: TimeInterval = 90 * 86400
     /// How old a link's `lastSeenAt` is allowed to get before a sighting touches it, so a steady table does not change.
     static let touchAfter: TimeInterval = 86400
 
-    private(set) var edges: [String: LinkEdge] = [:]
-    private var adjacent: [LinkEntity: Set<String>] = [:]
+    private(set) var entities: [UUID: LinkEntityRecord] = [:]
+    private(set) var links: [UUID: LinkRecord] = [:]
+    private var byRef: [LinkEntity: UUID] = [:]
+    private var byEnds: [LinkEnds: UUID] = [:]
+    private var adjacent: [UUID: Set<UUID>] = [:]
 
-    init(edges: [LinkEdge] = []) {
-        for edge in edges { store(edge) }
-    }
-
-    var all: [LinkEdge] { edges.values.sorted { $0.id < $1.id } }
-    var active: [LinkEdge] { all.filter { !$0.removed } }
-
-    func edge(_ pair: LinkPair) -> LinkEdge? { edges[LinkEdge.id(pair)] }
-
-    private mutating func store(_ edge: LinkEdge) {
-        edges[edge.id] = edge
-        adjacent[edge.from, default: []].insert(edge.id)
-        adjacent[edge.to, default: []].insert(edge.id)
-    }
-
-    private mutating func drop(_ id: String) {
-        guard let edge = edges.removeValue(forKey: id) else { return }
-        for end in [edge.from, edge.to] {
-            adjacent[end]?.remove(id)
-            if adjacent[end]?.isEmpty == true { adjacent[end] = nil }
+    init(entities: [LinkEntityRecord] = [], links: [LinkRecord] = []) {
+        self.entities = Dictionary(entities.map { ($0.id, $0) }) { first, _ in first }
+        var byEnds: [LinkEnds: LinkRecord] = [:]
+        for link in links where self.entities[link.fromEntity] != nil && self.entities[link.toEntity] != nil && link.fromEntity != link.toEntity {
+            byEnds[link.ends] = byEnds[link.ends].map { $0.merged(with: link) } ?? link
         }
+        self.links = Dictionary(byEnds.values.map { ($0.id, $0) }) { first, _ in first }
+        reindex()
+    }
+
+    static func == (lhs: LinkTable, rhs: LinkTable) -> Bool { lhs.entities == rhs.entities && lhs.links == rhs.links }
+
+    var allLinks: [LinkRecord] { links.values.sorted { $0.id.uuidString < $1.id.uuidString } }
+    var allEntities: [LinkEntityRecord] { entities.values.sorted { $0.id.uuidString < $1.id.uuidString } }
+    var active: [LinkRecord] { allLinks.filter { !$0.removed } }
+
+    private mutating func reindex() {
+        byRef = [:]
+        byEnds = [:]
+        adjacent = [:]
+        for record in entities.values {
+            byRef[record.entity] = record.id
+            for alias in record.aliases { byRef[LinkEntity(kind: record.kind, id: alias)] = record.id }
+        }
+        for link in links.values { index(link) }
+    }
+
+    private mutating func index(_ link: LinkRecord) {
+        byEnds[link.ends] = link.id
+        adjacent[link.fromEntity, default: []].insert(link.id)
+        adjacent[link.toEntity, default: []].insert(link.id)
+    }
+
+    func uuid(of entity: LinkEntity) -> UUID? { byRef[entity] }
+
+    func entity(id: UUID) -> LinkEntity? { entities[id]?.entity }
+
+    func record(_ entity: LinkEntity) -> LinkEntityRecord? { uuid(of: entity).flatMap { entities[$0] } }
+
+    func link(_ pair: LinkPair) -> LinkRecord? {
+        guard let first = uuid(of: pair.first), let second = uuid(of: pair.second) else { return nil }
+        return byEnds[LinkEnds(first, second)].flatMap { links[$0] }
+    }
+
+    private mutating func ensure(_ entity: LinkEntity, now: Date) -> UUID {
+        if let id = byRef[entity] { return id }
+        let record = LinkEntityRecord(kind: entity.kind, ref: entity.id, createdAt: now)
+        entities[record.id] = record
+        byRef[entity] = record.id
+        return record.id
+    }
+
+    /// The ends of `pair` as uuids, creating the entities; nil for a pair of one thing.
+    private mutating func ends(of pair: LinkPair, now: Date) -> LinkEnds? {
+        guard pair.first != pair.second else { return nil }
+        let first = ensure(pair.first, now: now)
+        let second = ensure(pair.second, now: now)
+        return first == second ? nil : LinkEnds(first, second)
     }
 
     /// Adds a link, or confirms it. A manual link wins over an auto one and revives a removed one; an auto sighting never revives a removal.
     /// True when the table changed.
     @discardableResult
     mutating func upsert(_ pair: LinkPair, source: LinkSource, now: Date) -> Bool {
-        guard pair.first != pair.second else { return false }
-        guard var edge = edge(pair) else {
-            store(LinkEdge(pair, source: source, now: now))
+        guard let ends = ends(of: pair, now: now) else { return false }
+        guard var link = byEnds[ends].flatMap({ links[$0] }) else {
+            store(LinkRecord(ends: ends, source: source, createdAt: now))
             return true
         }
-        let before = edge
+        let before = link
         if source == .manual {
-            edge.source = .manual
-            edge.removed = false
-            edge.lastSeenAt = now
-        } else if !edge.removed, now.timeIntervalSince(edge.lastSeenAt) >= Self.touchAfter {
-            edge.lastSeenAt = now
+            link.source = .manual
+            link.removed = false
+            link.lastSeenAt = now
+        } else if !link.removed, now.timeIntervalSince(link.lastSeenAt) >= Self.touchAfter {
+            link.lastSeenAt = now
         }
-        guard edge != before else { return false }
-        store(edge)
+        guard link != before else { return false }
+        store(link)
         return true
     }
 
     /// A removal is kept as a manual row marked `removed`, so that auto-linking does not bring the link back.
     mutating func remove(_ pair: LinkPair, now: Date) {
-        guard pair.first != pair.second else { return }
-        var edge = self.edge(pair) ?? LinkEdge(pair, source: .manual, now: now)
-        edge.source = .manual
-        edge.removed = true
-        edge.lastSeenAt = now
-        store(edge)
+        guard let ends = ends(of: pair, now: now) else { return }
+        var link = byEnds[ends].flatMap { links[$0] } ?? LinkRecord(ends: ends, source: .manual, createdAt: now)
+        link.source = .manual
+        link.removed = true
+        link.lastSeenAt = now
+        store(link)
+    }
+
+    private mutating func store(_ link: LinkRecord) {
+        links[link.id] = link
+        index(link)
     }
 
     mutating func ingest(_ pairs: [LinkPair], now: Date) {
         for pair in pairs { upsert(pair, source: .auto, now: now) }
     }
 
+    /// Gives `entity` a new natural id and keeps the old one as an alias, so a link written under either still finds it. When the new id
+    /// already names another entity the two become one: that one stays, takes over the links and the aliases of the renamed one, and a pair
+    /// linked twice ends up as one link, the manual one winning. False when nothing changed.
+    @discardableResult
+    mutating func rename(_ entity: LinkEntity, to ref: String) -> Bool {
+        guard let id = uuid(of: entity), var record = entities[id], record.ref != ref else { return false }
+        guard let survivorID = byRef[LinkEntity(kind: record.kind, id: ref)], survivorID != id else {
+            record.aliases = Self.aliases(record.aliases + [record.ref], without: ref)
+            record.ref = ref
+            entities[id] = record
+            reindex()
+            return true
+        }
+        var survivor = entities[survivorID]!
+        survivor.aliases = Self.aliases(survivor.aliases + record.aliases + [record.ref], without: survivor.ref)
+        survivor.title = survivor.title ?? record.title
+        survivor.createdAt = min(survivor.createdAt, record.createdAt)
+        entities[survivorID] = survivor
+        entities[id] = nil
+        self = LinkTable(entities: Array(entities.values), links: links.values.map { $0.repointed(from: id, to: survivorID) })
+        return true
+    }
+
+    private static func aliases(_ aliases: [String], without ref: String) -> [String] {
+        var seen = Set<String>()
+        return aliases.filter { $0 != ref && seen.insert($0).inserted }
+    }
+
+    /// Without the auto links nothing confirmed lately, and the entities left with no link.
     func pruned(now: Date) -> LinkTable {
-        LinkTable(edges: all.filter { $0.source == .manual || $0.removed || now.timeIntervalSince($0.lastSeenAt) < Self.staleAfter })
+        let kept = allLinks.filter { $0.source == .manual || $0.removed || now.timeIntervalSince($0.lastSeenAt) < Self.staleAfter }
+        let used = Set(kept.flatMap { [$0.fromEntity, $0.toEntity] })
+        return LinkTable(entities: allEntities.filter { used.contains($0.id) }, links: kept)
+    }
+
+    private func neighborIDs(of id: UUID) -> [UUID] {
+        (adjacent[id] ?? []).compactMap { links[$0] }.filter { !$0.removed }.compactMap { $0.other(than: id) }
     }
 
     /// The other end of every link touching `entity`, of one kind when given, in a stable order.
     func neighbors(of entity: LinkEntity, kind: LinkKind? = nil) -> [LinkEntity] {
-        (adjacent[entity] ?? []).compactMap { edges[$0] }
-            .filter { !$0.removed }
-            .compactMap { $0.other(than: entity) }
-            .filter { kind == nil || $0.kind == kind }
-            .sorted()
+        guard let id = uuid(of: entity) else { return [] }
+        return neighborIDs(of: id).compactMap { entities[$0]?.entity }.filter { kind == nil || $0.kind == kind }.sorted()
     }
 
     /// The entities of one kind with at least one link.
     func entities(kind: LinkKind) -> [LinkEntity] {
-        adjacent.keys.filter { $0.kind == kind && !neighbors(of: $0).isEmpty }.sorted()
+        entities.values.filter { $0.kind == kind && !neighborIDs(of: $0.id).isEmpty }.map(\.entity).sorted()
     }
 
     /// What `entity` reaches in up to `depth` hops, nearest first: an agent's ticket, then the ticket's other pull requests. Each entity
     /// is reported once, at its shortest distance, and the start never.
     func related(to start: LinkEntity, depth: Int) -> [LinkReach] {
-        var seen: Set<LinkEntity> = [start]
-        var frontier = [start]
+        guard let startID = uuid(of: start) else { return [] }
+        var seen: Set<UUID> = [startID]
+        var frontier = [startID]
         var reached: [LinkReach] = []
         for level in 1...max(depth, 1) {
-            var next: [LinkEntity] = []
-            for entity in frontier {
-                for other in neighbors(of: entity) where seen.insert(other).inserted {
-                    reached.append(LinkReach(entity: other, depth: level, via: entity))
+            var next: [UUID] = []
+            for id in frontier {
+                let via = entities[id]!.entity
+                for other in neighborIDs(of: id).sorted(by: { entities[$0]!.entity < entities[$1]!.entity }) where seen.insert(other).inserted {
+                    reached.append(LinkReach(id: other, entity: entities[other]!.entity, depth: level, via: via))
                     next.append(other)
                 }
             }
             frontier = next
         }
         return reached
-    }
-}
-
-/// The table as the file the app keeps and the MCP server reads.
-enum LinkTables {
-    static let fileName = "links.json"
-    static let version = 1
-
-    struct File: Codable, Equatable {
-        var version = LinkTables.version
-        var edges: [LinkEdge]
-    }
-
-    static func encode(_ table: LinkTable) -> Data? {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        return try? encoder.encode(File(edges: table.all))
-    }
-
-    /// An empty table for a missing or corrupt file.
-    static func decode(_ data: Data?) -> LinkTable {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return data.flatMap { try? decoder.decode(File.self, from: $0) }.map { LinkTable(edges: $0.edges) } ?? LinkTable()
     }
 }
 

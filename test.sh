@@ -61,6 +61,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/RequestLogLogic.swift \
     Sources/WorkTime/RequestLog.swift \
     Sources/WorkTime/LinkTable.swift \
+    Sources/WorkTime/LinkFile.swift \
     Sources/WorkTime/LinkDerivation.swift \
     Sources/WorkTime/LinkRowsLogic.swift \
     Sources/WorkTime/LinkMarkdown.swift \

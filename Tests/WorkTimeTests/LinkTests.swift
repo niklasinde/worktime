@@ -32,8 +32,10 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         var table = LinkTable()
         table.upsert(LinkPair(ticket, pr7), source: .auto, now: start)
         table.upsert(LinkPair(pr7, ticket), source: .auto, now: start)
-        check(table.all.count == 1, "A-B and B-A are one row")
-        check(table.all[0].from == ticket && table.all[0].to == pr7, "the smaller end is from: \(table.all[0])")
+        check(table.allLinks.count == 1, "A-B and B-A are one row")
+        let link = table.allLinks[0]
+        check(link.fromEntity.uuidString < link.toEntity.uuidString && Set([link.fromEntity, link.toEntity]) == [table.uuid(of: ticket)!, table.uuid(of: pr7)!], "canonical order: \(link)")
+        check(table.allEntities.count == 2, "one entity per end")
         check(!table.upsert(LinkPair(ticket, ticket), source: .auto, now: start), "no self links")
     }),
     ("links: neighbors are found from both ends, by kind", {
@@ -59,17 +61,17 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         let pair = LinkPair(agent, ticket)
         table.upsert(pair, source: .auto, now: start)
         table.upsert(pair, source: .manual, now: start.addingTimeInterval(10))
-        check(table.edge(pair)?.source == .manual, "manual wins")
+        check(table.link(pair)?.source == .manual, "manual wins")
         table.upsert(pair, source: .auto, now: start.addingTimeInterval(20 * day))
-        check(table.edge(pair)?.source == .manual, "auto does not turn it back")
+        check(table.link(pair)?.source == .manual, "auto does not turn it back")
         table.remove(pair, now: start.addingTimeInterval(30 * day))
-        check(table.edge(pair)?.removed == true && table.neighbors(of: agent).isEmpty, "removed, kept as a row")
+        check(table.link(pair)?.removed == true && table.neighbors(of: agent).isEmpty, "removed, kept as a row")
         check(!table.upsert(pair, source: .auto, now: start.addingTimeInterval(40 * day)) && table.neighbors(of: agent).isEmpty, "auto does not re-add")
         table.upsert(pair, source: .manual, now: start.addingTimeInterval(50 * day))
         check(table.neighbors(of: agent) == [ticket], "adding by hand revives it")
         var fresh = LinkTable()
         fresh.remove(LinkPair(agent, other), now: start)
-        check(!fresh.upsert(LinkPair(agent, other), source: .auto, now: start) && fresh.all.count == 1, "removing a link never seen blocks it too")
+        check(!fresh.upsert(LinkPair(agent, other), source: .auto, now: start) && fresh.allLinks.count == 1, "removing a link never seen blocks it too")
     }),
     ("links: a steady table does not change and stale auto links are dropped after 90 days", {
         var table = LinkTable()
@@ -80,9 +82,9 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         table.upsert(LinkPair(agent, other), source: .manual, now: start)
         table.remove(LinkPair(agent, pr8), now: start)
         let later = table.pruned(now: start.addingTimeInterval(95 * day))
-        check(later.edge(LinkPair(agent, pr7)) == nil, "stale auto dropped")
-        check(later.edge(LinkPair(agent, ticket)) == nil, "touched at day 2 but 93 days ago")
-        check(later.edge(LinkPair(agent, other)) != nil && later.edge(LinkPair(agent, pr8))?.removed == true, "manual and removed kept")
+        check(later.link(LinkPair(agent, pr7)) == nil, "stale auto dropped")
+        check(later.link(LinkPair(agent, ticket)) == nil, "touched at day 2 but 93 days ago")
+        check(later.link(LinkPair(agent, other)) != nil && later.link(LinkPair(agent, pr8))?.removed == true, "manual and removed kept")
         check(table.pruned(now: start.addingTimeInterval(10 * day)) == table, "nothing dropped early")
     }),
     ("links: the file round trips and a missing or corrupt file is an empty table", {
@@ -91,8 +93,8 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         table.remove(LinkPair(ticket, pr7), now: start)
         let decoded = LinkTables.decode(LinkTables.encode(table))
         check(decoded == table, "round trip")
-        check(LinkTables.decode(nil).all.isEmpty && LinkTables.decode(Data("{nope".utf8)).all.isEmpty, "tolerated")
-        check(String(decoding: LinkTables.encode(table) ?? Data(), as: UTF8.self).contains("\"fromKind\" : \"jira\""), "one row per link with kinds as strings")
+        check(LinkTables.decode(nil).allLinks.isEmpty && LinkTables.decode(Data("{nope".utf8)).allLinks.isEmpty, "tolerated")
+        check(String(decoding: LinkTables.encode(table) ?? Data(), as: UTF8.self).contains("\"kind\" : \"jira\""), "entities with kinds as strings")
         let unknown = Data(#"{"version":1,"edges":[{"fromKind":"zoom","fromID":"1","toKind":"jira","toID":"ACME-1","source":"auto","removed":false,"createdAt":"2026-11-18T10:00:00Z","lastSeenAt":"2026-11-18T10:00:00Z"}]}"#.utf8)
         check(LinkTables.decode(unknown).neighbors(of: ticket).first?.kind.rawValue == "zoom", "a new kind needs no migration")
     }),
@@ -108,7 +110,7 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
             check(again.table.neighbors(of: agent) == [pr7], "reloaded")
             check(LinkStore(file: file, now: start.addingTimeInterval(200 * day)).table.neighbors(of: agent) == [pr7], "manual outlives the cutoff")
             try? Data("garbage".utf8).write(to: file)
-            check(LinkStore(file: file).table.all.isEmpty, "corrupt file")
+            check(LinkStore(file: file).table.allLinks.isEmpty, "corrupt file")
         }
     }),
     ("links: an agent is linked to its ticket, pull requests, branch and thread", {
@@ -171,7 +173,7 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         labels.infos[SessionRef.jira("ACME-1").cacheKey] = SessionRefInfo(title: "Export", status: "Done", category: "done")
         labels.infos[SessionRef.pullRequest(repo: "acme-com/orbit.api", number: 7).cacheKey] = SessionRefInfo(title: "Export it", state: "merged")
         let byAgent = LinkRows.rows(table, mode: .agent, labels: labels, including: [.agent("main"), agent])
-        check(byAgent.map(\.id) == [agent.key, "agent:main"] || byAgent.map(\.id) == ["agent:main", agent.key], "agents, including one without links: \(byAgent.map(\.id))")
+        check(Set(byAgent.map(\.id)) == [table.uuid(of: agent)!.uuidString, "agent:main"], "agents, including one without links: \(byAgent.map(\.id))")
         let row = byAgent.first { $0.entity == agent }!
         check(row.chips.map(\.entity) == [ticket, pr8], "chips: \(row.chips)")
         check(row.chips.first { $0.entity == pr8 }?.source == .manual && row.chips.first { $0.entity == ticket }?.source == .auto, "manual and auto")
@@ -183,17 +185,96 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         check(labels.status(ticket)?.text == "Done" && labels.status(ticket)?.kind == .done && labels.status(pr7)?.text == "merged" && labels.status(pr8) == nil, "status pills")
         check(LinkRows.rows(table, mode: .ticket, labels: labels, query: "acme-1").map(\.entity) == [ticket], "search")
         check(LinkRows.rows(table, mode: .ticket, labels: labels, query: "zzz").isEmpty, "no match")
-        check(Set(byAgent.map(\.id)).count == byAgent.count, "stable unique ids")
+        check(Set(byAgent.map(\.id)).count == byAgent.count && row.chips.map(\.id) == row.chips.compactMap { table.uuid(of: $0.entity) }, "stable unique ids")
+    }),
+    ("links: the first file format is converted once, the original kept, and the result is stable", {
+        let old = Data(#"""
+        {"version":1,"edges":[
+         {"fromKind":"agent","fromID":"main","toKind":"jira","toID":"ACME-1","source":"auto","removed":false,"createdAt":"2026-11-01T10:00:00Z","lastSeenAt":"2026-11-10T10:00:00Z"},
+         {"fromKind":"github_pr","fromID":"acme-com/orbit.api#7","toKind":"jira","toID":"ACME-1","source":"manual","removed":true,"createdAt":"2026-11-02T10:00:00Z","lastSeenAt":"2026-11-03T10:00:00Z"}]}
+        """#.utf8)
+        let loaded = LinkTables.load(old)
+        check(loaded.migrated && loaded.table.allEntities.count == 3 && loaded.table.allLinks.count == 2, "entities and links")
+        check(loaded.table.neighbors(of: ticket) == [.agent("main")] && loaded.table.link(LinkPair(pr7, ticket))?.removed == true && loaded.table.link(LinkPair(pr7, ticket))?.source == .manual, "source and removal kept")
+        let kept = loaded.table.link(LinkPair(.agent("main"), ticket))
+        check(kept?.createdAt == ISO8601DateFormatter().date(from: "2026-11-01T10:00:00Z") && kept?.lastSeenAt == ISO8601DateFormatter().date(from: "2026-11-10T10:00:00Z"), "dates kept")
+        let again = LinkTables.load(LinkTables.encode(loaded.table))
+        check(!again.migrated && again.table == loaded.table, "the new file reads back as itself")
+        MainActor.assumeIsolated {
+            let file = tempDirectory().appendingPathComponent("links.json")
+            try? old.write(to: file)
+            let store = LinkStore(file: file, now: ISO8601DateFormatter().date(from: "2026-11-15T10:00:00Z")!)
+            let backup = file.deletingLastPathComponent().appendingPathComponent(LinkTables.backupName)
+            check((try? Data(contentsOf: backup)) == old, "the old file is kept as links.v1.json")
+            check(!LinkTables.load(try? Data(contentsOf: file)).migrated && LinkTables.load(try? Data(contentsOf: file)).table == store.table, "links.json is in the new format")
+            let ids = store.table.allEntities.map(\.id)
+            check(LinkStore(file: file, now: start).table.allEntities.map(\.id) == ids, "a second launch changes no uuid")
+        }
+    }),
+    ("links: renaming keeps the old id as an alias that still resolves", {
+        var table = LinkTable()
+        table.ingest([LinkPair(agent, ticket), LinkPair(ticket, pr7)], now: start)
+        let id = table.uuid(of: ticket)!
+        check(table.rename(ticket, to: "NEW-9") && !table.rename(ticket, to: "NEW-9"), "renamed once")
+        let moved = LinkEntity.jira("NEW-9")
+        check(table.uuid(of: moved) == id && table.uuid(of: ticket) == id, "both ids resolve to the same uuid")
+        check(table.record(moved)?.aliases == ["ACME-1"] && table.record(moved)?.ref == "NEW-9", "ref and alias")
+        check(table.neighbors(of: ticket) == [agent, pr7] && table.neighbors(of: moved) == [agent, pr7], "links follow")
+        check(table.neighbors(of: agent) == [moved] && table.allEntities.count == 3 && table.allLinks.count == 2, "nothing duplicated: \(table.neighbors(of: agent))")
+        check(!table.upsert(LinkPair(agent, ticket), source: .auto, now: start) && table.allLinks.count == 2, "linking by the old key finds the existing link")
+        check(table.upsert(LinkPair(pr8, ticket), source: .auto, now: start) && table.record(moved) != nil && table.allEntities.count == 4, "a new link by the old key attaches to the renamed entity")
+        check(!table.upsert(LinkPair(ticket, moved), source: .auto, now: start), "an entity is not linked to its own alias")
+        check(table.rename(moved, to: "ACME-1") && table.record(ticket)?.ref == "ACME-1" && table.record(ticket)?.aliases == ["NEW-9"], "renamed back")
+        check(!table.rename(LinkEntity.jira("NOPE-1"), to: "X-1"), "an unknown entity")
+        let reloaded = LinkTables.decode(LinkTables.encode(table))
+        check(reloaded == table && reloaded.uuid(of: moved) == id, "aliases survive the file")
+    }),
+    ("links: renaming onto an existing entity merges the two, manual beating auto and duplicate pairs dropped", {
+        var table = LinkTable()
+        table.ingest([LinkPair(agent, ticket), LinkPair(ticket, pr7), LinkPair(other, pr8)], now: start)
+        table.upsert(LinkPair(agent, other), source: .manual, now: start)
+        table.upsert(LinkPair(other, pr7), source: .auto, now: start)
+        table.remove(LinkPair(pr7, ticket), now: start)
+        table.upsert(LinkPair(pr7, ticket), source: .manual, now: start)
+        table.remove(LinkPair(pr7, ticket), now: start)
+        table.upsert(LinkPair(other, pr7), source: .manual, now: start)
+        table.remove(LinkPair(other, pr7), now: start)
+        let keep = table.uuid(of: other)!
+        let gone = table.uuid(of: ticket)!
+        check(table.rename(ticket, to: "ACME-2"), "merged")
+        check(table.uuid(of: ticket) == keep && table.uuid(of: other) == keep && table.entities[gone] == nil, "the entity at the new ref stays")
+        check(table.record(other)?.aliases == ["ACME-1"], "the old ref became an alias: \(String(describing: table.record(other)?.aliases))")
+        check(table.link(LinkPair(other, agent))?.source == .manual, "agent link: the manual one wins over the auto one")
+        check(table.link(LinkPair(other, pr7))?.source == .manual && table.link(LinkPair(other, pr7))?.removed == true, "both removals stay removed")
+        check(table.link(LinkPair(other, ticket)) == nil && table.neighbors(of: other) == [agent, pr8].sorted(), "no link to itself: \(table.neighbors(of: other))")
+        check(table.allLinks.count == Set(table.allLinks.map(\.ends)).count, "every pair once")
+        check(table.allLinks.allSatisfy { table.entities[$0.fromEntity] != nil && table.entities[$0.toEntity] != nil }, "no link points at the removed uuid")
+    }),
+    ("links: stale auto links are dropped after 90 days together with the entities they leave behind", {
+        var table = LinkTable()
+        table.upsert(LinkPair(agent, ticket), source: .auto, now: start)
+        table.upsert(LinkPair(pr7, pr8), source: .manual, now: start)
+        let later = table.pruned(now: start.addingTimeInterval(91 * day))
+        check(later.neighbors(of: agent).isEmpty && later.uuid(of: agent) == nil && later.uuid(of: ticket) == nil, "stale auto link and its entities")
+        check(later.neighbors(of: pr7) == [pr8] && later.allEntities.count == 2, "manual kept")
+        check(table.pruned(now: start.addingTimeInterval(89 * day)) == table, "kept before 90 days")
     }),
     ("links: the MCP tool lists neighbors and related, and is read-only", {
         var table = LinkTable()
         table.ingest([LinkPair(agent, ticket), LinkPair(ticket, pr7), LinkPair(ticket, pr8)], now: start)
         let labels = LinkLabels(agents: [agent.id: "Export case"])
         let text = LinkTables.markdown(table, entity: agent, depth: 2, labels: labels)
-        check(text.contains("`jira:ACME-1` (auto)") && text.contains("`github_pr:acme-com/orbit.api#7` orbit.api#7 via `jira:ACME-1`"), text)
+        let ticketID = table.uuid(of: ticket)!.uuidString
+        let prID = table.uuid(of: pr7)!.uuidString
+        check(text.contains("`jira:ACME-1` `\(ticketID)` (auto)") && text.contains("`github_pr:acme-com/orbit.api#7` `\(prID)` orbit.api#7 via `jira:ACME-1`"), text)
         check(!LinkTables.markdown(table, entity: agent, depth: 1, labels: labels).contains("Related"), "depth 1")
         check(LinkTables.markdown(table, entity: ticket, depth: 1, kind: .githubPR, labels: labels).contains("Linked (2)"), "kind filter")
         check(LinkTables.markdown(table, entity: nil, depth: 1, labels: labels).contains("3 links"), "everything")
+        check(text.contains(table.uuid(of: ticket)!.uuidString) && text.hasPrefix("# `agent:"), "uuids in the answer")
+        var renamed = table
+        renamed.rename(ticket, to: "NEW-1")
+        let asked = LinkTables.markdown(renamed, entity: ticket, depth: 1, labels: labels)
+        check(asked.contains("# `jira:NEW-1`") && asked.contains("Also known as: `ACME-1`"), "an old key finds the renamed entity: \(asked)")
         check(LinkTables.markdown(LinkTable(), entity: ticket, depth: 1, labels: labels).contains("No links"), "empty")
         check(MCPServer.allTools.first { $0.name == "links" }?.readOnly == true, "read-only")
     }),

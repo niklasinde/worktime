@@ -1106,7 +1106,8 @@ Observe (all read-only):
 - `ticket_timeline(ticket | pr_url, limit?)` and `outcomes(ticket?, space?, since?)`: what the Timeline page shows, and a table of the latest verdict per ticket.
 - `app_info`: version, git commit (embedded by `build.sh`; the build date without it), pid, start time and uptime, data folder, workspaces and spaces, working and waiting sessions,
   sidecar status, the plan windows when cached, and whether a restart would interrupt running work (the working sessions, queued prompts, a recording).
-- `links` (`entity?`, `depth?`, `kind?`): how agents, tickets, pull requests, branches and Slack threads are linked (the Links view of the Agents list): an entity's neighbors, and with `depth: 2` what is related through them.
+- `links` (`entity?`, `depth?`, `kind?`): how agents, tickets, pull requests, branches and Slack threads are linked (the Links view of the Agents list): an entity's uuid, kind, ref, title, aliases and neighbors (`entity` is a uuid, `kind:ref` or an old ref it had before a rename), and with `depth: 2` what is related through them.
+  The store `links.json` keeps `entities` (uuid, kind, ref, aliases, title) and `links` (uuid, the two entity uuids in canonical order, source, removed, dates); a file in the first format (one row per link with `fromKind`/`fromID`) is converted once at launch and kept as `links.v1.json`. `LinkTable.rename` gives an entity a new ref and keeps the old one as an alias (nothing calls it yet).
 - `request_log`: the last 50 external requests (endpoint, size, status, duration) with totals per service.
 - `usage_summary(range?, group_by?)`: the usage log by today, 7d or 30d, grouped by workspace, agent, routine, automation or model.
 - `workspaces(workspace?)`: workspaces with folders, GitHub owners, Jira projects, Slack and spaces. `agents_overview` also takes `since`.

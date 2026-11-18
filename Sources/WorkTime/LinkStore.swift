@@ -1,7 +1,8 @@
 import Combine
 import Foundation
 
-/// The link table on disk next to the other stores: a corrupt or missing file is an empty table, writes are atomic and stale auto links are dropped.
+/// The link table on disk next to the other stores: a corrupt or missing file is an empty table, writes are atomic, stale auto links are
+/// dropped and a file in the first format is converted once, its original kept as `links.v1.json`.
 @MainActor
 final class LinkStore: ObservableObject {
     static let shared = LinkStore(file: AppPaths.links)
@@ -12,7 +13,13 @@ final class LinkStore: ObservableObject {
 
     init(file: URL?, now: Date = Date()) {
         self.file = file
-        table = LinkTables.decode(file.flatMap { try? Data(contentsOf: $0) }).pruned(now: now)
+        let data = file.flatMap { try? Data(contentsOf: $0) }
+        let loaded = LinkTables.load(data)
+        table = loaded.table.pruned(now: now)
+        if loaded.migrated, let file, let data {
+            try? data.write(to: file.deletingLastPathComponent().appendingPathComponent(LinkTables.backupName), options: .atomic)
+            LinkTables.encode(table).map { try? $0.write(to: file, options: .atomic) }
+        }
     }
 
     func ingest(_ pairs: [LinkPair], now: Date = Date()) {
@@ -25,6 +32,11 @@ final class LinkStore: ObservableObject {
 
     func remove(_ pair: LinkPair, now: Date = Date()) {
         update { $0.remove(pair, now: now) }
+    }
+
+    /// A new natural id for an entity, the old one kept as an alias: a Jira key after a move, a repository after a transfer.
+    func rename(_ entity: LinkEntity, to ref: String) {
+        update { $0.rename(entity, to: ref) }
     }
 
     private func update(_ change: (inout LinkTable) -> Void) {

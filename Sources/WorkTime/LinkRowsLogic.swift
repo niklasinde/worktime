@@ -59,19 +59,18 @@ struct LinkLabels {
 }
 
 struct LinkChip: Identifiable, Equatable {
+    let id: UUID
     let entity: LinkEntity
     let source: LinkSource
-
-    var id: String { entity.key }
 }
 
 /// One row of the Links view: an entity, everything linked to it, and what that reaches one more hop away.
 struct LinkRow: Identifiable, Equatable {
+    /// The entity's uuid; an agent nothing is linked to yet has none, and is identified by its `kind:id`.
+    let id: String
     let entity: LinkEntity
     var chips: [LinkChip]
     var related: [LinkReach]
-
-    var id: String { entity.key }
 }
 
 enum LinkRows {
@@ -81,9 +80,11 @@ enum LinkRows {
         let entities = Set(table.entities(kind: mode.kind) + including.filter { $0.kind == mode.kind })
         let terms = query.lowercased().split(separator: " ").map(String.init)
         let rows = entities.map { entity -> LinkRow in
-            let chips = table.neighbors(of: entity).map { LinkChip(entity: $0, source: table.edge(LinkPair(entity, $0))?.source ?? .auto) }
+            let chips = table.neighbors(of: entity).compactMap { other in
+                table.uuid(of: other).map { LinkChip(id: $0, entity: other, source: table.link(LinkPair(entity, other))?.source ?? .auto) }
+            }
             let near = Set(chips.map(\.entity))
-            return LinkRow(entity: entity, chips: chips, related: table.related(to: entity, depth: 2).filter { !near.contains($0.entity) })
+            return LinkRow(id: table.uuid(of: entity)?.uuidString ?? entity.key, entity: entity, chips: chips, related: table.related(to: entity, depth: 2).filter { !near.contains($0.entity) })
         }
         return rows.filter { row in
             let text = ([row.entity] + row.chips.map(\.entity)).map(labels.text).joined(separator: " ")

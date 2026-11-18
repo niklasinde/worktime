@@ -5,7 +5,7 @@ import Foundation
 /// which only shows something. Nothing here answers a decision.
 extension MCPServer {
     /// Bumped whenever a tool is added, removed or changes its arguments, so a client can tell its connection is out of date.
-    static let schemaVersion = 4
+    static let schemaVersion = 5
 
     struct CoordinatorSources {
         var agentState = AppPaths.agentState
@@ -180,21 +180,27 @@ extension MCPServer {
             MCPTool(name: "links",
                     description: "How agents, Jira tickets, pull requests, branches and Slack threads are linked, as the app's Links view shows it. Links are undirected, from what the app derived (auto) "
                         + "and what the user added (manual). Give entity as `jira:PROJ-123`, `github_pr:owner/repo#12`, `agent:<key>`, `branch:repo:name` or `slack_thread:<permalink>` "
-                        + "(a bare Jira key or pull request address works too) for its neighbors, and depth 2 for what is related through them: an agent's ticket's other pull requests, a ticket's pull requests' agents. "
+                        + "(a bare Jira key or pull request address works too, and so does the entity's uuid, or an old key it had before it was renamed) for its uuid, kind, ref, title, aliases and neighbors, and depth 2 for what is related through them: an agent's ticket's other pull requests, a ticket's pull requests' agents. "
                         + "Without entity every link is listed. Ticket statuses and pull request states come from the app's lookup cache. Read-only.",
-                    properties: ["entity": ["type": "string", "description": "What to look up: `kind:id`, a Jira key or a pull request address."],
+                    properties: ["entity": ["type": "string", "description": "What to look up: an entity uuid, `kind:ref`, a Jira key or a pull request address."],
                                  "depth": ["type": "integer", "minimum": 1, "maximum": 2, "description": "1 for direct links (default), 2 to add what is related through them."],
                                  "kind": ["type": "string", "description": "Only entities of this kind: agent, jira, github_pr, branch, slack_thread, meeting, confluence or commit."]]) { args in
                 guard let data = try? Data(contentsOf: sources.links) else {
                     throw MCPToolError("WorkTime has not written its links yet (\(sources.links.path)). Open WorkTime (an older version does not write them).")
                 }
+                let table = LinkTables.decode(data)
                 let entity = try FilterLogic.text(args, "entity").map { text in
-                    guard let entity = LinkTargets.parse(text) else { throw MCPToolError("entity must be kind:id (like jira:PROJ-123 or github_pr:owner/repo#12), a Jira key or a pull request address.") }
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let id = UUID(uuidString: trimmed) {
+                        guard let entity = table.entity(id: id) else { throw MCPToolError("No entity with the uuid \(id.uuidString).") }
+                        return entity
+                    }
+                    guard let entity = LinkTargets.parse(trimmed) else { throw MCPToolError("entity must be a uuid, kind:ref (like jira:PROJ-123 or github_pr:owner/repo#12), a Jira key or a pull request address.") }
                     return entity
                 }
                 let labels = LinkLabels(agents: Dictionary(sources.agents().map { ($0.key, $0.title) }) { first, _ in first },
                                         infos: SessionRefLookup.decode(try? Data(contentsOf: sources.refTitles)).compactMapValues(\.info))
-                return LinkTables.markdown(LinkTables.decode(data), entity: entity, depth: count(args["depth"], fallback: 1, maximum: 2),
+                return LinkTables.markdown(table, entity: entity, depth: count(args["depth"], fallback: 1, maximum: 2),
                                            kind: FilterLogic.text(args, "kind").map(LinkKind.init(rawValue:)), labels: labels)
             },
             MCPTool(name: "open_in_app",

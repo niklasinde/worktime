@@ -95,7 +95,7 @@ struct LinksView: View {
             if adding == row.id { addField(row) }
             if isOpen {
                 FlowLayout(spacing: 6) {
-                    ForEach(row.related, id: \.entity) { reach in
+                    ForEach(row.related) { reach in
                         LinkEntityLabel(entity: reach.entity, labels: labels, bold: false) { open(reach.entity) }
                             .opacity(0.7)
                             .help("Through \(labels.name(reach.via))")
