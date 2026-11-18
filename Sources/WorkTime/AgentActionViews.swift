@@ -117,7 +117,7 @@ struct AgentActionRow: View {
                 .disabled(working)
                 .help("Sends the instructions to \(suggested.role.name)")
         } else {
-            Menu("Ask an assistant\u{2026}") { assistantItems }
+            Menu("Ask an agent\u{2026}") { assistantItems }
                 .controlSize(.small)
                 .fixedSize()
                 .disabled(working || context.assistants.isEmpty)
@@ -126,8 +126,10 @@ struct AgentActionRow: View {
     }
 
     @ViewBuilder private var assistantItems: some View {
-        ForEach(context.assistants) { entry in
-            Button(entry.role.name) { run(.assistant(entry)) }
+        Section("Start an agent as\u{2026}") {
+            ForEach(context.assistants) { entry in
+                Button(entry.role.name) { run(.assistant(entry)) }
+            }
         }
     }
 

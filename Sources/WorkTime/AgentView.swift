@@ -402,6 +402,8 @@ struct AgentList: View {
            let folder = state.folder ?? AgentSessionStore.list(for: state.key).first(where: { $0.id == session })?.folder {
             Button("Open in Claude Code\u{2026}") { ClaudeSessionImporter.openInClaudeCode(folder: folder, session: session) }
         }
+        Button("Copy session id") { state.sessionID.map { ClaudeSessionImporter.copy(sessionID: $0) } }
+            .disabled(state.sessionID == nil)
         if let entry = assistants.entry(state.key) {
             Divider()
             AssistantMenuItems(entry: entry, action: $assistantAction, deleting: $deletingAssistant) { hub.selected = $0 }

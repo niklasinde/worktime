@@ -44,6 +44,11 @@ enum ClaudeSessionImporter {
         }
     }
 
+    static func copy(sessionID: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(sessionID, forType: .string)
+    }
+
     /// Asks first, since the agent and Claude Code must not both continue the session, then runs `claude --resume` in a terminal.
     static func openInClaudeCode(folder: String, session: String) {
         let alert = NSAlert()
@@ -70,6 +75,10 @@ struct AgentOverflowMenu: View {
         Menu {
             Button("Open in Claude Code\u{2026}") {
                 if let session = model.sessionID { ClaudeSessionImporter.openInClaudeCode(folder: model.folder, session: session) }
+            }
+            .disabled(model.sessionID == nil)
+            Button("Copy session id") {
+                if let session = model.sessionID { ClaudeSessionImporter.copy(sessionID: session) }
             }
             .disabled(model.sessionID == nil)
             Button("Change Folder\u{2026}") { model.changeFolder() }
