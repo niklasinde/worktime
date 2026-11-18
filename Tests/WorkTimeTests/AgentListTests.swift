@@ -129,4 +129,18 @@ let agentListTests: [(name: String, run: () throws -> Void)] = [
         let mixed = TicketRow.group(TicketGroup(subject: .ticket("PROJ-1"), members: [member, recent]))
         check(AgentListFilter.splitOlder([mixed], now: now, calendar: calendar).older.isEmpty, "a group follows its latest session")
     }),
+    ("agent list: the entries are one flat list with unique stable ids and an Older header only when something is older", {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let rows = (1...40).map { number -> TicketRow in
+            var state = pullRequest("https://github.com/acme-com/api/pull/\(number)")
+            state.updatedAt = now.addingTimeInterval(number.isMultiple(of: 2) ? -6 * 86_400 : -60)
+            return .agent(state)
+        }
+        let closed = AgentListFilter.entries(rows, olderOpen: false, now: now)
+        let open = AgentListFilter.entries(rows, olderOpen: true, now: now)
+        check(closed.count == 21 && open.count == 41, "20 today, the header, and 20 older when open")
+        check(Set(open.map(\.id)).count == open.count, "unique ids")
+        check(open.map(\.id) == AgentListFilter.entries(rows, olderOpen: true, now: now).map(\.id), "stable ids")
+        check(AgentListFilter.entries(Array(rows.prefix(1)), olderOpen: true, now: now).count == 1, "no header without older rows")
+    }),
 ]

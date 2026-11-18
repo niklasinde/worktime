@@ -87,6 +87,17 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
         return (rows.filter { !isOlder($0) }, rows.filter(isOlder))
     }
 
+    /// Today's rows, then the Older header and, when open, the older rows, as one flat list so the lazy stack sees a single ForEach.
+    static func entries(_ rows: [TicketRow], olderOpen: Bool, now: Date, calendar: Calendar = .current) -> [AgentListEntry] {
+        let split = splitOlder(rows, now: now, calendar: calendar)
+        var entries = split.today.map(AgentListEntry.row)
+        if !split.older.isEmpty {
+            entries.append(.olderHeader(count: split.older.count, isOpen: olderOpen))
+            if olderOpen { entries += split.older.map(AgentListEntry.row) }
+        }
+        return entries
+    }
+
     /// The comma separated ids with `id` taken out when it is in, put in when it is not.
     static func toggling(_ id: String, in ids: String) -> String {
         var set = Set(ids.split(separator: ",").map(String.init))
@@ -95,4 +106,16 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
     }
 
     static func contains(_ id: String, in ids: String) -> Bool { ids.split(separator: ",").contains { $0 == id } }
+}
+
+enum AgentListEntry: Identifiable, Equatable {
+    case row(TicketRow)
+    case olderHeader(count: Int, isOpen: Bool)
+
+    var id: String {
+        switch self {
+        case .row(let row): row.id
+        case .olderHeader: "agent-list-older"
+        }
+    }
 }

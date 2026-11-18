@@ -168,6 +168,13 @@ struct AgentList: View {
             footer
         }
         .background(Color.primary.opacity(0.025))
+        .task(id: visibleGroups.flatMap(\.agents).map(\.key)) {
+            let refs = visibleGroups.flatMap { group in
+                let projects = Set(group.workspace.jiraProjects.map { $0.uppercased() })
+                return group.agents.compactMap { AgentListFilter.ref(of: $0, projects: projects, titles: prTitles) }
+            }
+            await SessionRefDirectory.shared.ensure(refs, skip: [])
+        }
         .sheet(isPresented: $creating) {
             NewTopicAgentSheet { topic in
                 creating = false

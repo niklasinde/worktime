@@ -38,17 +38,12 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
             let chips = searching ? [] : AgentListFilter.chips(counts: counts)
             if !searching, !chips.isEmpty || hidden > 0 || showDone { chipRow(chips, counts: counts, selected: filter, hidden: hidden) }
             let rows = TicketGrouping.rows(AgentListFilter.shown(scoped, filter: filter), projects: projects, titles: titles)
-            let split = AgentListFilter.splitOlder(rows, now: Date())
-            ForEach(split.today) { rowView($0) }
-            if !split.older.isEmpty {
-                let isOpen = olderOpen || searching
-                olderHeader(count: split.older.count, isOpen: isOpen)
-                if isOpen { ForEach(split.older) { rowView($0) } }
+            ForEach(AgentListFilter.entries(rows, olderOpen: olderOpen || searching, now: Date())) { entry in
+                switch entry {
+                case .row(let row): rowView(row)
+                case .olderHeader(let count, let isOpen): olderHeader(count: count, isOpen: isOpen)
+                }
             }
-        }
-        Color.clear.frame(height: 0).task(id: everything.map(\.key)) {
-            let refs = everything.compactMap { AgentListFilter.ref(of: $0, projects: projects, titles: titles) }
-            await directory.ensure(refs, skip: [])
         }
     }
 

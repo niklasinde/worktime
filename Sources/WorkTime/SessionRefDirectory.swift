@@ -55,7 +55,8 @@ final class SessionRefDirectory: ObservableObject {
     }
 
     private func finish(_ ids: [String], with answers: [String: SessionRefEntry]) {
-        entries.merge(answers) { _, new in new }
+        let merged = entries.merging(answers) { _, new in new }
+        if merged != entries { entries = merged }
         loading.subtract(ids)
         for id in ids { backoff[id] = nil }
     }
