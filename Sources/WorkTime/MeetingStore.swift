@@ -53,6 +53,7 @@ enum AppPaths {
     static var decisionState: URL { support.appendingPathComponent(PendingDecisions.fileName) }
     static var timelineState: URL { support.appendingPathComponent(TimelineSnapshots.fileName) }
     static var appInfo: URL { support.appendingPathComponent(AppInfos.fileName) }
+    static var requestLog: URL { support.appendingPathComponent(RequestLogs.fileName) }
     static var eventLog: URL { support.appendingPathComponent(AppEvents.fileName) }
     /// The tool set the last `--mcp` run offered, to tell a client when it changed.
     static var mcpTools: URL { support.appendingPathComponent("mcp-tools.json") }

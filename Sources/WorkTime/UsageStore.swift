@@ -125,9 +125,14 @@ final class UsagePlanModel: ObservableObject {
         loading = true
         let childEnvironment = AgentLogic.childEnvironment(environment, nodeFolder: node.deletingLastPathComponent().path, mcpCommand: nil)
         Task { [weak self] in
+            let started = Date()
             let output = await Self.run(node: node, script: script, environment: childEnvironment)
+            let outcome = UsagePlanOutcome.parse(output)
+            var failure = false
+            if case .failed = outcome { failure = true }
+            RequestLog.shared.record(service: .anthropic, what: "plan usage", bytes: output.utf8.count, started: started, status: (failure ? "failed" : "ok", failure))
             guard let self else { return }
-            self.outcome = UsagePlanOutcome.parse(output)
+            self.outcome = outcome
             self.fetched = Date()
             self.loading = false
         }

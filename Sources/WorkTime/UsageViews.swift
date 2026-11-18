@@ -27,6 +27,7 @@ struct UsagePage: View {
                 expensiveSection
                 ideasSection
             }
+            RequestLogSection(log: .shared)
             SettingsSection("About these numbers", footer: nil) {
                 Text("Cost is what Claude Code estimates for each call at API prices: an estimate, not a bill. On a subscription your usage counts against the plan's "
                      + "limits above, not a charge per call. Subagents and compaction are included in their agent's cost, cache reads are not counted in tokens, "

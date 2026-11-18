@@ -132,7 +132,11 @@ class ModelDownloads<Model: DownloadableModel>: ObservableObject {
 
     func download(_ model: Model) {
         statuses[model] = .downloading(0)
+        let started = Date()
         let task = URLSession.shared.downloadTask(with: model.remoteURL) { [weak self] file, response, error in
+            let size = file.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int } ?? 0
+            let status = RequestLogs.httpStatus((response as? HTTPURLResponse)?.statusCode ?? 0)
+            RequestLog.shared.record(service: .other, what: "model download", bytes: size, started: started, status: (status.text, status.failed || error != nil))
             let result = Result { try Self.install(model, file: file, response: response, error: error) }
             Task { @MainActor in self?.finish(model, result) }
         }

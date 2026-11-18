@@ -33,8 +33,7 @@ struct SlackClient: SlackAPI {
     var transport: SlackTransport = SlackClient.urlSession
 
     static let urlSession: SlackTransport = { request in
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let http = response as? HTTPURLResponse
+        let (data, http) = try await RequestLog.shared.data(for: request, service: .slack)
         return (data, http?.statusCode ?? 0, http?.value(forHTTPHeaderField: "Retry-After"))
     }
 

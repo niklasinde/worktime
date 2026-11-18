@@ -5,7 +5,7 @@ import Foundation
 /// which only shows something. Nothing here answers a decision.
 extension MCPServer {
     /// Bumped whenever a tool is added, removed or changes its arguments, so a client can tell its connection is out of date.
-    static let schemaVersion = 2
+    static let schemaVersion = 3
 
     struct CoordinatorSources {
         var agentState = AppPaths.agentState
@@ -13,6 +13,7 @@ extension MCPServer {
         var timeline = AppPaths.timelineState
         var appInfo = AppPaths.appInfo
         var events = AppPaths.eventLog
+        var requests = AppPaths.requestLog
         var usage = AppPaths.usageLog
         var inbox = AppPaths.agentInbox
         var workspaces = WorkspaceSource()
@@ -164,6 +165,15 @@ extension MCPServer {
                 let records = Usage.records(UsageLog(url: sources.usage).read(now: date), in: range, now: date)
                 let info = AppInfos.decode(try? Data(contentsOf: sources.appInfo))
                 return UsageRanges.markdown(records, range: range, group: group, plan: info?.plan, fetched: info?.planFetched, now: date)
+            },
+            MCPTool(name: "request_log",
+                    description: "What WorkTime itself fetched from the outside (GitHub through gh, Slack, Jira, Claude): the last \(RequestLogState.capacity) requests with endpoint, response size, status and duration, "
+                        + "totals per service since the app started and the bytes of the last hour. Bodies and tokens are never kept. Read-only.",
+                    properties: [:]) { _ in
+                guard let file = RequestLogs.decode(try? Data(contentsOf: sources.requests)) else {
+                    throw MCPToolError("WorkTime has not written its request log yet (\(sources.requests.path)). Open WorkTime (an older version does not write it).")
+                }
+                return RequestLogs.markdown(file, now: now())
             },
             MCPTool(name: "open_in_app",
                     description: "Brings the WorkTime window to the front on one item: a session (session_id), a ticket's page (ticket), a pull request (pr_url) or a page (page). "

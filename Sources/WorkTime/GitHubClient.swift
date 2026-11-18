@@ -32,14 +32,21 @@ enum GitHubClient {
         process.standardOutput = out
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
+        let started = Date()
+        let what = RequestLogs.ghLabel(arguments)
+        do { try process.run() } catch {
+            RequestLog.shared.record(service: .github, what: what, bytes: 0, started: started, status: ("not started", true))
+            return nil
+        }
         nonisolated(unsafe) var errorData = Data()
         let reader = DispatchGroup()
         DispatchQueue.global().async(group: reader) { errorData = err.fileHandleForReading.readDataToEndOfFile() }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         reader.wait()
         process.waitUntilExit()
-        return Output(status: process.terminationStatus, stdout: data, stderr: String(decoding: errorData, as: UTF8.self))
+        let output = Output(status: process.terminationStatus, stdout: data, stderr: String(decoding: errorData, as: UTF8.self))
+        RequestLog.shared.record(service: .github, what: what, bytes: data.count, started: started, status: RequestLogs.ghStatus(exit: output.status, stderr: output.stderr))
+        return output
     }
 
     /// Every tab's pull requests. A tab that cannot be fetched is left out, so its cached rows stay. A single-sign-on

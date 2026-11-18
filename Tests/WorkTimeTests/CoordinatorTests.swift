@@ -167,7 +167,7 @@ let coordinatorTests: [(name: String, run: () throws -> Void)] = [
         check(writing.isSubset(of: known), "a new write tool must be added here on purpose: \(writing.subtracting(known).sorted())")
         let answering = MCPServer.toolNames.filter { name in ["approve", "allow", "deny", "answer", "respond", "decide", "resolve", "dismiss", "post_review", "merge"].contains { name.contains($0) } }
         check(answering.isEmpty, "no tool names an answer: \(answering)")
-        for name in ["pending_decisions", "wait_for", "request_status", "events_since", "ticket_timeline", "outcomes", "app_info", "usage_summary", "workspaces"] {
+        for name in ["pending_decisions", "wait_for", "request_status", "events_since", "ticket_timeline", "outcomes", "app_info", "usage_summary", "request_log", "workspaces"] {
             check(MCPServer.allTools.first { $0.name == name }?.readOnly == true, "\(name) is read-only")
         }
         let routes = ["approval", "decision", "answer"]

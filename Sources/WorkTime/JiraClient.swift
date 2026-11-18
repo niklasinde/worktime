@@ -11,8 +11,8 @@ struct JiraClient: Sendable {
     var transport: JiraTransport = JiraClient.urlSession
 
     static let urlSession: JiraTransport = { request in
-        let (data, response) = try await URLSession.shared.data(for: request)
-        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
+        let (data, response) = try await RequestLog.shared.data(for: request, service: .jira)
+        return (data, response?.statusCode ?? 0)
     }
 
     func displayName() async throws -> String {
