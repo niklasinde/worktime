@@ -19,13 +19,14 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     @AppStorage(AgentListFilter.showDoneKey) private var showDone = false
     @AppStorage(AgentListFilter.olderOpenKey) private var olderOpen = false
     @ObservedObject private var directory = SessionRefDirectory.shared
+    @ObservedObject private var linkStore = LinkStore.shared
     @State private var showLinks = false
 
     var body: some View {
         let searching = AgentSearch.isActive(query)
         let isCollapsed = AgentListFilter.contains(workspace.id, in: collapsed) && !searching
         let projects = Set(workspace.jiraProjects.map { $0.uppercased() })
-        let everything = Self.scoped(agents, workspace: workspace, space: space, titles: titles, query: query)
+        let everything = Self.scoped(agents, workspace: workspace, space: space, titles: titles, query: query, links: linkStore.searchIndex)
         let infos = directory.entries.compactMapValues(\.info)
         let scoped = AgentListFilter.unfinished(everything, showDone: showDone, searching: searching, projects: projects, titles: titles, infos: infos)
         let hidden = everything.filter { $0.archived != true }.count - scoped.filter { $0.archived != true }.count
@@ -71,9 +72,9 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         .help(isOpen ? "Hide the agents last active before today" : "Show the agents last active before today")
     }
 
-    static func scoped(_ agents: [AgentState], workspace: Workspace, space: String?, titles: [String: String], query: String) -> [AgentState] {
+    static func scoped(_ agents: [AgentState], workspace: Workspace, space: String?, titles: [String: String], query: String, links: AgentLinkIndex = .empty) -> [AgentState] {
         let projects = Set(workspace.jiraProjects.map { $0.uppercased() })
-        return AgentSearch.filter(Spaces.related(agents, space: space, projects: projects, titles: titles), query: query, titles: titles)
+        return AgentSearch.filter(Spaces.related(agents, space: space, projects: projects, titles: titles), query: query, titles: titles, links: links)
     }
 
     private func header(isCollapsed: Bool, count: Int) -> some View {

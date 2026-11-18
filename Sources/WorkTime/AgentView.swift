@@ -227,7 +227,7 @@ struct AgentList: View {
             let main = AgentSearch.filter(group.main.map { [$0] } ?? [], query: query, titles: prTitles)
             let assistants = AgentSearch.filter(Spaces.filter(group.assistants, space: space), query: query, titles: prTitles)
             let routines = [false, true].flatMap { RoutineSection.shown(self.routines.routines(in: group.workspace.id), automations: $0, space: space, query: query) }
-            let agents = AgentsSection<EmptyView, EmptyView>.scoped(group.agents, workspace: group.workspace, space: space, titles: prTitles, query: query).filter { $0.archived != true }
+            let agents = AgentsSection<EmptyView, EmptyView>.scoped(group.agents, workspace: group.workspace, space: space, titles: prTitles, query: query, links: LinkStore.shared.searchIndex).filter { $0.archived != true }
             if let key = (main + assistants).map(\.key).first ?? routines.map(\.key).first ?? agents.map(\.key).first { return key }
         }
         return nil

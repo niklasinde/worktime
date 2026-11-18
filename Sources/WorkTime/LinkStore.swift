@@ -8,6 +8,7 @@ final class LinkStore: ObservableObject {
     static let shared = LinkStore(file: AppPaths.links)
 
     @Published private(set) var table: LinkTable
+    private(set) var searchIndex: AgentLinkIndex
     private static let writer = DispatchQueue(label: "worktime.links.write", qos: .utility)
     private let file: URL?
 
@@ -15,7 +16,9 @@ final class LinkStore: ObservableObject {
         self.file = file
         let data = file.flatMap { try? Data(contentsOf: $0) }
         let loaded = LinkTables.load(data)
-        table = loaded.table.pruned(now: now)
+        let pruned = loaded.table.pruned(now: now)
+        table = pruned
+        searchIndex = AgentLinkIndex(table: pruned)
         if loaded.migrated, let file, let data {
             try? data.write(to: file.deletingLastPathComponent().appendingPathComponent(LinkTables.backupName), options: .atomic)
             LinkTables.encode(table).map { try? $0.write(to: file, options: .atomic) }
@@ -44,6 +47,7 @@ final class LinkStore: ObservableObject {
         change(&next)
         guard next != table else { return }
         table = next
+        searchIndex = AgentLinkIndex(table: next)
         save()
     }
 
