@@ -165,6 +165,11 @@ enum AgentActionOutcomes {
 
     static func key(agent: String, action: String) -> String { agent + "|" + action }
 
+    /// Dismissed actions reuse the reviews' dated book, under the same agent and action key.
+    static func isDismissed(agent: String, action: String, in dismissed: ReviewDismissedBook.Book) -> Bool {
+        dismissed[key(agent: agent, action: action)] != nil
+    }
+
     static func record(_ outcome: AgentActionOutcome, agent: String, action: String, in book: Book) -> Book {
         var book = book
         book[key(agent: agent, action: action)] = outcome

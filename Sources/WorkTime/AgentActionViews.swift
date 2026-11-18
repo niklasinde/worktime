@@ -31,10 +31,22 @@ extension EnvironmentValues {
 final class AgentActionStore: ObservableObject {
     static let shared = AgentActionStore()
     static let key = "agentActionOutcomes"
+    static let dismissedKey = "agentActionDismissed"
 
     @Published private(set) var book: AgentActionOutcomes.Book
+    @Published private(set) var dismissed: ReviewDismissedBook.Book
 
-    init() { book = AgentActionOutcomes.decode(AgentModel.defaults.data(forKey: Self.key)) }
+    init() {
+        book = AgentActionOutcomes.decode(AgentModel.defaults.data(forKey: Self.key))
+        dismissed = ReviewDismissedBook.decode(AgentModel.defaults.data(forKey: Self.dismissedKey))
+    }
+
+    func isDismissed(agent: String, action: String) -> Bool { AgentActionOutcomes.isDismissed(agent: agent, action: action, in: dismissed) }
+
+    func dismiss(agent: String, action: String) {
+        dismissed = ReviewDismissedBook.record(AgentActionOutcomes.key(agent: agent, action: action), date: Date(), in: dismissed)
+        AgentModel.defaults.set(ReviewDismissedBook.encode(dismissed), forKey: Self.dismissedKey)
+    }
 
     func outcome(agent: String, action: String) -> AgentActionOutcome? { book[AgentActionOutcomes.key(agent: agent, action: action)] }
 
@@ -77,6 +89,10 @@ struct AgentActionRow: View {
     private var suggested: AssistantEntry? { AgentActions.suggested(action.assistant, in: context.assistants) }
 
     var body: some View {
+        if !store.isDismissed(agent: context.agent, action: action.id) { card }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label { Text(action.title).fontWeight(.medium).textSelection(.enabled) } icon: { Image(systemName: "arrow.turn.down.right").foregroundStyle(.secondary) }
             HStack(spacing: 10) { if let outcome { sent(outcome) } else { buttons } }
@@ -86,6 +102,8 @@ struct AgentActionRow: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(action.prompt, forType: .string)
                 }
+                Button("Dismiss") { store.dismiss(agent: context.agent, action: action.id) }
+                    .help("Hides this suggestion for good")
             }
             .linkButtonStyle()
             .font(.caption)

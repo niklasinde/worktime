@@ -76,6 +76,13 @@ let agentActionTests: [(name: String, run: () throws -> Void)] = [
         check(AgentActions.suggested(reviewer.key, in: all) == reviewer, "key")
         check(AgentActions.suggested("Support", in: all) == nil && AgentActions.suggested("Nobody", in: all) == nil && AgentActions.suggested(nil, in: all) == nil, "none")
     }),
+    ("action: a dismissed action is hidden for that agent only, and stays hidden after encoding", {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let book = ReviewDismissedBook.record(AgentActionOutcomes.key(agent: "a", action: "x"), date: date, in: [:])
+        check(AgentActionOutcomes.isDismissed(agent: "a", action: "x", in: book), "dismissed")
+        check(!AgentActionOutcomes.isDismissed(agent: "b", action: "x", in: book) && !AgentActionOutcomes.isDismissed(agent: "a", action: "y", in: book), "others stay")
+        check(AgentActionOutcomes.isDismissed(agent: "a", action: "x", in: ReviewDismissedBook.decode(ReviewDismissedBook.encode(book))), "kept")
+    }),
     ("action: clicked actions are kept per agent and action, the oldest dropped past the limit, and survive encoding", {
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         var book = AgentActionOutcomes.record(AgentActionOutcome(assistant: nil, name: nil, date: date), agent: "a", action: "x", in: [:])
