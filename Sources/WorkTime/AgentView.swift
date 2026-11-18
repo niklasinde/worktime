@@ -1127,6 +1127,7 @@ struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
     @AppStorage(AgentLogic.chromeDefaultKey) private var chromeByDefault = false
+    @AppStorage(AgentLogic.chromeAllowAllKey) private var chromeAllowAll = false
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
     @AppStorage(Decisions.keepKey) private var keepDecisions = true
     @AppStorage(Decisions.dropDownKey) private var dropDownDecisions = true
@@ -1223,6 +1224,9 @@ struct AgentSettingsSection: View {
             }
             SettingsRow("Claude in Chrome", detail: "Start new agents with the browser tools on. Switch it per agent with the Chrome button.") {
                 Toggle("Claude in Chrome", isOn: $chromeByDefault).labelsHidden()
+            }
+            SettingsRow("Allow all Claude in Chrome actions", detail: "Lets agents click, type, navigate and run scripts in your real Chrome without asking, in every permission mode. Applies to all agents.") {
+                Toggle("Allow all Claude in Chrome actions", isOn: $chromeAllowAll).labelsHidden()
             }
         }
         transcriptSection

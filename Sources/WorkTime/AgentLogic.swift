@@ -131,7 +131,7 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
 /// What the window sends the sidecar, one JSON object per line.
 enum AgentRequest {
     case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
-                chrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
+                chrome: Bool = false, allowAllChrome: Bool = false, fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
                 instructions: [String: String]? = nil, roleWaitSeconds: Int? = nil)
     /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
     case message(id: String, text: String, images: [AgentImage] = [])
@@ -152,13 +152,14 @@ enum AgentRequest {
     var line: String {
         var object: [String: Any]
         switch self {
-        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
+        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let allowAllChrome, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
             object = ["type": "prompt", "text": text, "cwd": cwd, "permissionMode": mode.rawValue]
             if let roleWaitSeconds { object["roleWaitSeconds"] = roleWaitSeconds }
             if let allowedTools { object["allowedMcpTools"] = allowedTools }
             if let delegateFrom { object["delegateFrom"] = delegateFrom }
             if !images.isEmpty { object["images"] = images.map(\.json) }
             if chrome { object["chrome"] = true }
+            if allowAllChrome { object["allowAllChrome"] = true }
             if let sessionID {
                 object["sessionId"] = sessionID
                 if fork { object["forkSession"] = true }
@@ -262,6 +263,7 @@ enum AgentLogic {
     static let folderKey = "agentFolder"
     static let chromeKey = "agentChrome"
     static let chromeDefaultKey = "agentChromeByDefault"
+    static let chromeAllowAllKey = "agentChromeAllowAll"
     static let movedFoldersKey = "agentMovedFolders"
 
     /// Whether an agent has Claude in Chrome switched on, by its history key; `fallback` when nothing was saved for it.

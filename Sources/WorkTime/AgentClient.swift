@@ -860,6 +860,7 @@ final class AgentModel: ObservableObject {
         turnStartsSession = sessionID == nil
         client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
                             appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
+                            allowAllChrome: Self.defaults.bool(forKey: AgentLogic.chromeAllowAllKey),
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
                             delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace, locations: locations),
                             roleWaitSeconds: routine != nil ? RoleTools.waitSeconds() : nil))

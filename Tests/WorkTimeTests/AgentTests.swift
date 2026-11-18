@@ -170,6 +170,8 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
               && AgentLogic.chromeSaved(true, byDefault: false) == true, "an off is kept only against an on default")
         check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, chrome: true).line.contains(#""chrome":true"#), "sent when on")
         check(!AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil).line.contains("chrome"), "left out when off")
+        check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, allowAllChrome: true).line.contains(#""allowAllChrome":true"#), "allow all sent when on")
+        check(!AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil).line.contains("allowAllChrome"), "allow all left out when off")
         check(AgentEvent.decode(#"{"type":"chrome","connected":true}"#, cwd: "/") == .chrome(problem: nil), "connected")
         check(AgentEvent.decode(#"{"type":"chrome","connected":false,"message":"Browser extension is not connected."}"#, cwd: "/")
               == .chrome(problem: "Browser extension is not connected."), "not connected")

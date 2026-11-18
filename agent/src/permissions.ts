@@ -52,14 +52,15 @@ export function selfReport(tool: string, input: Record<string, unknown>, delegat
 }
 
 /// Claude in Chrome acts in the user's own browser, so only its reads and the calls the user allowed (for this session, or
-/// with a saved rule for that tool or computer action) run without asking, in every mode. `sessionAllowed` holds those calls' `sessionKey`s.
+/// with a saved rule for that tool or computer action) run without asking, in every mode, and all of them when `allowAllChrome` is on. `sessionAllowed` holds those calls' `sessionKey`s.
 /// `delegated` is the delegate rule that lets this call of send_to_agent through, the only thing that does.
 export function preToolDecision(tool: string, input: Record<string, unknown>, cwd: string, rules: Rule[], mode: Mode, allowedMcp?: string[], delegated?: string,
-                                sessionAllowed: ReadonlySet<string> = new Set()): Decision {
+                                sessionAllowed: ReadonlySet<string> = new Set(), allowAllChrome = false): Decision {
   const session = isSessionAllowable(tool) && sessionAllowed.has(sessionKey(tool, input));
   if (addableToRole(tool, allowedMcp)) return { kind: "missing", tier: roleTier(tool) };
   if (mcpDenied(tool, allowedMcp)) return { kind: "deny", reason: `${tool} is not one of this assistant's tools, and tools of other servers cannot be added to its list. Its role file lists the tools it may use.` };
   if (isChromeTool(tool)) {
+    if (allowAllChrome) return { kind: "allow", rule: "Allow all Claude in Chrome" };
     if (isChromeRead(tool, input)) return { kind: "allow", readOnly: true };
     if (session) return { kind: "allow", rule: sessionRule };
     const rule = matchRules(rules, tool, input, cwd);

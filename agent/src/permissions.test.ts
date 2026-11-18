@@ -116,6 +116,17 @@ test("a call allowed for this session runs without asking, Chrome's too, and an 
   assert.deepEqual(preToolDecision(chromeJs, {}, cwd, [], "default"), { kind: "ask" });
 });
 
+test("Allow all Claude in Chrome lets every Chrome call through in every mode, and nothing else", () => {
+  const calls: [string, Record<string, unknown>][] = [["mcp__claude-in-chrome__navigate", {}], ["mcp__claude-in-chrome__javascript_tool", {}], ["mcp__claude-in-chrome__computer", { action: "type" }], ["mcp__claude-in-chrome__file_upload", {}]];
+  for (const mode of modes) {
+    for (const [tool, input] of calls) {
+      assert.deepEqual(preToolDecision(tool, input, cwd, [], mode, undefined, undefined, new Set(), true), { kind: "allow", rule: "Allow all Claude in Chrome" }, `${tool} ${mode}`);
+      assert.deepEqual(preToolDecision(tool, input, cwd, [], mode), { kind: "ask" }, `${tool} ${mode} off`);
+    }
+    assert.notDeepEqual(preToolDecision("mcp__worktime__send_to_agent", {}, cwd, [], mode, undefined, undefined, new Set(), true), { kind: "allow", rule: "Allow all Claude in Chrome" });
+  }
+});
+
 test("a session allowance does not reach Bash or the edit tools", () => {
   const session = new Set(["Bash", "Edit"]);
   assert.deepEqual(preToolDecision("Bash", { command: "rm -rf build" }, cwd, [], "default", undefined, undefined, session), { kind: "defer" });

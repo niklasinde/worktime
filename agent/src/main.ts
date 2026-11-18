@@ -87,7 +87,7 @@ async function decide(tool: string, input: Record<string, unknown>, options: Pro
   const check = tool === delegateTool && hasDelegateRules(rules, options.delegateFrom);
   const delegated = check ? matchDelegate(rules, options.delegateFrom, await resolveTarget(input)) : undefined;
   const listed = options.allowedMcpTools && [...options.allowedMcpTools, ...roleAdded];
-  return preToolDecision(tool, input, options.cwd, rules, mode, listed, delegated, sessionAllowed);
+  return preToolDecision(tool, input, options.cwd, rules, mode, listed, delegated, sessionAllowed, options.allowAllChrome === true);
 }
 
 /// Asks the user about a tool the assistant's list leaves out, and waits: the turn goes on as soon as the answer comes.
