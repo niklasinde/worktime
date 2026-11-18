@@ -165,6 +165,53 @@ let linkTests: [(name: String, run: () throws -> Void)] = [
         try "0123abcd\n".write(to: git.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
         check(LinkBranches.current(folder: repo.path) == nil && LinkBranches.current(folder: nil) == nil && LinkBranches.current(folder: "/nonexistent/x") == nil, "detached or none")
     }),
+    ("links: the repo comes from the origin remote, for ssh and https, also in a renamed checkout and a worktree", {
+        check(LinkBranches.repo(config: "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:acme-com/orbit.api.git\n\tfetch = x\n") == "orbit.api", "ssh")
+        check(LinkBranches.repo(config: "[remote \"upstream\"]\n\turl = https://github.com/x/wrong.git\n[remote \"origin\"]\n\turl = https://github.com/acme-com/orbit.web\n") == "orbit.web", "https, origin only")
+        check(LinkBranches.repo(config: "[remote \"origin\"]\n\turl = git@example.com:a/b.git\n") == nil && LinkBranches.repo(config: "") == nil, "not github")
+        let root = tempDirectory()
+        let main = root.appendingPathComponent("renamed-checkout")
+        let dotGit = main.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: dotGit.appendingPathComponent("worktrees/wt"), withIntermediateDirectories: true)
+        try "ref: refs/heads/NI/ACME-1\n".write(to: dotGit.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+        try "[remote \"origin\"]\n\turl = git@github.com:acme-com/orbit.api.git\n".write(to: dotGit.appendingPathComponent("config"), atomically: true, encoding: .utf8)
+        check(LinkBranches.current(folder: main.path) == "orbit.api:NI/ACME-1", "a renamed checkout")
+        let worktree = root.appendingPathComponent("orbit.api-wt-x")
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try "gitdir: \(dotGit.path)/worktrees/wt\n".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+        try "ref: refs/heads/other\n".write(to: dotGit.appendingPathComponent("worktrees/wt/HEAD"), atomically: true, encoding: .utf8)
+        try "../..\n".write(to: dotGit.appendingPathComponent("worktrees/wt/commondir"), atomically: true, encoding: .utf8)
+        check(LinkBranches.current(folder: worktree.path) == "orbit.api:other", "a worktree through commondir")
+        let bare = root.appendingPathComponent("noremote")
+        try FileManager.default.createDirectory(at: bare.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try "ref: refs/heads/x\n".write(to: bare.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
+        check(LinkBranches.current(folder: bare.path) == "noremote:x", "the folder name without a remote")
+    }),
+    ("links: an agent is linked to the head branch of its pull request, by the pull request's repo", {
+        let listed = GitHubPR(url: "https://github.com/acme-com/orbit.api/pull/7", number: 7, title: "ACME-1: x", repo: "acme-com/orbit.api", updated: start, head: "NI/ACME-1")
+        let withPR = state("topic:a", prURL: "acme-com/orbit.api#7", folder: "/nonexistent/other-name")
+        let pairs = LinkDerivation.pairs(states: [withPR], pullRequests: [listed], context: LinkContext(projects: projects))
+        check(pairs.contains(LinkPair(.agent("topic:a"), .branch("orbit.api:NI/ACME-1"))), "\(pairs)")
+        check(Set(pairs).count == pairs.count, "no duplicate pairs")
+        let unknown = LinkDerivation.pairs(states: [withPR], pullRequests: [], context: LinkContext(projects: projects))
+        check(!unknown.contains { $0.second.kind == .branch }, "no head known, no branch")
+    }),
+    ("links: an agent in a parent folder is linked to the branches of its ticket, up to five", {
+        var parent = state("topic:00000000-0000-0000-0000-000000000002", folder: "/nonexistent/parent")
+        parent.jiraKey = "ACME-1"
+        func listed(_ number: Int) -> GitHubPR {
+            GitHubPR(url: "https://github.com/acme-com/orbit.api/pull/\(number)", number: number, title: "x", repo: "acme-com/orbit.api", updated: start, head: "NI/ACME-1-\(number)")
+        }
+        let few = LinkDerivation.pairs(states: [parent], pullRequests: [listed(1), listed(2)], context: LinkContext(projects: projects))
+        let branches = Set(few.filter { $0.first == .agent("topic:00000000-0000-0000-0000-000000000002") && $0.second.kind == .branch }.map(\.second))
+        check(branches == [.branch("orbit.api:NI/ACME-1-1"), .branch("orbit.api:NI/ACME-1-2")], "\(branches)")
+        check(Set(few).count == few.count, "no duplicate pairs")
+        let many = LinkDerivation.pairs(states: [parent], pullRequests: (1...6).map(listed), context: LinkContext(projects: projects))
+        check(!many.contains { $0.first == .agent("topic:00000000-0000-0000-0000-000000000002") && $0.second.kind == .branch }, "more than five is noise")
+        var none = parent
+        none.jiraKey = nil
+        check(!LinkDerivation.pairs(states: [none], pullRequests: [listed(1)], context: LinkContext(projects: projects)).contains { $0.first.kind == .agent }, "no ticket, no branch")
+    }),
     ("links: rows by agent, ticket and pull request, with status from the lookup cache and the two-hop ones", {
         var table = LinkTable()
         table.ingest([LinkPair(agent, ticket), LinkPair(ticket, pr7), LinkPair(ticket, pr8), LinkPair(pr7, other)], now: start)
