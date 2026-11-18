@@ -180,6 +180,7 @@ struct WorkTimeApp: App {
         }
         .commands {
             CommandGroup(after: .saveItem) { ExportCommand(library: delegate.mainWindow.library) }
+            CommandGroup(after: .textEditing) { FindAgentsCommand() }
             CommandGroup(after: .windowList) { ChatCommand() }
             CommandGroup(replacing: .appSettings) { SettingsButton() }
             CommandGroup(replacing: .sidebar) {

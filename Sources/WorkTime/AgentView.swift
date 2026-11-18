@@ -76,12 +76,13 @@ struct AgentsPage: View {
     @AppStorage("agentListHidden") private var listHidden = false
     @AppStorage(AgentListWidth.key) private var listWidth = AgentListWidth.standard
     @State private var dragStart: Double?
+    @State private var search = AgentSearchField()
 
     var body: some View {
         HStack(spacing: 0) {
             if !listHidden {
                 AgentList(hub: hub, groups: Workspaces.groups(writer.states(), file: workspaces.file,
-                                                              lastUsed: AgentSessions.lastUsed(AgentSessionStore.all())))
+                                                              lastUsed: AgentSessions.lastUsed(AgentSessionStore.all())), search: $search)
                     .frame(width: AgentListWidth.clamped(listWidth))
                 Divider()
                     .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()).onHover { inside in
@@ -112,6 +113,10 @@ struct AgentsPage: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { hub.selectedMain?.loadFiles() }
+        .onReceive(NotificationCenter.default.publisher(for: AgentSearch.openRequested)) { _ in
+            listHidden = false
+            search.open()
+        }
         .sheet(item: $handoffs.pending) { handoff in SpaceHandoffSheet(handoff: handoff) { handoffs.pending = nil } }
     }
 }
@@ -120,6 +125,8 @@ struct AgentsPage: View {
 struct AgentList: View {
     @ObservedObject var hub: AgentHub
     let groups: [Workspaces.Group]
+    @Binding var search: AgentSearchField
+    @FocusState private var searchFocused: Bool
     @ObservedObject var topics = TopicAgentStore.shared
     @ObservedObject var assistants = AssistantStore.shared
     @ObservedObject var workspaces = WorkspaceStore.shared
@@ -136,7 +143,9 @@ struct AgentList: View {
 
     var body: some View {
         let now = Date()
+        let query = search.isOpen ? search.query : ""
         VStack(spacing: 0) {
+            if search.isOpen { searchField(query: query) }
             if groups.count > 1 { switcher }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -145,11 +154,11 @@ struct AgentList: View {
                         if !collapsedIDs.contains(group.workspace.id) {
                             let space = Spaces.chosen(chosenSpaces, workspace: group.workspace.id, in: group.workspace.spaces)
                             if !group.workspace.spaces.isEmpty { spaceChips(group, selected: space) }
-                            if let main = group.main { rowButton(main, now: now) }
-                            assistantSection(group, space: space, now: now)
-                            RoutineSection(workspace: group.workspace, hub: hub, space: space)
-                            RoutineSection(workspace: group.workspace, hub: hub, automations: true, space: space)
-                            AgentsSection(workspace: group.workspace, agents: group.agents, titles: prTitles, space: space, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0, workspace: group.workspace) }
+                            if let main = group.main, AgentSearch.filter([main], query: query, titles: prTitles).count == 1 { rowButton(main, now: now) }
+                            assistantSection(group, space: space, now: now, query: query)
+                            RoutineSection(workspace: group.workspace, hub: hub, space: space, query: query)
+                            RoutineSection(workspace: group.workspace, hub: hub, automations: true, space: space, query: query)
+                            AgentsSection(workspace: group.workspace, agents: group.agents, titles: prTitles, space: space, query: query, onNew: { creating = true }) { rowButton($0, now: now) } group: { ticketGroup($0, workspace: group.workspace) }
                         }
                     }
                 }
@@ -183,6 +192,40 @@ struct AgentList: View {
         }
     }
 
+    private func searchField(query: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search agents", text: $search.query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onSubmit { firstMatch(query: query).map { hub.selected = $0 } }
+                .onExitCommand { search.close() }
+            if !search.query.isEmpty {
+                Button { search.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .onAppear { searchFocused = true }
+        .onChange(of: search.focusTick) { searchFocused = true }
+    }
+
+    /// What Return opens: the first row shown, going down the list as it is laid out.
+    private func firstMatch(query: String) -> String? {
+        for group in visibleGroups {
+            let space = Spaces.chosen(chosenSpaces, workspace: group.workspace.id, in: group.workspace.spaces)
+            let main = AgentSearch.filter(group.main.map { [$0] } ?? [], query: query, titles: prTitles)
+            let assistants = AgentSearch.filter(Spaces.filter(group.assistants, space: space), query: query, titles: prTitles)
+            let routines = [false, true].flatMap { RoutineSection.shown(self.routines.routines(in: group.workspace.id), automations: $0, space: space, query: query) }
+            let agents = AgentsSection<EmptyView, EmptyView>.scoped(group.agents, workspace: group.workspace, space: space, titles: prTitles, query: query).filter { $0.archived != true }
+            if let key = (main + assistants).map(\.key).first ?? routines.map(\.key).first ?? agents.map(\.key).first { return key }
+        }
+        return nil
+    }
+
     private var prTitles: [String: String] {
         Dictionary(GitHubModel.shared.prs.values.joined().map { ($0.url, $0.title) }) { first, _ in first }
     }
@@ -207,38 +250,41 @@ struct AgentList: View {
 
     /// The workspace's assistants, indented under its Main, with a menu to make one.
     @ViewBuilder
-    private func assistantSection(_ group: Workspaces.Group, space: String?, now: Date) -> some View {
-        let id = group.workspace.id, isCollapsed = collapsedAssistantIDs.contains(id)
-        HStack(spacing: 4) {
-            Button {
-                var ids = collapsedAssistantIDs
-                if isCollapsed { ids.remove(id) } else { ids.insert(id) }
-                collapsedAssistants = ids.sorted().joined(separator: ",")
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                    Text("Assistants").font(.caption2.weight(.semibold))
-                    Text("\(group.assistants.count)").font(.caption2).foregroundStyle(.tertiary)
+    private func assistantSection(_ group: Workspaces.Group, space: String?, now: Date, query: String) -> some View {
+        let id = group.workspace.id, isCollapsed = collapsedAssistantIDs.contains(id) && !AgentSearch.isActive(query)
+        let shown = AgentSearch.filter(Spaces.filter(group.assistants, space: space), query: query, titles: prTitles)
+        if !AgentSearch.isActive(query) || !shown.isEmpty {
+            HStack(spacing: 4) {
+                Button {
+                    var ids = collapsedAssistantIDs
+                    if isCollapsed { ids.remove(id) } else { ids.insert(id) }
+                    collapsedAssistants = ids.sorted().joined(separator: ",")
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                        Text("Assistants").font(.caption2.weight(.semibold))
+                        Text("\(AgentSearch.isActive(query) ? shown.count : group.assistants.count)").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .help(isCollapsed ? "Show the assistants of \(group.workspace.name)" : "Hide the assistants of \(group.workspace.name)")
+                Spacer()
+                Menu {
+                    NewAssistantMenuItems(workspace: id, action: $assistantAction) { hub.selected = $0 }
+                } label: { Image(systemName: "plus").font(.caption) }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("New Assistant: a role agent under this workspace\u{2019}s Main, such as a developer or a time reporter")
             }
-            .buttonStyle(.plain)
-            .help(isCollapsed ? "Show the assistants of \(group.workspace.name)" : "Hide the assistants of \(group.workspace.name)")
-            Spacer()
-            Menu {
-                NewAssistantMenuItems(workspace: id, action: $assistantAction) { hub.selected = $0 }
-            } label: { Image(systemName: "plus").font(.caption) }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("New Assistant: a role agent under this workspace\u{2019}s Main, such as a developer or a time reporter")
+            .padding(.leading, 26)
+            .padding(.trailing, 8)
+            .padding(.top, 2)
         }
-        .padding(.leading, 26)
-        .padding(.trailing, 8)
-        .padding(.top, 2)
         if !isCollapsed {
-            ForEach(Spaces.filter(group.assistants, space: space), id: \.key) { state in
+            ForEach(shown, id: \.key) { state in
                 Button { hub.selected = state.key } label: { assistantRow(state, now: now) }
                     .buttonStyle(.plain)
                     .contextMenu { menu(state) }

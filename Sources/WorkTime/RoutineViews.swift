@@ -7,6 +7,7 @@ struct RoutineSection: View {
     @ObservedObject var hub: AgentHub
     var automations = false
     var space: String?
+    var query = ""
     @ObservedObject private var store = RoutineStore.shared
     @ObservedObject private var notices = NoticeCenter.shared
     @AppStorage(Routines.collapsedKey) private var collapsedRoutines = ""
@@ -20,8 +21,9 @@ struct RoutineSection: View {
     private var noun: String { automations ? "Automation" : "Routine" }
 
     var body: some View {
-        let routines = Spaces.filter(store.routines(in: workspace.id).filter { $0.isAutomation == automations }, space: space), isCollapsed = collapsedIDs.contains(workspace.id)
-        header(count: routines.count, isCollapsed: isCollapsed)
+        let routines = RoutineSection.shown(store.routines(in: workspace.id), automations: automations, space: space, query: query)
+        let isCollapsed = collapsedIDs.contains(workspace.id) && !AgentSearch.isActive(query)
+        if !AgentSearch.isActive(query) || !routines.isEmpty { header(count: routines.count, isCollapsed: isCollapsed) }
         if !isCollapsed {
             ForEach(routines) { routine in
                 Button { hub.selected = routine.key } label: { row(routine) }
@@ -41,6 +43,10 @@ struct RoutineSection: View {
                 Text(automations ? "Removes the automation and stops it. Claude Code keeps the transcripts of its earlier runs."
                                  : "Removes the routine and stops its schedule. Claude Code keeps the transcripts of its earlier runs.")
             }
+    }
+
+    static func shown(_ routines: [Routine], automations: Bool, space: String?, query: String) -> [Routine] {
+        AgentSearch.filter(Spaces.filter(routines.filter { $0.isAutomation == automations }, space: space), query: query)
     }
 
     private func header(count: Int, isCollapsed: Bool) -> some View {

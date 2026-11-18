@@ -796,6 +796,13 @@ struct ChatCommand: View {
     }
 }
 
+struct FindAgentsCommand: View {
+    var body: some View {
+        Button("Find in Agents\u{2026}") { NotificationCenter.default.post(name: AgentSearch.openRequested, object: nil) }
+            .keyboardShortcut("f")
+    }
+}
+
 struct ExportCommand: View {
     @ObservedObject var library: RecordingLibrary
 

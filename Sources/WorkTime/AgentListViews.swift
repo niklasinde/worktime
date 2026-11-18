@@ -9,6 +9,7 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     var titles: [String: String] = [:]
     /// Only the agents in this space, with every agent about the same ticket or pull request as one of them.
     var space: String?
+    var query = ""
     let onNew: () -> Void
     @ViewBuilder let row: (AgentState) -> Row
     /// A ticket's sessions gathered under one row.
@@ -17,14 +18,18 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     @AppStorage(AgentListFilter.storageKey) private var chosen = AgentListFilter.all.rawValue
 
     var body: some View {
-        let isCollapsed = AgentListFilter.contains(workspace.id, in: collapsed)
+        let searching = AgentSearch.isActive(query)
+        let isCollapsed = AgentListFilter.contains(workspace.id, in: collapsed) && !searching
         let projects = Set(workspace.jiraProjects.map { $0.uppercased() })
-        let scoped = Spaces.related(agents, space: space, projects: projects, titles: titles)
+        let scoped = Self.scoped(agents, workspace: workspace, space: space, titles: titles, query: query)
         let counts = AgentListFilter.counts(scoped)
-        let filter = AgentListFilter.effective(AgentListFilter(rawValue: chosen) ?? .all, counts: counts)
-        header(isCollapsed: isCollapsed, count: scoped.filter { $0.archived != true }.count)
+        let filter = searching ? .all : AgentListFilter.effective(AgentListFilter(rawValue: chosen) ?? .all, counts: counts)
+        let live = scoped.filter { $0.archived != true }
+        if !searching || !live.isEmpty {
+            header(isCollapsed: isCollapsed, count: live.count)
+        }
         if !isCollapsed {
-            let chips = AgentListFilter.chips(counts: counts)
+            let chips = searching ? [] : AgentListFilter.chips(counts: counts)
             if !chips.isEmpty { chipRow(chips, counts: counts, selected: filter) }
             ForEach(TicketGrouping.rows(AgentListFilter.shown(scoped, filter: filter), projects: projects, titles: titles)) { entry in
                 switch entry {
@@ -33,6 +38,11 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
                 }
             }
         }
+    }
+
+    static func scoped(_ agents: [AgentState], workspace: Workspace, space: String?, titles: [String: String], query: String) -> [AgentState] {
+        let projects = Set(workspace.jiraProjects.map { $0.uppercased() })
+        return AgentSearch.filter(Spaces.related(agents, space: space, projects: projects, titles: titles), query: query, titles: titles)
     }
 
     private func header(isCollapsed: Bool, count: Int) -> some View {
