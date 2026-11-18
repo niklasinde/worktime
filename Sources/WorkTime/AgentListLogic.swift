@@ -6,6 +6,7 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
 
     static let storageKey = "agentListFilter"
     static let collapsedKey = "agentListCollapsed"
+    static let showDoneKey = "agentListShowDone"
 
     var id: String { rawValue }
 
@@ -46,6 +47,29 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
     }
 
     static func shown(_ states: [AgentState], filter: AgentListFilter) -> [AgentState] { states.filter(filter.includes) }
+
+    /// The ticket or pull request an agent is about, for the lookup of its status.
+    static func ref(of state: AgentState, projects: Set<String>, titles: [String: String]) -> SessionRef? {
+        switch TicketGrouping.subject(of: state, projects: projects, titles: titles) {
+        case .ticket(let key)?: .jira(key)
+        case .pullRequest(let url)?: GitHubLink.pullRequest(at: url).map(SessionRef.init)
+        case nil: nil
+        }
+    }
+
+    /// Its ticket is Done or its pull request merged or closed, and nothing in it needs the user.
+    static func isFinished(_ state: AgentState, projects: Set<String>, titles: [String: String], infos: [String: SessionRefInfo]) -> Bool {
+        guard AgentOverview.need(state) == .idle,
+              let info = ref(of: state, projects: projects, titles: titles).flatMap({ infos[$0.cacheKey] }) else { return false }
+        return info.statusKind == .done || info.state == "merged" || info.state == "closed"
+    }
+
+    /// The agents without the finished ones, unless they are asked for or a search is looking for them.
+    static func unfinished(_ states: [AgentState], showDone: Bool, searching: Bool, projects: Set<String>, titles: [String: String],
+                           infos: [String: SessionRefInfo]) -> [AgentState] {
+        guard !showDone, !searching else { return states }
+        return states.filter { !isFinished($0, projects: projects, titles: titles, infos: infos) }
+    }
 
     /// The comma separated ids with `id` taken out when it is in, put in when it is not.
     static func toggling(_ id: String, in ids: String) -> String {

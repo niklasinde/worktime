@@ -67,4 +67,36 @@ let agentListTests: [(name: String, run: () throws -> Void)] = [
         check(AgentListFilter.allCases.map(\.title) == ["All", "Pull requests", "Tickets", "Sets"], "titles")
         check(AgentListFilter(rawValue: "nonsense") == nil, "an unknown stored value is ignored")
     }),
+    ("agent list: finished tickets and merged or closed pull requests are hidden unless asked for or searched", {
+        let done = ticket(), open = pullRequest(), merged = pullRequest("https://github.com/acme-com/api/pull/2"), closed = pullRequest("https://github.com/acme-com/api/pull/3")
+        let projects: Set<String> = ["PROJ"]
+        let infos = [
+            SessionRef.jira("PROJ-1").cacheKey: SessionRefInfo(status: "Done", category: "done"),
+            SessionRef.pullRequest(repo: "acme-com/api", number: 1).cacheKey: SessionRefInfo(state: "open"),
+            SessionRef.pullRequest(repo: "acme-com/api", number: 2).cacheKey: SessionRefInfo(state: "merged"),
+            SessionRef.pullRequest(repo: "acme-com/api", number: 3).cacheKey: SessionRefInfo(state: "closed"),
+        ]
+        func keys(showDone: Bool = false, searching: Bool = false, _ states: [AgentState]) -> [String] {
+            AgentListFilter.unfinished(states, showDone: showDone, searching: searching, projects: projects, titles: [:], infos: infos).map(\.key)
+        }
+        let all = [done, open, merged, closed]
+        check(keys(all) == [open.key], "only the open pull request stays")
+        check(keys(showDone: true, all) == all.map(\.key), "Show done reveals them")
+        check(keys(searching: true, all) == all.map(\.key), "a search still finds them")
+        check(AgentListFilter.counts(AgentListFilter.unfinished(all, showDone: false, searching: false, projects: projects, titles: [:], infos: infos))[.all] == 1, "counts follow")
+        check(AgentListFilter.unfinished([supportCase()], showDone: false, searching: false, projects: projects, titles: [:], infos: [:]).count == 1, "no info keeps it")
+    }),
+    ("agent list: a finished agent that works, waits or has an unseen result stays visible", {
+        let infos = [SessionRef.pullRequest(repo: "acme-com/api", number: 1).cacheKey: SessionRefInfo(state: "merged")]
+        func stays(_ change: (inout AgentState) -> Void) -> Bool {
+            var state = pullRequest()
+            change(&state)
+            return !AgentListFilter.isFinished(state, projects: [], titles: [:], infos: infos)
+        }
+        check(!stays { _ in }, "idle and merged is finished")
+        check(stays { $0.status = .working }, "working")
+        check(stays { $0.status = .waiting }, "waiting for permission")
+        check(stays { $0.status = .error }, "error")
+        check(stays { $0.lastResult = "Done"; $0.seen = false }, "unseen result")
+    }),
 ]
