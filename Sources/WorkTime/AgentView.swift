@@ -58,6 +58,14 @@ final class AgentHub: ObservableObject {
     }
 }
 
+enum AgentListWidth {
+    static let key = "agentListWidth"
+    static let standard = 250.0
+    static let range = 240.0...600.0
+
+    static func clamped(_ width: Double) -> Double { min(max(width, range.lowerBound), range.upperBound) }
+}
+
 struct AgentsPage: View {
     @ObservedObject var hub: AgentHub
     @ObservedObject private var writer = AgentStateWriter.shared
@@ -66,14 +74,25 @@ struct AgentsPage: View {
     @ObservedObject private var workspaces = WorkspaceStore.shared
     @ObservedObject private var handoffs = SpaceHandoffCenter.shared
     @AppStorage("agentListHidden") private var listHidden = false
+    @AppStorage(AgentListWidth.key) private var listWidth = AgentListWidth.standard
+    @State private var dragStart: Double?
 
     var body: some View {
         HStack(spacing: 0) {
             if !listHidden {
                 AgentList(hub: hub, groups: Workspaces.groups(writer.states(), file: workspaces.file,
                                                               lastUsed: AgentSessions.lastUsed(AgentSessionStore.all())))
-                    .frame(width: 250)
+                    .frame(width: AgentListWidth.clamped(listWidth))
                 Divider()
+                    .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()).onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }.gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                        .onChanged { drag in
+                            let start = dragStart ?? AgentListWidth.clamped(listWidth)
+                            dragStart = start
+                            listWidth = AgentListWidth.clamped(start + drag.translation.width)
+                        }
+                        .onEnded { _ in dragStart = nil }))
             }
             Group {
                 if let main = hub.selectedMain {
