@@ -641,7 +641,7 @@ struct AgentSessionList: View {
                         showsOthers = true
                         Task { others = await model.otherSessions() }
                     }
-                    .buttonStyle(.link)
+                    .linkButtonStyle()
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)

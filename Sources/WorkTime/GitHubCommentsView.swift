@@ -152,7 +152,7 @@ struct ThreadCard: View {
                 }
                 if thread.isResolved { Button("Collapse") { model.toggle(thread.id) } }
             }
-            .buttonStyle(.link)
+            .linkButtonStyle()
             .font(.caption)
             if !thread.diff.isEmpty { DiffBlock(lines: thread.diff) }
             ForEach(Array(thread.comments.enumerated()), id: \.element.id) { index, comment in
@@ -201,7 +201,7 @@ private struct CommentView: View {
             }
             Spacer(minLength: 8)
             if thread == nil, let url = comment.url {
-                Button { open(url) } label: { Image(systemName: "arrow.up.right.square") }.buttonStyle(.link).help("Open on GitHub")
+                Button { open(url) } label: { Image(systemName: "arrow.up.right.square") }.linkButtonStyle().help("Open on GitHub")
             }
         }
         .font(.callout)
@@ -215,10 +215,10 @@ private struct CommentView: View {
         let before = thread.map(GitHubLogic.suggestionBefore) ?? []
         if let digest = comment.digest, !model.expanded.contains(comment.id) {
             if !digest.isEmpty { AnswerText(text: digest) }
-            Button("Show full") { model.toggle(comment.id) }.buttonStyle(.link).font(.caption)
+            Button("Show full") { model.toggle(comment.id) }.linkButtonStyle().font(.caption)
         } else {
             CommentParts(parts: comment.parts, before: before)
-            if comment.digest != nil { Button("Show less") { model.toggle(comment.id) }.buttonStyle(.link).font(.caption) }
+            if comment.digest != nil { Button("Show less") { model.toggle(comment.id) }.linkButtonStyle().font(.caption) }
         }
     }
 }

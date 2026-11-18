@@ -82,7 +82,7 @@ struct ProjectSetupHint: View {
             HStack(spacing: 8) {
                 Image(systemName: "folder.badge.questionmark").foregroundStyle(.secondary)
                 Text("\(Int((share * 100).rounded()))% of the tracked time has no project.").foregroundStyle(.secondary)
-                Button("Set up projects from your activity\u{2026}") { showing = true }.buttonStyle(.link)
+                Button("Set up projects from your activity\u{2026}") { showing = true }.linkButtonStyle()
                 Spacer()
             }
             .font(.callout)

@@ -511,7 +511,7 @@ struct MainView: View {
                 if permissionsMissing {
                     Text("Some permissions are missing")
                     Button("Open Setup\u{2026}") { OnboardingWindow.shared.show() }
-                        .buttonStyle(.link)
+                        .linkButtonStyle()
                 }
             }
             .font(.caption)

@@ -87,7 +87,7 @@ struct AgentActionRow: View {
                     NSPasteboard.general.setString(action.prompt, forType: .string)
                 }
             }
-            .buttonStyle(.link)
+            .linkButtonStyle()
             .font(.caption)
             if showsPrompt {
                 Text(action.prompt)
@@ -135,7 +135,7 @@ struct AgentActionRow: View {
 
     @ViewBuilder private func sent(_ outcome: AgentActionOutcome) -> some View {
         Label(outcome.label, systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.secondary)
-        if let key = outcome.assistant { Button("Open") { AgentHub.shared.show(key) }.buttonStyle(.link).font(.callout) }
+        if let key = outcome.assistant { Button("Open") { AgentHub.shared.show(key) }.linkButtonStyle().font(.callout) }
     }
 
     private func run(_ target: AgentActionTarget) {

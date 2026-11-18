@@ -456,7 +456,7 @@ struct AnswerText: View {
             Button { URL(string: url).map { NSWorkspace.shared.open($0) } } label: {
                 Label("Image: \(alt.isEmpty ? "untitled" : alt)", systemImage: "photo")
             }
-            .buttonStyle(.link)
+            .linkButtonStyle()
             .help("Opens in the browser; GitHub images need you to be signed in there")
         }
     }

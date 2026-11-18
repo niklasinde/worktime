@@ -320,7 +320,7 @@ private struct AudioStatus: View {
         case .kept, .due:
             if meeting.transcribed, library.audioUnavailable(entry) == nil {
                 Button("Delete audio now") { confirming = true }
-                    .buttonStyle(.link)
+                    .linkButtonStyle()
                     .disabled(processor.processing == entry.audio || recorder.meeting == entry.audio)
                     .help("Remove this recording\u{2019}s audio from this Mac; the transcript, summary and notes stay")
                     .confirmationDialog("Delete this meeting\u{2019}s audio?", isPresented: $confirming) {

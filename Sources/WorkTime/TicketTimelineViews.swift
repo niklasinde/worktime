@@ -136,12 +136,12 @@ struct TicketTimelinePage: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(group.live, id: \.key) { state in
-                    Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: false) }.buttonStyle(.plain)
+                    Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: false) }.buttonStyle(.plain).pointerStyle(.link)
                 }
                 if !group.earlier.isEmpty {
                     Text("Earlier").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.leading, 30).padding(.top, 10)
                     ForEach(group.earlier, id: \.key) { state in
-                        Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: false) }.buttonStyle(.plain).opacity(0.7)
+                        Button { hub.selected = state.key } label: { TicketMemberRow(state: state, selected: false) }.buttonStyle(.plain).pointerStyle(.link).opacity(0.7)
                     }
                 }
             }

@@ -47,7 +47,7 @@ private struct CommandBox: View {
                     GitHubModel.copy(command)
                     copied = true
                 }
-                .buttonStyle(.link)
+                .linkButtonStyle()
                 .font(.caption)
             }
             Text(command)

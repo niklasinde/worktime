@@ -70,7 +70,7 @@ struct ClaudeNoteBar: View {
             HStack(spacing: 8) {
                 Image(systemName: "info.circle").foregroundStyle(.secondary)
                 Text(note.text).foregroundStyle(.secondary)
-                if let copy = note.copy { Button("Copy \(copy)") { GitHubModel.copy(copy) }.buttonStyle(.link) }
+                if let copy = note.copy { Button("Copy \(copy)") { GitHubModel.copy(copy) }.linkButtonStyle() }
                 Spacer(minLength: 0)
                 Button { model.dismissNote() } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
             }

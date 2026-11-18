@@ -67,11 +67,11 @@ struct GitHubFileDiff: View {
         } else if let error = diffs.error {
             HStack(spacing: 8) {
                 Text(error.message).foregroundStyle(.secondary)
-                Button("Try again") { diffs.load(source) }.buttonStyle(.link)
+                Button("Try again") { diffs.load(source) }.linkButtonStyle()
             }
             .font(.callout)
         } else if diffs.loaded {
-            Button("Diff too large or binary \u{2013} open on GitHub") { open(url) }.buttonStyle(.link).font(.callout)
+            Button("Diff too large or binary \u{2013} open on GitHub") { open(url) }.linkButtonStyle().font(.callout)
         }
     }
 }
@@ -105,7 +105,7 @@ private struct DiffTable: View {
             }
             .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
             if shown < rows.count {
-                Button("Show all \(rows.count) lines") { whole = true }.buttonStyle(.link).font(.caption).padding(8)
+                Button("Show all \(rows.count) lines") { whole = true }.linkButtonStyle().font(.caption).padding(8)
             }
         }
         .background(Color.primary.opacity(0.03))

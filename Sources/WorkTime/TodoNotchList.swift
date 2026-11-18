@@ -420,7 +420,7 @@ private struct NoticeRow: View {
                     HStack(spacing: 6) {
                         Button(ask.yes) { answer(true) }.buttonStyle(.borderedProminent)
                         Button(ask.no) { answer(false) }.buttonStyle(.bordered)
-                        if let open { Button("Open in the app") { onOpen(); open() }.buttonStyle(.link) }
+                        if let open { Button("Open in the app") { onOpen(); open() }.linkButtonStyle() }
                     }
                     .controlSize(.small)
                     .padding(.top, 3)
@@ -481,7 +481,7 @@ private struct ApprovalRow: View {
                             if approval.sessionOffered { Button("Allow for this session") { answer(AgentAttention.allowSessionAction) }.buttonStyle(.bordered) }
                             Button("Deny") { answer(AgentAttention.denyAction) }.buttonStyle(.bordered)
                         }
-                        Button("Open in the app") { onOpen(); answer(UNNotificationDefaultActionIdentifier) }.buttonStyle(.link)
+                        Button("Open in the app") { onOpen(); answer(UNNotificationDefaultActionIdentifier) }.linkButtonStyle()
                     }
                     .controlSize(.small)
                     .padding(.top, 3)

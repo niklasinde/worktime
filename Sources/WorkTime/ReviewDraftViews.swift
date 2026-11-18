@@ -135,7 +135,7 @@ struct ReviewWays: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Waiting for the checks to pass, then approving").font(.caption).foregroundStyle(.secondary)
-                Button("Cancel") { notices.cancelWaiting(draft) }.buttonStyle(.link).font(.caption)
+                Button("Cancel") { notices.cancelWaiting(draft) }.linkButtonStyle().font(.caption)
             }
         } else if let refusal = notices.reviewRefusals[draft.id], !notices.reviewWorking.contains(draft.id) {
             HStack(spacing: 8) {
@@ -175,7 +175,7 @@ struct ReviewDraftCard: View {
             ReviewCommentList(draft: draft, files: details.loaded[draft.pr]?.files)
             ReviewActionBar(draft: draft, via: "chat")
             if let target = draft.target {
-                Button("Open pull request") { AgentModel.openPullRequestLink?(target) }.buttonStyle(.link).font(.caption)
+                Button("Open pull request") { AgentModel.openPullRequestLink?(target) }.linkButtonStyle().font(.caption)
             }
         }
         .padding(10)
@@ -242,7 +242,7 @@ struct ReviewCommentList: View {
     var body: some View {
         if !draft.comments.isEmpty {
             Button(shown ? "Hide \(draft.comments.count) comments on lines" : "Show \(draft.comments.count) comments on lines") { shown.toggle() }
-                .buttonStyle(.link)
+                .linkButtonStyle()
                 .font(.caption)
             if shown {
                 ForEach(Array(draft.comments.enumerated()), id: \.offset) { index, comment in

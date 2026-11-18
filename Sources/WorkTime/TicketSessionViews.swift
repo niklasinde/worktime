@@ -20,7 +20,7 @@ struct TicketAskCards: View {
                 Button("Start a new one") { store.respond(ask.id, .startNew) }.buttonStyle(.bordered)
                 Button("Always reuse for \(ask.assistantName)") { store.respond(ask.id, .alwaysReuse) }.buttonStyle(.bordered)
                     .help("Reuse the session without asking from now on for this assistant; Settings \u{203A} Agent can change it back")
-                Button("Open it") { store.open(ask.id) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                Button("Open it") { store.open(ask.id) }.buttonStyle(.plain).pointerStyle(.link).foregroundStyle(.secondary)
             }
             .controlSize(.small)
         }

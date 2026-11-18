@@ -258,8 +258,8 @@ struct TerminalPane: View {
             Image(systemName: notice.symbol).foregroundStyle(.secondary)
             Text(notice.text).foregroundStyle(.secondary).lineLimit(2)
             Spacer(minLength: 0)
-            if let copy = notice.copy { Button("Copy \(copy)") { GitHubModel.copy(copy) }.buttonStyle(.link) }
-            if let action = notice.action { Button(action) { act(notice.id) }.buttonStyle(.link) }
+            if let copy = notice.copy { Button("Copy \(copy)") { GitHubModel.copy(copy) }.linkButtonStyle() }
+            if let action = notice.action { Button(action) { act(notice.id) }.linkButtonStyle() }
             Button { session.dismissNotice(notice.id) } label: { Image(systemName: "xmark") }
                 .buttonStyle(.borderless)
                 .help("Dismiss")

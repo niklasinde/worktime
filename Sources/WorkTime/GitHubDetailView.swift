@@ -259,7 +259,7 @@ struct GitHubDetailContent: View {
                 let long = GitHubLogic.isLong(text)
                 AnswerText(text: long && !bodyExpanded ? GitHubLogic.preview(text) : text)
                 if long {
-                    Button(bodyExpanded ? "Show less" : "Show more") { bodyExpanded.toggle() }.buttonStyle(.link)
+                    Button(bodyExpanded ? "Show less" : "Show more") { bodyExpanded.toggle() }.linkButtonStyle()
                 }
             }
         }
@@ -314,7 +314,7 @@ struct GitHubDetailContent: View {
                     Divider()
                 }
                 if detail.commits.count > shown.count {
-                    Button("Show \(detail.commits.count - shown.count) more") { allCommits = true }.buttonStyle(.link).padding(.top, 8)
+                    Button("Show \(detail.commits.count - shown.count) more") { allCommits = true }.linkButtonStyle().padding(.top, 8)
                 }
                 if let note = GitHubLogic.countNote(shown: detail.commits.count, total: detail.commitCount, noun: "commits") { Note(text: note) }
             }
@@ -333,7 +333,7 @@ struct GitHubDetailContent: View {
                     Button("Expand all") { diffs.expand(shown.map(\.path), from: source) }.disabled(shown.isEmpty)
                     Button("Collapse all") { diffs.collapseAll() }.disabled(diffs.expanded.isEmpty)
                 }
-                .buttonStyle(.link)
+                .linkButtonStyle()
                 .font(.callout)
                 .padding(.bottom, 8)
                 ForEach(shown, id: \.path) { file in

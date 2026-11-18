@@ -40,7 +40,7 @@ struct DecisionSectionsView: View {
                     if section.monospaced {
                         let (shown, hidden) = DecisionDetail.lines(section.text)
                         Text(verbatim: all.contains(section.id) ? section.text : shown).font(.caption.monospaced()).textSelection(.enabled)
-                        if hidden > 0, !all.contains(section.id) { Button("Show all \(hidden + DecisionDetail.previewLines) lines") { all.insert(section.id) }.buttonStyle(.link).font(.caption) }
+                        if hidden > 0, !all.contains(section.id) { Button("Show all \(hidden + DecisionDetail.previewLines) lines") { all.insert(section.id) }.linkButtonStyle().font(.caption) }
                     } else {
                         Text(section.text).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     }
@@ -141,7 +141,7 @@ struct ReviewDecisionRow: View {
                 if let url = URL(string: target.url) { Button("Open on GitHub") { NSWorkspace.shared.open(url) } }
             }
         }
-        .buttonStyle(.link)
+        .linkButtonStyle()
         .font(.caption)
     }
 
