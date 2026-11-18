@@ -139,6 +139,7 @@ struct ReviewDecisionRow: View {
                     onOpen()
                     AgentModel.openPullRequestLink?(target)
                 }
+                if let url = URL(string: target.url) { Button("Open on GitHub") { NSWorkspace.shared.open(url) } }
             }
         }
         .buttonStyle(.link)
