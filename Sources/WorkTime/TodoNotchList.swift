@@ -234,7 +234,10 @@ struct TodoNotchList: View {
                 .onKeyPress(.return, phases: .down) { press in
                     keyed { press.modifiers.contains(.command) ? rowsModel.runPrimary() : rowsModel.activate() }
                 }
-                .onAppear { rowsModel.prune(to: decisionIDs) }
+                .onAppear {
+                    rowsModel.prune(to: decisionIDs)
+                    Task { await notices.resolveClosedPullRequests() }
+                }
                 .onChange(of: decisionIDs) { _, ids in rowsModel.prune(to: ids) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -7,6 +7,7 @@ import UserNotifications
 final class NoticeCenter: ObservableObject {
     static let shared = NoticeCenter()
     static let grace: TimeInterval = 2
+    static let lookupBatch = 20
     @Published private(set) var notices: [AgentNotice] = []
     /// The drafted reviews being posted now, and what became of the last click on each, for the rows that have buttons for them.
     @Published private(set) var reviewWorking: Set<String> = []
@@ -17,6 +18,7 @@ final class NoticeCenter: ObservableObject {
     /// The comments of a drafted review the user took out of what is posted, by draft and comment number.
     @Published private(set) var reviewExcluded: [String: Set<Int>] = [:]
     private var recent: [AgentNotice] = []
+    private var resolvingClosed = false
     private var file: URL?
     private var timer: Timer?
 
@@ -33,6 +35,7 @@ final class NoticeCenter: ObservableObject {
         Notifier.register(asks: notices.compactMap(\.ask))
         notices.forEach(keepOnScreen)
         fireDue()
+        Task { await resolveClosedPullRequests() }
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.fireDue() }
@@ -163,6 +166,10 @@ final class NoticeCenter: ObservableObject {
     /// Puts a drafted review aside for good: it is not posted and does not come back unless the agent drafts one for a new commit.
     func dismissReview(_ draft: ReviewDraft) {
         ReviewPostStore.shared.dismiss(draft.id)
+        removeReview(draft)
+    }
+
+    private func removeReview(_ draft: ReviewDraft) {
         GitHubModel.shared.cancelGreenWait(draft.id)
         reviewWaiting.remove(draft.id)
         reviewResults[draft.id] = nil
@@ -173,6 +180,31 @@ final class NoticeCenter: ObservableObject {
             return dismissUnanswered(notice.id)
         }
         replace(updated, at: index, show: false)
+    }
+
+    /// Takes away what is about a pull request that was merged or closed: its drafted reviews, questions and review notices, and the
+    /// reminders agents raised for it. A draft is not remembered as dismissed, so a new one after a reopening shows again.
+    func resolveClosedPullRequests() async {
+        guard !resolvingClosed else { return }
+        resolvingClosed = true
+        defer { resolvingClosed = false }
+        let urls = ClosedPullRequests.urls(notices: notices, reminders: TodoModel.shared.reminders)
+        guard !urls.isEmpty else { return }
+        var states = GitHubModel.shared.cachedStates
+        let unknown = urls.filter { states[$0] == nil || states[$0] == .open }
+        let cli = GitHubLogic.findCLI()
+        for start in stride(from: 0, to: unknown.count, by: Self.lookupBatch) {
+            let batch = Array(unknown[start..<min(start + Self.lookupBatch, unknown.count)])
+            guard let found = await Task.detached(priority: .utility, operation: { GitHubClient.fetchLookup(cli: cli, urls: batch) }).value else { continue }
+            states.merge(ClosedPullRequests.states(of: found)) { _, new in new }
+        }
+        let resolution = ClosedPullRequests.resolution(notices: notices, reminders: TodoModel.shared.reminders, states: states)
+        resolution.drafts.forEach(removeReview)
+        for id in resolution.notices {
+            if let reminder = notices.first(where: { $0.id == id })?.ask?.reminder { TodoModel.shared.complete(reminder) }
+            dismiss(id)
+        }
+        resolution.reminders.forEach(TodoModel.shared.complete)
     }
 
     /// A button of a notification about one drafted review.

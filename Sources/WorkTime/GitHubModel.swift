@@ -79,6 +79,8 @@ final class GitHubModel: ObservableObject {
     var isCapped: Bool { GitHubLogic.isCapped(prs[kind] ?? [], state: filter.state) }
     var showsList: Bool { enabled && (error == nil || hasData) }
     var hasData: Bool { prs.values.contains { !$0.isEmpty } }
+    /// The state of every pull request the cache knows.
+    var cachedStates: [String: GitHubPR.State] { ClosedPullRequests.states(of: prs.values.flatMap { $0 } + watchedPRs) }
     var menuSummary: String? { enabled && fetched != nil ? GitHubLogic.menuSummary(prs) : nil }
 
     func start() {
@@ -121,6 +123,7 @@ final class GitHubModel: ObservableObject {
         }
         if fetch.error == nil { await refreshWatched() }
         refreshing = false
+        await NoticeCenter.shared.resolveClosedPullRequests()
     }
 
     private func refreshWatched() async {
