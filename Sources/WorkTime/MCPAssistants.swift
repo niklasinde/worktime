@@ -17,7 +17,7 @@ extension MCPServer {
             "description": ["type": "string", "maxLength": Assistants.summaryLimit, "description": "One line telling Main when to hand work to this assistant."],
             "instructions": ["type": "string", "description": "The assistant's role instructions, in Markdown: how it works and what it must not do."],
             "icon": ["type": "string", "description": "An SF Symbol name, like hammer."],
-            "model": ["type": "string", "enum": Assistants.models],
+            "model": ["type": "string", "enum": Assistants.modelChoices, "description": "default follows the default model set in Settings; the others are fixed tiers. default when left out."],
             "permission_mode": ["type": "string", "enum": Assistants.modes, "description": "How it asks for permission; ask when left out."],
             "tools": ["type": "array", "items": ["type": "string"], "description": "WorkTime tools it may call besides the default reading ones, like jira_issue."],
             "chrome": ["type": "boolean", "description": "Its sessions start with Claude in Chrome on, for an assistant that drives a browser; off when left out."],

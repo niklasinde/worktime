@@ -13,7 +13,7 @@ struct AssistantRole: Equatable, Identifiable, Sendable {
     var name: String
     var icon = Assistants.defaultIcon
     var summary = ""
-    var model = "sonnet"
+    var model = Assistants.defaultModel
     var permissionMode = "ask"
     var tools: [String] = []
     /// The ids of the workspace's spaces this assistant is meant for; its sessions start in them.
@@ -62,6 +62,9 @@ enum Assistants {
     static let prefix = "assistant:"
     static let defaultIcon = "sparkles"
     static let models = ["opus", "sonnet", "haiku"]
+    /// The role file's `model:` values: a tier, or `default` for the model set in Settings.
+    static let defaultModel = "default"
+    static let modelChoices = [defaultModel] + models
     static let modes = ["ask", "auto", "acceptEdits", "plan"]
     static let ownFolder = "own"
     static let nameLimit = 60
@@ -162,7 +165,7 @@ enum Assistants {
             case "name": role.name = value
             case "icon": role.icon = value
             case "description": role.summary = value
-            case "model": role.model = value == "auto" ? "sonnet" : value
+            case "model": role.model = value == "auto" ? defaultModel : value
             case "permissionMode": role.permissionMode = value
             case "folder": role.folder = value.isEmpty ? nil : value
             case "concurrency":
@@ -194,7 +197,7 @@ enum Assistants {
         if given["icon"] != nil, role.icon.range(of: "^[a-z0-9][a-z0-9.]*$", options: .regularExpression) == nil {
             problem("icon", "icon must be an SF Symbol name such as hammer or person.2.fill.")
         }
-        if !models.contains(role.model) { problem("model", "model must be one of \(models.joined(separator: ", ")).") }
+        if !modelChoices.contains(role.model) { problem("model", "model must be one of \(modelChoices.joined(separator: ", ")); default follows the model set in Settings.") }
         if !modes.contains(role.permissionMode) { problem("permissionMode", "permissionMode must be one of \(modes.joined(separator: ", ")).") }
         if role.tools.contains(where: { $0.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) == nil }) {
             problem("tools", "tools lists tool names such as jira_issue, separated by commas.")
@@ -354,9 +357,16 @@ enum Assistants {
 
     // MARK: Defaults
 
-    /// The Claude model id a front matter `model` stands for.
-    static func modelID(_ model: String) -> String {
-        AgentLogic.modelID(tier: model) ?? AgentLogic.defaultModel
+    /// The Claude model id a front matter `model` stands for: its tier, else `fallback` (`default`, the retired `auto`, anything unknown).
+    static func modelID(_ model: String, fallback: String = AgentLogic.defaultModel) -> String {
+        AgentLogic.modelID(tier: model) ?? fallback
+    }
+
+    static func followsDefault(_ model: String) -> Bool { AgentLogic.modelID(tier: model) == nil }
+
+    /// A per-assistant choice wins over the role file's tier, which wins over the default model; a stale choice is ignored.
+    static func effectiveModel(override: String?, role: String, fallback: String = AgentLogic.defaultModel) -> String {
+        AgentLogic.offeredModel(override) ?? modelID(role, fallback: fallback)
     }
 
     static func permissionMode(_ mode: String) -> AgentPermissionMode {

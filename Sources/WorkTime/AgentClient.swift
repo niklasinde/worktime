@@ -99,9 +99,12 @@ final class AgentModel: ObservableObject {
     let isMain: Bool
     /// The workspace a Main is for.
     let workspace: String?
+    /// Whether `model` was not chosen for this agent, so it is read from the default model again before each prompt.
+    private var followsDefaultModel = AgentLogic.offeredModel(AgentModel.defaults.string(forKey: AgentLogic.modelKey)) == nil
     @Published var model = AgentLogic.storedModel(AgentModel.defaults.string(forKey: AgentLogic.modelKey)) {
         didSet {
             guard !loadingDefaults else { return }
+            followsDefaultModel = false
             if let routine { RoutineStore.shared.setModel(model, for: routine.key) }
             else if assistant != nil || topic?.assistant != nil { saveAssistantModel() } else { Self.defaults.set(model, forKey: AgentLogic.modelKey) }
         }
@@ -605,13 +608,22 @@ final class AgentModel: ObservableObject {
                                                     fallback: actingAs.map { Assistants.permissionMode($0.role.permissionMode) }
                                                         ?? (routine == nil ? AgentPermissionMode.preferred(defaults: Self.defaults) : .ask))
         if let acting = assistant ?? topic?.assistant.flatMap(AssistantStore.shared.entry) {
-            let saved = (Self.defaults.dictionary(forKey: Assistants.storedModelsKey) as? [String: String])?[historyKey]
-            model = saved.map { AgentLogic.storedModel($0) } ?? Assistants.modelID(acting.role.model)
+            let saved = (Self.defaults.dictionary(forKey: Assistants.storedModelsKey) as? [String: String])?[historyKey].flatMap(AgentLogic.offeredModel)
+            model = Assistants.effectiveModel(override: saved, role: acting.role.model)
+            followsDefaultModel = saved == nil && Assistants.followsDefault(acting.role.model)
         } else if let routine {
-            model = routine.model.map { AgentLogic.storedModel($0) } ?? actingAs.map { Assistants.modelID($0.role.model) } ?? AgentLogic.defaultModel
+            let own = routine.model.flatMap(AgentLogic.offeredModel)
+            model = Assistants.effectiveModel(override: own, role: actingAs?.role.model ?? Assistants.defaultModel)
+            followsDefaultModel = own == nil && (actingAs.map { Assistants.followsDefault($0.role.model) } ?? true)
         }
         chrome = AgentLogic.chromeEnabled(Self.defaults.dictionary(forKey: AgentLogic.chromeKey), key: historyKey, fallback: startsWithChrome)
         chromeProblem = nil
+    }
+
+    private func followDefaultModel() {
+        loadingDefaults = true
+        defer { loadingDefaults = false }
+        model = AgentLogic.defaultModel
     }
 
     private func saveAssistantModel() {
@@ -850,6 +862,7 @@ final class AgentModel: ObservableObject {
             return false
         }
         guard refreshAssistant(), let client = runningClient() else { return false }
+        if followsDefaultModel { followDefaultModel() }
         problem = nil
         clearBlocked()
         withdrawAttention()

@@ -49,7 +49,7 @@ enum AssistantRequests {
         }
         return AssistantDraft(name: FilterLogic.text(args, "name"), summary: FilterLogic.text(args, "description"),
                               instructions: (args["instructions"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                              icon: FilterLogic.text(args, "icon"), model: try FilterLogic.choice(args, "model", allowed: Assistants.models),
+                              icon: FilterLogic.text(args, "icon"), model: try FilterLogic.choice(args, "model", allowed: Assistants.modelChoices),
                               permissionMode: try FilterLogic.choice(args, "permission_mode", allowed: Assistants.modes), tools: tools,
                               chrome: args["chrome"] as? Bool,
                               folder: (args["folder"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), workspace: FilterLogic.text(args, "workspace"))

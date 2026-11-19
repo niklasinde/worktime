@@ -732,19 +732,27 @@ enum AgentLogic {
     }
 
     static let modelKey = "agentModel"
-    static let defaultModel = "claude-sonnet-5-5"
+    static let defaultModelKey = "agentDefaultModel"
+    static let builtInModel = "claude-sonnet-5-5"
     static let models = [ModelChoice(id: "claude-opus-5-5", name: "Opus 5.5", tier: "opus"),
-                         ModelChoice(id: defaultModel, name: "Sonnet 5.5", tier: "sonnet"),
+                         ModelChoice(id: builtInModel, name: "Sonnet 5.5", tier: "sonnet"),
                          ModelChoice(id: "claude-haiku-5-5", name: "Haiku 5.5", tier: "haiku")]
 
     static func modelName(_ id: String) -> String { models.first { $0.id == id }?.name ?? id }
 
     static func modelID(tier: String) -> String? { models.first { $0.tier == tier }?.id }
 
-    /// The saved choice, or the default when there is none or it is no longer offered (the retired `auto` included).
-    static func storedModel(_ raw: String?) -> String {
-        raw.flatMap { raw in models.first { $0.id == raw }?.id } ?? defaultModel
-    }
+    /// `raw` when it is a model that is offered.
+    static func offeredModel(_ raw: String?) -> String? { models.first { $0.id == raw }?.id }
+
+    /// The model set in Settings, or Sonnet 5.5 when none is saved or the saved one is no longer offered.
+    static func savedDefaultModel(_ raw: String?) -> String { offeredModel(raw) ?? builtInModel }
+
+    /// What agents and roles without a model of their own use, read each time so a change applies to the next prompt.
+    static var defaultModel: String { savedDefaultModel(UserDefaults.standard.string(forKey: defaultModelKey)) }
+
+    /// The saved choice, or `fallback` when there is none or it is no longer offered (the retired `auto` included).
+    static func storedModel(_ raw: String?, fallback: String = defaultModel) -> String { offeredModel(raw) ?? fallback }
 
     static let quickActions: [(title: String, prompt: String)] = [
         ("Find in code", "Find where this is implemented in the code and point me to the files and lines: "),

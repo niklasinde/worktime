@@ -738,7 +738,7 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   folder), with one's instructions when it is named, and runs without asking. `create_assistant(name, description, instructions,
   icon?, model?, permission_mode?, tools?, chrome?, folder?, workspace?)` writes a role file in the asking agent's workspace, or the one
   named, and refuses a name that exists; `update_assistant(assistant, …)` changes only the fields passed and `delete_assistant(assistant)`
-  removes the file (its sessions and own folder stay). `chrome: true` in a role file (a Chrome switch in its editor, `chrome` on create_assistant and update_assistant)
+  removes the file (its sessions and own folder stay). `model:` in a role file is `opus`, `sonnet` or `haiku` for a fixed tier, or `default` (also when the line is left out) to follow Settings → Agent → Default model, read again at each prompt. `chrome: true` in a role file (a Chrome switch in its editor, `chrome` on create_assistant and update_assistant)
   starts every session of that assistant with Claude in Chrome on, for one that drives a browser such as a verifier: its own pane, a ticket or
   pull request session and the routines or automations that run as it. The session's header can still turn it off, and that choice wins over
   the file. Chrome calls keep the usual permission rules (reads allowed, the rest asked), so an unattended run is refused or waits as for any tool. The file is checked like one written by hand, `tools` must be WorkTime tools,

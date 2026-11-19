@@ -47,10 +47,10 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         check(parsed.name == "Dev's" && parsed.summary == "Reviews code" && parsed.model == "haiku" && parsed.permissionMode == "plan", "\(parsed)")
         check(parsed.tools == ["jira_issue", "slack_thread"] && parsed.folder == "own" && parsed.body == "Body here.", "\(parsed)")
         let inline = Assistants.parse(slug: "x", text: "---\nname: X\ndescription: y\ntools: [a, b , \"c\"]\n---\nz")
-        check(inline.tools == ["a", "b", "c"] && inline.model == "sonnet" && inline.permissionMode == "ask" && inline.icon == Assistants.defaultIcon, "\(inline)")
+        check(inline.tools == ["a", "b", "c"] && inline.model == "default" && inline.permissionMode == "ask" && inline.icon == Assistants.defaultIcon, "\(inline)")
         check(Assistants.parse(slug: "x", text: "---\nname: X\ndescription: y\ntools: a, b, a\n---\n").tools == ["a", "b"], "listed once")
         let legacy = Assistants.parse(slug: "x", text: "---\nname: X\ndescription: y\nmodel: auto\n---\n")
-        check(legacy.model == "sonnet" && legacy.problems.isEmpty, "a file written for Auto reads as Sonnet: \(legacy)")
+        check(legacy.model == "default" && legacy.problems.isEmpty, "a file written for Auto reads as default: \(legacy)")
     }),
     ("assistants: a malformed file never fails; it comes back with its problems and as much as could be read", {
         func problems(_ text: String?) -> [AssistantProblem] { Assistants.parse(slug: "bad", text: text).problems }
@@ -281,8 +281,21 @@ let assistantTests: [(name: String, run: () throws -> Void)] = [
         check(!AgentRequest.prompt(text: "hi", cwd: "/r", sessionID: nil).line.contains("allowedMcpTools"), "an agent without a list is not restricted")
     }),
     ("assistants: model and permission mode defaults come from the file and map to what the pickers offer", {
-        check(Assistants.modelID("sonnet") == AgentLogic.defaultModel && Assistants.modelID("opus") == "claude-opus-5-5" && Assistants.modelID("haiku") == "claude-haiku-5-5", "models")
-        check(Assistants.modelID("nope") == AgentLogic.defaultModel && Assistants.modelID("auto") == AgentLogic.defaultModel, "unknown model")
+        let sonnet = AgentLogic.builtInModel, haiku = "claude-haiku-5-5", opus = "claude-opus-5-5"
+        check(Assistants.modelID("sonnet") == sonnet && Assistants.modelID("opus") == opus && Assistants.modelID("haiku") == haiku, "models")
+        check(Assistants.modelID("nope", fallback: sonnet) == sonnet && Assistants.modelID("auto", fallback: sonnet) == sonnet, "unknown model")
+        check(Assistants.modelID("default", fallback: haiku) == haiku && Assistants.modelID("opus", fallback: haiku) == opus, "default follows the fallback, a tier does not")
+        check(Assistants.effectiveModel(override: opus, role: "haiku", fallback: sonnet) == opus, "a per-assistant choice wins over the role")
+        check(Assistants.effectiveModel(override: nil, role: "haiku", fallback: opus) == haiku, "a role tier wins over the default")
+        check(Assistants.effectiveModel(override: nil, role: "default", fallback: opus) == opus && Assistants.effectiveModel(override: nil, role: "auto", fallback: opus) == opus, "default and auto use the default model")
+        check(Assistants.effectiveModel(override: "gpt", role: "default", fallback: haiku) == haiku, "a stale choice is ignored")
+        check(Assistants.followsDefault("default") && Assistants.followsDefault("auto") && !Assistants.followsDefault("sonnet"), "which roles follow the default")
+        let followed = Assistants.parse(slug: "f", text: "---\nname: F\ndescription: d\nmodel: default\n---\nx")
+        let omitted = Assistants.parse(slug: "o", text: "---\nname: O\ndescription: d\n---\nx")
+        let retired = Assistants.parse(slug: "r", text: "---\nname: R\ndescription: d\nmodel: auto\n---\nx")
+        check(followed.isUsable && followed.model == "default" && omitted.isUsable && omitted.model == "default" && retired.isUsable && retired.model == "default", "default, omitted and auto parse as default")
+        check(Assistants.parse(slug: "x", text: Assistants.serialise(followed)).model == "default", "default survives a round trip")
+        check(Assistants.parse(slug: "b", text: "---\nname: B\ndescription: d\nmodel: gpt\n---\nx").problems.first?.message.contains("default") == true, "the hint lists default")
         check(Assistants.permissionMode("ask") == .ask && Assistants.permissionMode("auto") == .auto && Assistants.permissionMode("acceptEdits") == .acceptEdits
               && Assistants.permissionMode("plan") == .plan && Assistants.permissionMode("x") == .ask, "modes")
         check(Assistants.wordCount("---\nname: X\ndescription: y\n---\n\none two\nthree") == 3 && Assistants.wordCount("") == 0, "words of the body only")

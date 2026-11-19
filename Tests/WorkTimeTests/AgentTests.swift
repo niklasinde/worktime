@@ -129,7 +129,9 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
     ("agent: models are a fixed list, Sonnet by default, and the retired Auto choice becomes it", {
         check(AgentLogic.models.map(\.id) == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], "ids")
         check(AgentLogic.storedModel(nil) == "claude-sonnet-5-5" && AgentLogic.storedModel("gpt") == "claude-sonnet-5-5", "Sonnet by default")
-        check(AgentLogic.storedModel("auto") == AgentLogic.defaultModel, "a stored Auto migrates")
+        check(AgentLogic.storedModel("auto", fallback: "claude-opus-5-5") == "claude-opus-5-5", "a stored Auto migrates to the default")
+        check(AgentLogic.savedDefaultModel(nil) == AgentLogic.builtInModel && AgentLogic.savedDefaultModel("claude-opus-5-5") == "claude-opus-5-5", "the saved default model")
+        check(AgentLogic.savedDefaultModel("claude-retired-1") == AgentLogic.builtInModel, "a saved default that is no longer offered falls back")
         check(AgentLogic.storedModel("claude-haiku-5-5") == "claude-haiku-5-5", "a saved choice")
         check(AgentLogic.modelName("claude-sonnet-5-5") == "Sonnet 5.5" && AgentLogic.modelName("other") == "other", "names")
         check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, model: "claude-haiku-5-5").line.contains(#""model":"claude-haiku-5-5""#), "sent")

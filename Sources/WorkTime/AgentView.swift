@@ -1208,6 +1208,7 @@ private struct AgentPermissionRow: View {
 struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
+    @AppStorage(AgentLogic.defaultModelKey) private var defaultModel = AgentLogic.builtInModel
     @AppStorage(AgentLogic.chromeDefaultKey) private var chromeByDefault = false
     @AppStorage(AgentLogic.chromeAllowAllKey) private var chromeAllowAll = false
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
@@ -1296,6 +1297,15 @@ struct AgentSettingsSection: View {
 
     @ViewBuilder private var sections: some View {
         AssistantSessionSettings()
+        SettingsSection("Model", footer: nil) {
+            SettingsRow("Default model", detail: "Used by agents and roles that do not set their own model.") {
+                Picker("Default model", selection: Binding(get: { AgentLogic.savedDefaultModel(defaultModel) }, set: { defaultModel = $0 })) {
+                    ForEach(AgentLogic.models, id: \.id) { Text($0.name).tag($0.id) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
         SettingsSection("Permissions", footer: "How new agents start. An agent you already changed keeps its own, and assistants and routines keep theirs.") {
             SettingsRow("Default mode", detail: defaultMode.help) {
                 Picker("Default mode", selection: $defaultMode) {

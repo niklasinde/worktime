@@ -275,7 +275,8 @@ struct AssistantEditorSheet: View {
     }
 
     private func facts(_ role: AssistantRole) -> String {
-        let model = AgentLogic.models.first { $0.id == Assistants.modelID(role.model) }?.name ?? role.model
+        let name = AgentLogic.modelName(Assistants.modelID(role.model))
+        let model = Assistants.followsDefault(role.model) ? "Default (\(name))" : name
         return (["Model \(model)", "Permissions \(Assistants.permissionMode(role.permissionMode).title)",
                 "Tools " + (role.tools.isEmpty ? "default" : role.tools.joined(separator: ", ")),
                 "Chrome " + (role.chrome ? "on" : "off"),
