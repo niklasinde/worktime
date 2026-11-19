@@ -31,7 +31,8 @@ struct AddToAgentMenu: View {
 
     var body: some View {
         Button(prs.count > 1 ? "New Agent for These \(prs.count)" : "New Agent for This Pull Request") { store.openSet(prs) }
-        let agents = store.visible
+        let linked = Set(AddToAgent.linkedAgents(of: prs, agents: store.visible.map(\.key), index: LinkStore.shared.searchIndex))
+        let agents = store.visible.filter { linked.contains($0.key) }
         if !agents.isEmpty {
             Divider()
             ForEach(agents) { agent in

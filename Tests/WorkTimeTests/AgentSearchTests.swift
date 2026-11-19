@@ -119,6 +119,31 @@ let agentSearchTests: [(name: String, run: () throws -> Void)] = [
         check(linkedKeys("rate limit", agents, table, titles: ["https://github.com/acme-com/api/pull/12": "Add rate limiting"]) == ["b"], "cached pull request title")
         check(linkedKeys("export rate", agents, table).isEmpty, "every word in one agent's links")
     }),
+    ("add to agent: only the agents linked to the pull requests are listed, in the given order", {
+        let order = ["d", "c", "b", "a", "x"]
+        let table = linkedTable([(.agent("a"), linkedPR), (.agent("b"), .jira("ACME-5")), (linkedPR, .jira("ACME-5")),
+                                 (.agent("c"), linkedBranch), (linkedPR, linkedBranch), (.agent("x"), .jira("ACME-9"))])
+        let index = AgentLinkIndex(table: table)
+        let pr = LinkedPR(url: "https://github.com/acme-com/api/pull/12", repo: "acme-com/api", number: 12)
+        check(AddToAgent.linkedAgents(of: [pr], agents: order, index: index) == ["c", "b", "a"], "direct, ticket and branch")
+        check(AddToAgent.linkedAgents(of: [pr], agents: ["a", "zzz"], index: index) == ["a"], "only the given agents")
+    }),
+    ("add to agent: several pull requests give the union and unlinked ones none", {
+        let other = LinkedPR(url: "https://github.com/acme-com/api/pull/13", repo: "acme-com/api", number: 13)
+        let first = LinkedPR(url: "https://github.com/acme-com/api/pull/12", repo: "acme-com/api", number: 12)
+        let index = AgentLinkIndex(table: linkedTable([(.agent("a"), linkedPR), (.agent("b"), LinkTargets.pullRequest("acme-com/api#13")!), (.agent("c"), .jira("ACME-9"))]))
+        check(AddToAgent.linkedAgents(of: [first, other], agents: ["a", "b", "c"], index: index) == ["a", "b"], "union")
+        check(AddToAgent.linkedAgents(of: [first], agents: ["a", "b", "c"], index: index) == ["a"], "one")
+        check(AddToAgent.linkedAgents(of: [first], agents: ["a"], index: .empty).isEmpty, "no links")
+    }),
+    ("add to agent: a removed link and an old key", {
+        var table = linkedTable([(.agent("a"), .jira("OLD-1")), (.agent("b"), linkedPR), (linkedPR, .jira("OLD-1"))])
+        table.rename(.jira("OLD-1"), to: "NEW-2")
+        let pr = LinkedPR(url: "https://github.com/acme-com/api/pull/12", repo: "acme-com/api", number: 12)
+        check(AddToAgent.linkedAgents(of: [pr], agents: ["a", "b"], index: AgentLinkIndex(table: table)) == ["a", "b"], "renamed ticket")
+        table.remove(LinkPair(linkedPR, .jira("NEW-2")), now: linkStart)
+        check(AddToAgent.linkedAgents(of: [pr], agents: ["a", "b"], index: AgentLinkIndex(table: table)) == ["b"], "removed link")
+    }),
     ("agent search by links: no match adds nothing and the text match stays", {
         let agents = [linkedAgent("a")]
         let table = linkedTable([(.agent("a"), .jira("ACME-5"))])

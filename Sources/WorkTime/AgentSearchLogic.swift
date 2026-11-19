@@ -50,6 +50,14 @@ enum AgentSearch {
     }
 }
 
+enum AddToAgent {
+    /// The keys of `agents`, in their order, that the link table ties to one of the pull requests.
+    static func linkedAgents(of prs: [LinkedPR], agents: [String], index: AgentLinkIndex) -> [String] {
+        let linked = index.agentKeys(linkedTo: prs)
+        return agents.filter(linked.contains)
+    }
+}
+
 /// The link table as the search reads it, built once per table: what an entity is called (ref, aliases, the forms people type for a pull
 /// request or branch) and what it says about itself.
 struct AgentLinkIndex: Sendable {
@@ -84,6 +92,11 @@ struct AgentLinkIndex: Sendable {
         guard words.count == 1, let word = words.first else { return [] }
         let found = (references[word] ?? []) + (references[LinkTargets.parse(word)?.id.lowercased() ?? ""] ?? [])
         return Set(found.flatMap { table.related(to: $0, depth: Self.reach) }.filter { $0.entity.kind == .agent }.map(\.entity.id))
+    }
+
+    /// The agents within two hops of any of the pull requests: linked to one directly, or through its ticket or branch.
+    func agentKeys(linkedTo prs: [LinkedPR]) -> Set<String> {
+        Set(prs.flatMap { table.related(to: .pullRequest($0.target), depth: Self.reach) }.filter { $0.entity.kind == .agent }.map(\.entity.id))
     }
 
     /// What the agent's linked entities are called, plus the titles known for their pull requests.
