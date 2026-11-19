@@ -19,6 +19,25 @@ private func notice(_ id: String, _ title: String, source: NoticeSource = review
 private func time(_ text: String) -> Result<Date, NoticeError> { NoticeLogic.time(text, now: now, timeZone: stockholm) }
 
 let noticeTests: [(name: String, run: () throws -> Void)] = [
+    ("routine notices: a title over the limit is clipped with the full text first in the body, a short one is left alone", {
+        let links = (1...3).map { "<https://github.com/quiddly-com/finq.api/pull/\(2000 + $0)|PR \($0)>" }.joined(separator: " ")
+        let long = "Review requests from #review-request: please review " + links
+        check(long.count > NoticeLogic.titleLimit, "the case is over the limit")
+        let fitted = NoticeLogic.fitted(title: long, body: "Looks fine.")
+        check(fitted.title.count <= NoticeLogic.titleLimit && fitted.title.hasSuffix("\u{2026}"), fitted.title)
+        check(fitted.body == long + "\nLooks fine.", fitted.body)
+        let short = NoticeLogic.fitted(title: "Reviews: one PR", body: "Done.")
+        check(short.title == "Reviews: one PR" && short.body == "Done.", "unchanged")
+        check(NoticeLogic.fitted(title: long, body: String(repeating: "x", count: 5000)).body.count == NoticeLogic.bodyLimit, "body stays within its limit")
+    }),
+
+    ("routine notices: the fallback for a turned-away notification has a valid title and names the reason", {
+        let text = NoticeLogic.rejection(name: "Reviews", reason: "The request is too old.")
+        check(text.title == "Reviews: needs your attention" && text.body.contains("The request is too old."), text.title)
+        let long = NoticeLogic.rejection(name: String(repeating: "n", count: 300), reason: "x")
+        check(!long.title.isEmpty && long.title.count <= NoticeLogic.titleLimit, "clipped to the limit")
+    }),
+
     ("notify: at is ISO 8601 or HH:mm in local time, never in the past or more than 30 days out", {
         check((try? time("13:15").get()) == utc("2026-11-12T12:15:00Z"), "HH:mm today, Stockholm time")
         check((try? time("09:30").get()) == utc("2026-11-13T08:30:00Z"), "HH:mm already past is tomorrow")

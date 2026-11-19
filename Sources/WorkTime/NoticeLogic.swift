@@ -107,6 +107,18 @@ enum NoticeLogic {
     static let fileName = "notifications.json"
     static let userInfoKey = "notice"
 
+    /// A title and body the notification center accepts: a title over the limit is clipped and moves whole to the first line of the body.
+    static func fitted(title: String, body: String) -> (title: String, body: String) {
+        guard title.count > titleLimit else { return (title, body) }
+        let full = body.isEmpty ? title : title + "\n" + body
+        return (AgentActions.clipped(title, fallback: title), String(full.prefix(bodyLimit)))
+    }
+
+    /// What to show instead when the center turned a routine's notification away.
+    static func rejection(name: String, reason: String) -> (title: String, body: String) {
+        fitted(title: "\(name): needs your attention", body: "Its notification was not shown: \(reason)")
+    }
+
     static func requestName(_ id: String) -> String { "\(id).notice.json" }
 
     static func isRequest(_ name: String) -> Bool { name.hasSuffix(".notice.json") }

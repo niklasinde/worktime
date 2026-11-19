@@ -130,7 +130,7 @@ enum AgentActions {
         return lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) }.joined(separator: "\n")
     }
 
-    private static func clipped(_ title: String, fallback: String) -> String {
+    static func clipped(_ title: String, fallback: String) -> String {
         let text = title.isEmpty ? fallback : title
         return text.count > titleLimit ? String(text.prefix(titleLimit - 1)) + "\u{2026}" : text
     }

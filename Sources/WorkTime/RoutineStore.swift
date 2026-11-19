@@ -247,8 +247,22 @@ final class RoutineStore: ObservableObject {
 
     private func announce(_ routine: Routine, body: String) {
         let now = Date(), source = NoticeSource(agent: routine.key, workspace: routine.workspace)
-        let notice = AgentNotice(id: UUID().uuidString, title: routine.name, body: body, link: routine.key, source: source, created: now)
-        _ = NoticeCenter.shared.handle(NoticeRequest(id: notice.id, action: .notify, notice: notice, cancel: nil, source: source, created: now))
+        let text = NoticeLogic.fitted(title: routine.name, body: body)
+        post(AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: routine.key, source: source, created: now), of: routine)
+    }
+
+    /// Hands a routine's notification to the center; when it is turned away, says so in the event log and shows a short one instead.
+    private func post(_ notice: AgentNotice, of routine: Routine) {
+        func send(_ notice: AgentNotice) -> NoticeReply {
+            NoticeCenter.shared.handle(NoticeRequest(id: notice.id, action: .notify, notice: notice, cancel: nil, source: notice.source, created: notice.created))
+        }
+        let reply = send(notice)
+        guard !reply.ok else { return }
+        AppEventLog.shared.record(.routineRan, "\(routine.name): notification not shown: \(reply.message)")
+        let text = NoticeLogic.rejection(name: routine.name, reason: reply.message)
+        var source = notice.source
+        source.reviewing = nil
+        _ = send(AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: routine.key, source: source, created: notice.created))
     }
 
     // MARK: Agents
@@ -454,10 +468,11 @@ final class RoutineStore: ObservableObject {
         let now = Date()
         var source = NoticeSource(agent: routine.key, workspace: routine.workspace)
         if event?.kind.offersReview == true { source.reviewing = true }
-        var notice = AgentNotice(id: UUID().uuidString, title: text.title, body: text.body, link: event.flatMap(Automations.noticeLink) ?? routine.key,
+        let fitted = NoticeLogic.fitted(title: text.title, body: text.body)
+        var notice = AgentNotice(id: UUID().uuidString, title: fitted.title, body: fitted.body, link: event.flatMap(Automations.noticeLink) ?? routine.key,
                                  source: source, created: now)
         notice.ask = question
-        _ = NoticeCenter.shared.handle(NoticeRequest(id: notice.id, action: .notify, notice: notice, cancel: nil, source: source, created: now))
+        post(notice, of: routine)
     }
 
     /// Notes the user's answer to an automation's question, for its row.
