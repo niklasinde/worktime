@@ -29,7 +29,7 @@ extension MCPServer {
              "prompt": ["type": "string", "description": "What to do for each event. Placeholders: " + AutomationTrigger.Kind.allCases.map { "\($0.rawValue) \u{2192} " + $0.fields.map { "{\($0)}" }.joined(separator: " ") }.joined(separator: "; ")
                          + (creating ? ". A sensible default for the event when left out." : ".")],
              "notify": ["type": "boolean", "description": "Notify the user with the answer; on by default."],
-             "remind": ["type": "boolean", "description": "Make a reminder, linked to the pull request, ticket or message, to follow up; off by default."],
+             "remind": ["type": "boolean", "description": "Show a follow-up notification linked to the pull request, ticket or message after a successful run; off by default."],
              "ask": ["type": "boolean", "description": "Ask the user what to do next, with two buttons on the notification (they work without opening the app): the first starts ask_agent "
                          + "with ask_prompt, the second skips. The run then only triages: it should end with one line, Recommendation: <first button or skip> and a reason, shown on the notification. "
                          + "With it the default prompt is a triage, and the notification and the reminder stay until the user answers. Naming any ask_ field turns it on."],

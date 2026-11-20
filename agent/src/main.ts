@@ -7,13 +7,16 @@ import { parseMode, preToolDecision, selfReport, type Decision, type Mode, type 
 import { contextWindow, hookMessage, reportedContext, usageContext } from "./workmap.js";
 import { TextStream } from "./stream.js";
 import { userMessage, type PromptImage } from "./images.js";
+import { actionInstructions, reportInstructions, reviewInstructions } from "./actions.js";
+import { userContext } from "./usercontext.js";
 import { PromptQueue } from "./promptqueue.js";
 import { RoleWaits } from "./rolewait.js";
 import { usageFrom } from "./usage.js";
 import { delegateTool, hasDelegateRules, isSessionAllowable, matchDelegate, parseRules, sessionKey, suggestRules, type Rule } from "./rules.js";
+import { CodexBridge } from "./codex.js";
 
 type Input =
-  | ({ type: "prompt"; text: string; model?: string; permissionMode?: string; images?: PromptImage[] } & PromptOptions)
+  | ({ type: "prompt"; text: string; model?: string; provider?: "claude" | "codex"; permissionMode?: string; images?: PromptImage[] } & PromptOptions)
   | { type: "message"; id: string; text: string; images?: PromptImage[] }
   | { type: "cancel_message"; id: string }
   | { type: "permission"; id: string; allow: boolean; session?: boolean; add?: boolean; message?: string }
@@ -55,6 +58,7 @@ const resolving = new Map<string, (key?: string) => void>();
 const resolveTimeout = 5000;
 const pending = new Map<string, (result: PermissionResult) => void>();
 let running: { query: Query; abort: AbortController; queue: PromptQueue } | undefined;
+let codex: CodexBridge | undefined;
 let nextPermission = 0;
 let mode: Mode = "default";
 /// Calls the user allowed in the PreToolUse hook, so canUseTool does not ask a second time.
@@ -236,6 +240,7 @@ function denyPending(reason: string) {
 }
 
 async function run(input: Extract<Input, { type: "prompt" }>) {
+  if (input.provider === "codex") return runCodex(input);
   if (running) return send({ type: "error", message: "The agent is still working on the previous prompt." });
   const missing = missingFolderError(input.cwd);
   if (missing) {
@@ -295,6 +300,18 @@ async function run(input: Extract<Input, { type: "prompt" }>) {
   }
 }
 
+function runCodex(input: Extract<Input, { type: "prompt" }>) {
+  if (running || codex) return send({ type: "error", message: "The agent is still working on the previous prompt." });
+  const missing = missingFolderError(input.cwd);
+  if (missing) { send(missing); return send({ type: "idle" }); }
+  const { actions, review, report, where } = input.instructions ?? {};
+  const append = [userContext(process.env.HOME, input.cwd), actions ?? actionInstructions, review ?? reviewInstructions,
+    report ?? reportInstructions, where, input.appendSystemPrompt].filter(Boolean).join("\n\n");
+  codex = new CodexBridge(send, () => { codex = undefined; });
+  codex.start({ text: input.text, images: input.images, cwd: input.cwd, sessionId: input.sessionId, model: input.model,
+    permissionMode: input.permissionMode, appendSystemPrompt: append });
+}
+
 function handle(line: string) {
   let input: Input;
   try {
@@ -317,6 +334,7 @@ function handle(line: string) {
       if (running?.queue.cancel(input.id)) send({ type: "cancelled", id: input.id });
       break;
     case "permission": {
+      if (codex) { codex.control({ type: "permission", id: input.id, allow: input.allow }); return; }
       if (roleWaits.answer(input.id, { allow: input.allow, add: input.add === true, session: input.session === true, message: input.message })) return;
       const resolve = pending.get(input.id);
       pending.delete(input.id);
@@ -357,6 +375,7 @@ function handle(line: string) {
       reportSessionAllowed();
       break;
     case "interrupt":
+      if (codex) { codex.control({ type: "interrupt" }); return; }
       denyPending("The user stopped the agent.");
       if (running) report("cancelled", running.queue.drop());
       if (running) running.query.interrupt().catch(() => running?.abort.abort());

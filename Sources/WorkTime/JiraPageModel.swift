@@ -538,16 +538,13 @@ final class JiraPageModel: ObservableObject {
         let store = TopicAgentStore.shared
         linkPullRequests()
         let linked = pullRequests[key] ?? [], known = ticket(key)
-        if let known, TopicAgents.existing(jiraKey: key, in: store.topics) != nil {
-            store.open(ticket: known)
-            return
-        }
+        let links = linked.compactMap { LinkTargets.pullRequest($0.url) }
         Task {
             let client = jira.client()
             let issue = await Task.detached { try? await client?.issue(key) }.value
             let ticket = known ?? issue.map(JiraAgents.ticket) ?? JiraTicket(key: key, summary: "", status: "", priority: nil, updated: nil)
             let folder = await Self.checkout(of: linked)
-            guard let opened = store.open(ticket: ticket, folder: folder), opened.isNew, let issue else { return }
+            guard let opened = store.open(ticket: ticket, folder: folder, links: links), opened.isNew, let issue else { return }
             let agent = store.load(opened.topic)
             let waiting = TopicAgents.prompt(opened.topic)
             guard agent.sessionID == nil, agent.draft.isEmpty || agent.draft == waiting else { return }

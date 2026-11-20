@@ -1,6 +1,6 @@
 import Foundation
 
-/// The kinds of work an agent does, each a node around Claude on the work map.
+/// The kinds of work an agent does, each a node around its provider on the work map.
 enum WorkMapCategory: String, CaseIterable {
     case you, model, memory, files, shell, network, browser, agents, skills, hooks
 
@@ -50,6 +50,7 @@ struct WorkMap: Equatable {
     private(set) var step = 0
     private(set) var contextPercent: Int?
     private(set) var contextTokens: Int?
+    private(set) var contextMax: Int?
     private(set) var model: String?
     private var next = 0
 
@@ -68,9 +69,15 @@ struct WorkMap: Equatable {
     }
 
     var contextText: String? {
+        if let contextTokens, let contextMax {
+            let size = "\(Self.tokenText(contextTokens)) / \(Self.tokenText(contextMax))"
+            return contextPercent.map { "\(size) · \($0)%" } ?? size
+        }
         if let contextPercent { return "\(contextPercent)%" }
-        return contextTokens.map { $0 >= 1000 ? "\($0 / 1000)k" : "\($0)" }
+        return contextTokens.map(Self.tokenText)
     }
+
+    private static func tokenText(_ tokens: Int) -> String { tokens >= 1000 ? "\(tokens / 1000)k" : "\(tokens)" }
 
     /// How strongly a node is tinted: 1 while it runs, fading to 0 after its last event.
     func warmth(_ category: WorkMapCategory, at now: Date) -> Double {
@@ -112,6 +119,7 @@ struct WorkMap: Equatable {
         case "context":
             contextPercent = (object["percent"] as? NSNumber)?.intValue
             contextTokens = (object["tokens"] as? NSNumber)?.intValue ?? contextTokens
+            contextMax = (object["max"] as? NSNumber)?.intValue ?? contextMax
         case "result":
             if let used = object["model"] as? String, !used.isEmpty { model = used }
         case "idle":

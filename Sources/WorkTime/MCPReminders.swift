@@ -12,9 +12,8 @@ extension MCPServer {
         }
         return [
             MCPTool(name: "add_reminder",
-                    description: "Adds a reminder to the user's WorkTime reminders (shown in the notch bar), for something the user "
-                        + "should do later rather than be told now. Give the link of what it is about so the user can open the source "
-                        + "from the reminder. An open reminder with the same title and due is returned instead of adding another.",
+                    description: "Without a due date, shows an immediate WorkTime notification. With a due date, adds a WorkTime reminder. "
+                        + "Give a link so the user can open the source.",
                     properties: ["title": ["type": "string", "maxLength": NoticeLogic.titleLimit, "description": "What to do."],
                                  "notes": ["type": "string", "maxLength": NoticeLogic.bodyLimit],
                                  "due": ["type": "string",

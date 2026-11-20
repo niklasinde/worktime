@@ -186,6 +186,7 @@ final class TodoModel: ObservableObject {
 
     /// An agent's add_reminder, reminders or complete_reminder, handed over by the MCP server through the agent inbox.
     func handle(_ request: ReminderRequest) -> NoticeReply {
+        if let notice = ReminderLogic.immediateNotice(for: request) { return NoticeCenter.shared.handle(notice) }
         let result = ReminderLogic.handle(request, book: book, addedBy: request.source.label(titles: NoticeCenter.shared.titles()),
                                           jiraSite: JiraModel.shared.site, now: Date())
         apply(result.book)

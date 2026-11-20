@@ -164,12 +164,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// An agent reported to Main while the user was elsewhere; a click opens that Main.
-    static func postReport(title: String, body: String, agent: String) {
+    static func postReport(title: String, body: String, agent: String, request: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = String(body.prefix(AgentAttention.handoffLimit))
         content.userInfo = [AgentAttention.agentKey: agent, AgentAttention.requestKey: ""]
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        AgentDiagnostics.record("report.notification.submitted", request: request)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: request, content: content, trigger: nil)) { error in
+            let stage = error.map { "report.notification.failed.code-\(($0 as NSError).code)" } ?? "report.notification.accepted"
+            AgentDiagnostics.record(stage, request: request)
+        }
     }
 
     /// Main sent a prompt for a ticket an assistant already has a session for; Reuse this one and Start a new one answer it without opening the app.

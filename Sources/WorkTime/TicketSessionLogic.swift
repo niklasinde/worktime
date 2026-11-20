@@ -71,7 +71,7 @@ enum TicketSessions {
     }
 
     enum Answer: String, Codable, Equatable {
-        case reuse, startNew, alwaysReuse
+        case reuse, startNew, alwaysReuse, cancel
     }
 
     static func policy(defaults: UserDefaults = .standard) -> Policy {
@@ -182,6 +182,7 @@ enum TicketSessions {
 
     static func chosenNote(_ answer: Answer, name: String) -> String {
         switch answer {
+        case .cancel: "The user cancelled."
         case .reuse: "The user chose to reuse the existing session \u{201C}\(name)\u{201D}."
         case .alwaysReuse: "The user chose to reuse the existing session \u{201C}\(name)\u{201D}, and to do so from now on for this assistant."
         case .startNew: "The user chose a new session; \u{201C}\(name)\u{201D} was created and the earlier one kept."
@@ -300,10 +301,13 @@ struct TicketAsk: Codable, Equatable, Identifiable {
     var origin: String?
     /// A space id to add to the session the prompt ends up in.
     var space: String?
+    var links: [LinkEntity]?
+    var candidates: [TicketSessions.Preview]?
+    var request: AgentInbox.Request?
 
     var subject: SessionSubject { ticket.map(SessionSubject.ticket) ?? pullRequest.map(SessionSubject.pullRequest) ?? .ticket("") }
 
-    var title: String { "A \(assistantName) session for \(subject.label) exists" }
+    var title: String { candidates != nil ? "Choose a linked agent for \(subject.label)" : "A \(assistantName) session for \(subject.label) exists" }
 
     func body(now: Date) -> String {
         "\(existing.line(now: now))" + (existing.excerpt.isEmpty ? "" : " \u{2014} \(existing.excerpt)") + ". Reuse it or start a new one?"

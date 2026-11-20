@@ -29,6 +29,17 @@ final class LinkStore: ObservableObject {
         update { $0.ingest(pairs, now: now) }
     }
 
+    func link(agent key: String, to targets: [LinkEntity]) {
+        guard !targets.isEmpty else { return }
+        update { table in
+            for target in Set(targets) where target != .agent(key) {
+                let pair = LinkPair(.agent(key), target)
+                guard table.link(pair)?.source != .manual else { continue }
+                table.upsert(pair, source: .manual, now: Date())
+            }
+        }
+    }
+
     func add(_ pair: LinkPair, now: Date = Date()) {
         update { $0.upsert(pair, source: .manual, now: now) }
     }

@@ -18,6 +18,10 @@ enum AgentSessions {
     static let restoreLimit = 200
     static let untitled = "Untitled session"
 
+    static func model(for entry: AgentSessionEntry, fallback: String) -> String {
+        AgentLogic.offeredModel(entry.model) ?? fallback
+    }
+
     static func key(agent: String?, isMain: Bool, folder: String, workspace: String? = nil) -> String {
         agent ?? (isMain ? workspace.map(Workspaces.mainKey) ?? AgentOverview.mainKey : "folder:" + folder)
     }

@@ -18,6 +18,7 @@ extension MCPServer {
                 guard let text = FilterLogic.text(args, "text") else { throw MCPToolError("text is required.") }
                 let request = ReportRequest(id: UUID().uuidString, workspace: FilterLogic.text(args, "workspace"), title: FilterLogic.text(args, "title"),
                                             text: text, source: sources.source(), created: now())
+                AgentDiagnostics.record("report.entered", run: ProcessInfo.processInfo.environment["WORKTIME_TRACE_RUN"], request: request.id)
                 return try sources.ask(AgentInbox.encode(request), id: request.id, name: AgentReports.requestName(request.id), what: "the report").message
             },
         ]

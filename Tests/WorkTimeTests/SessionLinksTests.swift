@@ -15,6 +15,14 @@ private func said(_ id: String, _ text: String, streaming: Bool = false) -> Agen
     AgentItem(id: id, kind: .text(text), streaming: streaming)
 }
 
+private final class ScanResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: (SessionLinks, Bool)?
+
+    func set(_ value: SessionLinks, main: Bool) { lock.withLock { stored = (value, main) } }
+    func get() -> (SessionLinks, Bool)? { lock.withLock { stored } }
+}
+
 let sessionLinksTests: [(name: String, run: () throws -> Void)] = [
     ("session links: tickets and pull requests are found in order, once each", {
         let found = SessionLinks.references(in: "See ACME-12 and https://github.com/acme-com/orbit.api/pull/7, then ACME-12 again, ORB-3 and acme-com/orbit.web#9", projects: projects)
@@ -55,6 +63,14 @@ let sessionLinksTests: [(name: String, run: () throws -> Void)] = [
         check(links.update([said("a1", "ACME-1 and ACME-2 and ACME-3")], projects: projects), "grew")
         check(links.recent.contains(.jira("ACME-3")), "found")
     }),
+    ("session links: an irrelevant tool answer is remembered as scanned", {
+        var links = SessionLinks()
+        let items = [tool("t1", "find files", result: String(repeating: "ordinary output\n", count: 4_000))]
+        check(links.update(items, projects: projects), "the scan is saved")
+        let before = links
+        check(!links.update(items, projects: projects), "not parsed again")
+        check(links == before, "unchanged state")
+    }),
     ("session links: a ticket mentioned again moves to the front, and within one message the first named comes first", {
         var links = SessionLinks()
         links.update([said("a1", "ACME-1 ACME-2"), said("a2", "ORB-3")], projects: projects)
@@ -88,6 +104,42 @@ let sessionLinksTests: [(name: String, run: () throws -> Void)] = [
         check(SessionLinkRows.hidden(refs, expanded: false) == 4, "hidden")
         check(SessionLinkRows.visible(refs, expanded: true).count == 9 && SessionLinkRows.hidden(refs, expanded: true) == 0, "expanded")
         check(SessionLinkRows.hidden(Array(refs.prefix(3)), expanded: false) == 0, "short list")
+    }),
+    ("session links: Related starts hidden and loading begins only when it is opened", {
+        var state = SessionRelatedState()
+        check(!state.visible && !state.loading, "hidden by default")
+        let generation = state.open()
+        check(state.visible && state.loading, "opening starts loading")
+        check(state.finish(generation) && state.visible && !state.loading, "current scan finishes")
+        state.close()
+        check(!state.visible && !state.loading, "closing hides it")
+        check(!state.finish(generation), "a closed scan cannot publish")
+    }),
+    ("session links: Related scans only the last twenty completed text and tool items", {
+        var items = (0..<25).map { said("text-\($0)", "ACME-\($0 + 1)") }
+        items.append(AgentItem(id: "status", kind: .status("ACME-90")))
+        items.append(said("streaming", "ACME-91", streaming: true))
+        items.append(tool("tool", "check", result: "ACME-92"))
+        let inputs = SessionRelatedScan.inputs(from: items)
+        check(inputs.count == 20, "bounded to \(inputs.count)")
+        check(inputs.map(\.id) == (6..<25).map { "text-\($0)" } + ["tool"], "keeps the newest eligible items in order")
+        let links = SessionRelatedScan.links(from: inputs, projects: projects)
+        check(links.recent.first == .jira("ACME-92"), "newest result first")
+        check(!links.recent.contains(.jira("ACME-6")) && links.recent.contains(.jira("ACME-7")), "older text was not scanned")
+        check(!links.recent.contains(.jira("ACME-90")) && !links.recent.contains(.jira("ACME-91")), "non-text and streaming items were ignored")
+    }),
+    ("session links: the bounded Related scan is safe to run off the main thread", {
+        let inputs = SessionRelatedScan.inputs(from: [said("a", "ACME-1"), said("b", "ORB-2")])
+        let result = ScanResult()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            result.set(SessionRelatedScan.links(from: inputs, projects: projects), main: Thread.isMainThread)
+            done.signal()
+        }
+        check(done.wait(timeout: .now() + 2) == .success, "scan completed")
+        let scanned = result.get()
+        check(scanned?.1 == false, "ran off main")
+        check(scanned?.0.recent == [.jira("ORB-2"), .jira("ACME-1")], "ordering \(String(describing: scanned?.0.recent))")
     }),
     ("session links: very long output is read only up to the limit", {
         let long = String(repeating: "x", count: SessionLinks.textLimit) + " ACME-9"

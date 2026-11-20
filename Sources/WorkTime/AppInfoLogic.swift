@@ -30,6 +30,7 @@ struct AppInfo: Codable, Equatable {
     var pid: Int32
     var started: Date
     var dataFolder: String
+    var diagnosticsFolder: String? = nil
     var schemaVersion: Int
     var workspaces: [Workspace]
     var sidecar: String
@@ -82,6 +83,7 @@ enum AppInfos {
                      + (info.commit.map { " \u{00B7} commit \($0)" } ?? info.buildDate.map { " \u{00B7} built \(formatter.string(from: $0))" } ?? "")]
         lines.append("pid \(info.pid)" + (alive ? "" : " (not running)") + " \u{00B7} started \(formatter.string(from: info.started)) \u{00B7} up \(uptime(info, now: now))")
         lines.append("data folder: \(info.dataFolder)")
+        if let diagnostics = info.diagnosticsFolder { lines.append("performance diagnostics: \(diagnostics)") }
         lines.append("sidecar: \(info.sidecar)")
         lines.append("workspaces: " + info.workspaces.map { $0.id + ($0.spaces.isEmpty ? "" : " (spaces: " + $0.spaces.joined(separator: ", ") + ")") }.joined(separator: "; "))
         lines.append("\(info.working.count) working, \(info.waiting.count) waiting for the user, \(info.queuedPrompts) prompt\(info.queuedPrompts == 1 ? "" : "s") queued"

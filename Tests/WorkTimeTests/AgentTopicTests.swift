@@ -32,6 +32,30 @@ private let issueFixture = Data("""
 """.utf8)
 
 let agentTopicTests: [(name: String, run: () throws -> Void)] = [
+    ("topics: duplicate choices include every linked agent once, respecting aliases, removals and workspace", {
+        let a = topic("Review"), b = topic("Review", jira: "ISD-123")
+        var first = AgentState.topic(a, loaded: nil, sessionID: nil)
+        var second = AgentState.topic(b, loaded: nil, sessionID: nil)
+        first.workspace = "work"
+        second.workspace = "work"
+        var other = second
+        other.key = topic("Other").key
+        other.workspace = "personal"
+        let link = LinkEntity.jira("ISD-123")
+        var table = LinkTable()
+        table.upsert(LinkPair(.agent(first.key), link), source: .manual, now: now)
+        table.rename(link, to: "ISD-124")
+        let targets = [link, LinkEntity.jira("ISD-124")]
+        func found() -> Set<String> {
+            Set(TopicAgents.matching(links: targets, states: [first, second, other], table: table, workspace: "work").map(\.key))
+        }
+        check(found() == [first.key, second.key], "indexed and legacy sessions")
+        table.remove(LinkPair(.agent(second.key), link), now: now)
+        check(found() == [first.key], "removed link stays removed")
+        first.archived = true
+        check(found().isEmpty, "closed agents stay closed")
+    }),
+
     ("topics: Jira keys are typed in any case or pasted as links, and anything else is refused", {
         check(JiraLogic.issueKey(" isd-123 ") == "ISD-123", "lowercase")
         check(JiraLogic.issueKey("https://acme.atlassian.net/browse/ACME-456") == "ACME-456", "browse link")

@@ -13,6 +13,10 @@ private func entry(_ id: String, title: String = "Prompt", minutesAgo: Double, m
 }
 
 let agentSessionTests: [(name: String, run: () throws -> Void)] = [
+    ("sessions restore their recorded Claude model when it is still offered", {
+        check(AgentSessions.model(for: entry(first, minutesAgo: 1, model: "claude-opus-5-5"), fallback: "claude-sonnet-5-5") == "claude-opus-5-5", "recorded model")
+        check(AgentSessions.model(for: entry(first, minutesAgo: 1, model: "claude-retired"), fallback: "claude-sonnet-5-5") == "claude-sonnet-5-5", "retired model falls back")
+    }),
     ("agent sessions: titles are the first prompt line, with Catch up, reviews and Main's prompts named", {
         check(AgentSessions.title(prompt: AgentLogic.catchUpPrompt) == "Catch up", "catch up")
         let review = AgentLogic.reviewPrompt(url: "https://github.com/acme/api/pull/7", repo: "acme/api", hasCheckout: true)

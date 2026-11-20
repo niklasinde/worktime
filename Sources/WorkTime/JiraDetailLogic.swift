@@ -62,4 +62,12 @@ enum JiraDetail {
         let shown = Array(issue.comments.suffix(shownComments))
         return (shown, max(issue.commentTotal - shown.count, 0))
     }
+
+    static func agents(for key: String, from agents: [AgentState], links: AgentLinkIndex) -> [AgentState] {
+        let linked = links.agentKeys(named: key)
+        return agents.filter { state in
+            !Workspaces.isMainKey(state.key) && !state.isAssistant
+                && (AgentFilter.about(state, ticket: key) || linked.contains(state.key))
+        }
+    }
 }

@@ -25,6 +25,11 @@ struct TopicAgent: Codable, Equatable, Identifiable, Sendable {
 
     var linked: [LinkedPR] { pullRequests ?? [] }
 
+    var linkTargets: [LinkEntity] {
+        [jiraKey.map(LinkEntity.jira), slackURL.flatMap(LinkTargets.slack), pullRequestURL.flatMap(LinkTargets.pullRequest)].compactMap { $0 }
+            + linked.compactMap { LinkTargets.pullRequest($0.url) }
+    }
+
     var kind: Kind { jiraKey != nil ? .ticket : slackURL != nil ? .slack : linked.isEmpty ? .topic : .pullRequests }
 
     var slackLink: SlackThreadLink? { slackURL.flatMap(SlackLogic.threadLink) }
@@ -143,6 +148,26 @@ enum TopicAgents {
         guard found.count == 1 else { return .failure(.ambiguous(text, found.map(\.name))) }
         guard !topic.archived else { return .failure(.archived(topic.name)) }
         return .success(AgentTarget(key: topic.key, title: topic.name))
+    }
+
+    static func matching(links: [LinkEntity], states: [AgentState], table: LinkTable, workspace: String? = nil) -> [AgentState] {
+        let wanted = Set(links.map { table.record($0)?.entity ?? $0 })
+        guard !wanted.isEmpty else { return [] }
+        let linked = Set(wanted.flatMap { table.neighbors(of: $0, kind: .agent).map(\.id) })
+        return states.filter { state in
+            guard state.archived != true, workspace == nil || state.workspace == workspace,
+                  state.isTopic || GitHubLink.pullRequest(at: state.key) != nil else { return false }
+            if linked.contains(state.key) { return true }
+            let legacy = [state.jiraKey.map(LinkEntity.jira), state.slackURL.flatMap(LinkTargets.slack),
+                          LinkTargets.pullRequest(state.key), state.sessionPR.flatMap(LinkTargets.pullRequest)].compactMap { $0 }
+                + (state.pullRequests ?? []).compactMap(LinkTargets.pullRequest)
+            return legacy.contains { target in
+                wanted.contains(table.record(target)?.entity ?? target) && table.link(LinkPair(.agent(state.key), target))?.removed != true
+            }
+        }.sorted {
+            if $0.updatedAt != $1.updatedAt { return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+            return ($0.title, $0.key) < ($1.title, $1.key)
+        }
     }
 
     /// The topic already made for this ticket or this Slack thread, archived ones too.

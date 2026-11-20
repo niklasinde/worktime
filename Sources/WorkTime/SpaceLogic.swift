@@ -75,7 +75,10 @@ enum Spaces {
         guard !spaces.isEmpty, !Workspaces.isMainKey(state.key) else { return nil }
         let own: [String]? = state.isAssistant ? assistantSpaces(state.key) : nil
         let tagged = state.isAssistant ? nil : tags[state.key]
-        let inherited = own ?? state.roleKey.map(assistantSpaces) ?? []
+        var inherited = own ?? state.roleKey.map(assistantSpaces) ?? []
+        if tagged == nil, AgentListFilter.isCurrentReview(state), let review = try? resolve("Review", in: spaces).get() {
+            inherited = adding(review.id, to: inherited)
+        }
         let found = effective(tags: tagged, assistant: inherited, in: spaces)
         return found.isEmpty ? nil : found
     }

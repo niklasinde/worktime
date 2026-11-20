@@ -16,10 +16,23 @@ struct TicketAskCards: View {
             Text(ask.body(now: Date())).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("Waiting to send: " + TicketSessions.clip(ask.text)).font(.caption).foregroundStyle(.tertiary).lineLimit(2)
             HStack(spacing: 6) {
-                Button("Reuse this one") { store.respond(ask.id, .reuse) }.buttonStyle(.borderedProminent)
+                if let choices = ask.candidates, choices.count > 1 {
+                    Menu("Continue Existing") {
+                        ForEach(choices, id: \.key) { choice in
+                            Button(choice.line(now: Date()) + " · " + String(choice.key.suffix(8))) {
+                                store.respond(ask.id, .reuse, key: choice.key)
+                            }
+                        }
+                    }
+                } else {
+                    Button("Continue Existing") { store.respond(ask.id, .reuse) }.buttonStyle(.borderedProminent)
+                }
                 Button("Start a new one") { store.respond(ask.id, .startNew) }.buttonStyle(.bordered)
-                Button("Always reuse for \(ask.assistantName)") { store.respond(ask.id, .alwaysReuse) }.buttonStyle(.bordered)
+                if ask.candidates == nil {
+                    Button("Always reuse for \(ask.assistantName)") { store.respond(ask.id, .alwaysReuse) }.buttonStyle(.bordered)
                     .help("Reuse the session without asking from now on for this assistant; Settings \u{203A} Agent can change it back")
+                }
+                Button("Cancel") { store.respond(ask.id, .cancel) }
                 Button("Open it") { store.open(ask.id) }.buttonStyle(.plain).pointerStyle(.link).foregroundStyle(.secondary)
             }
             .controlSize(.small)

@@ -51,7 +51,7 @@ private struct QuickChatContent: View {
     private var prompt: some View {
         HStack(spacing: 12) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 32, height: 32)
-            ChatComposer(text: $model.draft, height: $height, placeholder: model.busy ? "Add a message \u{2014} it reaches Main at its next step" : QuickChat.placeholder,
+            ChatComposer(text: $model.draft, height: $height, placeholder: model.busy ? "Queue a follow-up message" : QuickChat.placeholder,
                          maxLines: 4, attach: model.attach, problem: model.imageProblem) { model.submit() }
                 .frame(height: height)
             workspaceMenu
@@ -67,7 +67,7 @@ private struct QuickChatContent: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.white)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hasContent ? Color.accentColor : Color.secondary.opacity(0.35)))
-                    .help(model.busy ? "Send to Main while it works (Return)" : "Send (Return)")
+                    .help(model.busy ? "Queue message (Return)" : "Send (Return)")
             }
         }
         .padding(.horizontal, 18)

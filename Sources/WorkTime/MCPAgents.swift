@@ -123,7 +123,7 @@ extension MCPServer {
         }
         return [
             MCPTool(name: "agents_overview",
-                    description: "Every Claude agent WorkTime knows (Main, its assistants, one per pull request and the topic agents), most urgent first: waiting for the "
+                    description: "Lists the WorkTime agents (Main, its assistants, one per pull request and the topic agents), most urgent first: waiting for the "
                         + "user's permission (with the tool it asks for), finished with a result the user has not seen, errored, working, "
                         + "idle. Each with its pull request url, worktime://agent link, folder, session id, last prompt and last result. An assistant's session "
                         + "for a Jira ticket shows as a ticket session with its role and ticket; ticket lists every agent about one ticket, so look there before "
@@ -138,7 +138,7 @@ extension MCPServer {
             },
             MCPTool(name: "agent_session",
                     description: "A compact transcript of one agent's Claude Code session: the user's prompts, the assistant's replies, "
-                        + "tool calls in one line each and the final result, without thinking or tool output. Newest kept when cut.",
+                        + "tool calls in one line each and the final result, without thinking or tool output. Newest kept when cut. For Codex agents, use agents_overview for the last prompt and result, or wait_for to watch a run.",
                     properties: ["agent": agentProperty,
                                  "pr_url": ["type": "string", "description": "The pull request whose agent to read; the same as agent."],
                                  "workspace": workspaceProperty,
@@ -205,43 +205,44 @@ extension MCPServer {
                 return cut(FilterLogic.header(FilterLogic.applied(["section": only]) + filter.applied) + sections.joined(separator: "\n"), at: outputLimit)
             },
             MCPTool(name: "send_to_agent",
-                    description: "Sends a prompt to an agent in WorkTime, marked as from Main. Two modes, never mix them up. "
-                        + "(1) To have an assistant (Verifier, Reviewer, Developer...) work on a Jira ticket or a pull request: pass agent (the assistant's role name) "
-                        + "plus ticket, or plus pr_url as the subject when the pull request names no ticket. The assistant gets a session of its own for that ticket "
-                        + "or pull request (made when there is none). One call per ticket, never several tickets in one prompt or batch. This is the form for "
-                        + "\u{201C}verify / review / develop X\u{201D} and needs no workspace argument. "
-                        + "(2) To talk to a pull request's own agent, or a topic agent (a support case, by its key or name): pass pr_url alone (or agent with the topic key). "
-                        + "Several pull requests that belong together go to one agent with pr_urls. "
-                        + "It starts when the agent is idle and queues while it works; it is refused while the agent waits for a permission. The agent asks the user in its "
-                        + "own pane for anything it wants to run. When an assistant already has a session for the ticket or pull request, "
-                        + "the user is asked whether to reuse it or start a new one and "
-                        + "the call waits for the answer (up to the user's setting, 30 minutes by default; nothing is sent if it runs out); new_session "
-                        + "starts a new one without asking. If a call is refused, read the error and retry with the form it suggests. "
-                        + "Returns the session id to read the outcome with agent_session later. "
-                        + "(3) To talk to a workspace's Main from outside it (the user's Claude Code session as coordinator): agent Main, with workspace when it is not the one your folder or "
-                        + "Main's own scope gives. It arrives in Main's chat as \u{201C}From Claude Code \u{00B7} <folder>: \u{2026}\u{201D}, starts a turn when Main is idle and waits otherwise, with the "
-                        + "limits of send_to_main (\(AgentReports.hourlyLimit) an hour and \(AgentReports.pendingLimit) waiting per caller, the same text twice in ten minutes dropped); "
-                        + "a Main cannot send to its own workspace's Main. Main reads it as a request but it is never the user's approval. "
-                        + "With async true the call returns at once with a request_id instead of waiting for the user's answer to a reuse-or-new question: follow it with request_status or wait_for.",
+                    description: "Delivers one prompt to a WorkTime agent. For a handoff to an existing chat, find it with agents_overview and send the context and next step yourself. "
+                        + "For an existing topic or ticket session, use its exact topic:<id> key as agent. For an assistant's own chat, use its assistant key. "
+                        + "For a new assignment to a role, pass agent (the assistant's role name) with ticket or pr_url. One call per ticket. "
+                        + "Use pr_url alone for a PR's own agent, or pr_urls for one agent covering several PRs. Pass known subject links in links. "
+                        + "WorkTime can ask the user to choose an existing linked agent or create one. Use new_session only when the user requests a fresh role session. "
+                        + "An idle agent starts the prompt, a busy agent queues it, and a permission wait can refuse it. "
+                        + "With async true, check the returned request_id with request_status. Use wait_for for the receiving agent's result. "
+                        + "To message a workspace's Main from outside it, set agent to Main and specify workspace when needed. Main returns a direct acknowledgement "
+                        + "and applies send_to_main limits (\(AgentReports.hourlyLimit) per hour and \(AgentReports.pendingLimit) waiting per caller).",
                     properties: ["agent": agentProperty,
                                  "pr_url": ["type": "string", "description": "Alone: talks to that pull request's own agent. With an assistant as agent and no ticket: "
                                      + "the pull request the assistant's session is for (not the pull request's own agent)."],
+                                 "links": ["type": "array", "items": ["type": "string"], "description": "Links to attach to the receiving agent. Pass each known Jira key, GitHub pull request URL, Slack thread URL, or kind:id here when delegating work."],
                                  "pr_urls": ["type": "array", "items": ["type": "string"], "maxItems": PullRequestSets.limit,
                                              "description": "Two or more pull requests' GitHub urls for ONE agent that works on them together as a set "
                                                  + "(made when there is none, and the pull requests stay in it): a reviewer's cross-pull-request check, or a change that spans repositories."],
                                  "ticket": ["type": "string", "description": "A Jira ticket key like PROJ-123, always together with agent set to an assistant's role (like Verifier): "
                                      + "its session for this ticket gets the prompt. One ticket per call. Must be in the workspace's Jira projects."],
-                                 "new_session": ["type": "boolean", "description": "With ticket: start a new session even when the assistant has one for the "
-                                     + "ticket, without asking the user. False when left out."],
+                                 "new_session": ["type": "boolean", "description": "With an assistant and ticket or pr_url: start a new session even when the assistant has one for the "
+                                     + "subject. False when left out."],
                                  "async": ["type": "boolean", "description": "Return at once with a request_id and the current state instead of waiting for the app and for the user's "
                                      + "answer to the reuse-or-new question (which can take up to the user's setting, 30 minutes by default). Read the outcome with request_status or wait_for. False when left out."],
                                  "workspace": workspaceProperty,
                                  "space": ["type": "string", "description": "A space of the workspace (a lane such as Review or Verify), by id or name, when the user names one "
                                      + "for a handoff: the session the prompt goes to is put in it as well. With an assistant it needs ticket or pr_url."],
-                                 "text": ["type": "string", "maxLength": AgentInbox.textLimit, "description": "The prompt for that agent."]],
+                                 "text": ["type": "string", "maxLength": AgentInbox.textLimit, "description": "The task and context for the receiving agent, up to \(AgentInbox.textLimit) characters. For a longer handoff, include the absolute path to a readable transcript and say what to resume."]],
                     required: ["text"], readOnly: false) { args in
+                let links: [LinkEntity]?
+                if let raw = args["links"] {
+                    guard let values = raw as? [String] else { throw MCPToolError("links must be an array of strings.") }
+                    links = try values.map { value in
+                        guard let entity = LinkTargets.parse(value) else { throw MCPToolError("Unrecognized agent link: " + value) }
+                        return entity
+                    }
+                } else { links = nil }
                 let wait = args["async"] as? Bool != true
                 if let main = mainAddress(args) {
+                    guard links?.isEmpty != false else { throw MCPToolError("links applies to an agent. Main accepts a report.") }
                     guard let text = FilterLogic.text(args, "text") else { throw MCPToolError("text is required.") }
                     let request = ReportRequest(id: UUID().uuidString, workspace: main, title: nil, text: text, source: sources.notices.source(), created: now())
                     return try sources.notices.ask(AgentInbox.encode(request), id: request.id, name: AgentReports.requestName(request.id), what: "the message").message
@@ -259,13 +260,18 @@ extension MCPServer {
                     }
                     let title = "\(prs.count) pull requests (\(PullRequestSets.summary(prs)))"
                     let space = try sources.space(args, target: AgentTarget(key: prs[0].url, title: title), agents: sources.agents())
-                    switch AgentInbox.request(agent: prs[0].url, text: args["text"] as? String ?? "", now: now(), prs: prs.map(\.url), space: space) {
+                    switch AgentInbox.request(agent: prs[0].url, text: args["text"] as? String ?? "", now: now(), prs: prs.map(\.url), space: space, links: links) {
                     case .failure(let error): throw MCPToolError(error.message)
                     case .success(let made):
-                        return try submit(made, title: title, role: nil, waitsForUser: false, wait: wait, sources: sources, timeout: sources.replyTimeout, now: now())
+                        return try submit(made, title: title, role: nil, waitsForUser: true, wait: wait, sources: sources,
+                                          timeout: max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60), now: now())
                     }
                 }
-                guard let target = try sources.target(args) else { throw MCPToolError("agent is required.") }
+                guard var target = try sources.target(args) else { throw MCPToolError("agent is required.") }
+                if !Assistants.isKey(target.key),
+                   let raw = FilterLogic.text(args, "agent") ?? FilterLogic.text(args, "pr_url"), let pr = GitHubLink.pullRequest(at: raw) {
+                    target = AgentTarget(key: pr.url, title: AgentOverview.prTitle(pr.url))
+                }
                 try sources.checkDelegation(target, args: args, agents: sources.agents())
                 var ticket: String?
                 if let text = (args["ticket"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
@@ -277,7 +283,7 @@ extension MCPServer {
                     }
                 }
                 var pr: String?
-                if ticket == nil, Assistants.isKey(target.key), let text = (args["pr_url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                if Assistants.isKey(target.key), let text = (args["pr_url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
                     switch TicketSessions.pullRequest(text) {
                     case .success(let url): pr = url
                     case .failure(let error): throw MCPToolError(error.message)
@@ -289,13 +295,14 @@ extension MCPServer {
                 }
                 let request: AgentInbox.Request
                 switch AgentInbox.request(agent: target.key, text: args["text"] as? String ?? "", now: now(), ticket: ticket,
-                                          newSession: ticket == nil && pr == nil ? nil : args["new_session"] as? Bool, pr: pr, space: space) {
+                                          newSession: ticket == nil && pr == nil ? nil : args["new_session"] as? Bool, pr: pr, space: space, links: links) {
                 case .success(let made): request = made
                 case .failure(let error): throw MCPToolError(error.message)
                 }
-                let timeout = ticket == nil && pr == nil ? sources.replyTimeout : max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60)
+                let waitsForUser = ticket != nil || pr != nil || GitHubLink.pullRequest(at: target.key) != nil
+                let timeout = waitsForUser ? max(sources.replyTimeout, TimeInterval(RoleTools.waitSeconds()) + 60) : sources.replyTimeout
                 let role = Assistants.isKey(target.key) ? sources.agents().first { $0.key == target.key }?.role ?? target.title : nil
-                return try submit(request, title: target.title, role: role, waitsForUser: ticket != nil || pr != nil, wait: wait, sources: sources, timeout: timeout, now: now())
+                return try submit(request, title: target.title, role: role, waitsForUser: waitsForUser, wait: wait, sources: sources, timeout: timeout, now: now())
             },
         ]
     }
@@ -317,15 +324,15 @@ extension MCPServer {
             try leave(AgentInbox.encode(request), name: AgentInbox.requestName(request.id), inbox: sources.inbox, what: "the prompt")
             return RequestStatuses.markdown(RequestStatuses.status(record, reply: nil, inInbox: true, decisions: [], agents: [], now: now))
         }
-        let reply = try deliver(request, inbox: sources.inbox, timeout: timeout)
+        let reply = try deliver(request, inbox: sources.inbox, timeout: timeout, pickupTimeout: sources.replyTimeout)
         if reply.status == .rejected { throw MCPToolError(AgentInbox.replyText(reply, title: title)) }
         return AgentInbox.replyText(reply, title: title)
     }
 
     /// Writes the request where the app looks and waits for its answer.
-    static func deliver(_ request: AgentInbox.Request, inbox: URL, timeout: TimeInterval) throws -> AgentInbox.Reply {
+    static func deliver(_ request: AgentInbox.Request, inbox: URL, timeout: TimeInterval, pickupTimeout: TimeInterval? = nil) throws -> AgentInbox.Reply {
         try exchange(AgentInbox.encode(request), id: request.id, name: AgentInbox.requestName(request.id), inbox: inbox, timeout: timeout,
-                     what: "the prompt")
+                     what: "the prompt", pickupTimeout: pickupTimeout)
     }
 
     /// Leaves `data` in the inbox under `name`.
@@ -337,20 +344,26 @@ extension MCPServer {
     }
 
     /// Leaves `data` in the inbox under `name` and waits for the app's reply file with the same id.
-    static func exchange<Reply: Decodable>(_ data: Data, id: String, name: String, inbox: URL, timeout: TimeInterval, what: String) throws -> Reply {
+    static func exchange<Reply: Decodable>(_ data: Data, id: String, name: String, inbox: URL, timeout: TimeInterval, what: String, pickupTimeout: TimeInterval? = nil) throws -> Reply {
         let fileManager = FileManager.default
         let requestURL = inbox.appendingPathComponent(name)
         let replyURL = inbox.appendingPathComponent(AgentInbox.replyName(id))
         try leave(data, name: name, inbox: inbox, what: what)
+        let report = AgentReports.isRequest(name)
+        if report { AgentDiagnostics.record("report.inbox.written", request: id) }
         let deadline = Date().addingTimeInterval(timeout)
+        let pickupDeadline = Date().addingTimeInterval(pickupTimeout ?? timeout)
         while Date() < deadline {
+            if Date() >= pickupDeadline, fileManager.fileExists(atPath: requestURL.path) { break }
             if let data = try? Data(contentsOf: replyURL), let reply = AgentInbox.decode(Reply.self, from: data) {
+                if report { AgentDiagnostics.record("report.reply.received", request: id) }
                 try? fileManager.removeItem(at: replyURL)
                 return reply
             }
             Thread.sleep(forTimeInterval: 0.1)
         }
         try? fileManager.removeItem(at: requestURL)
+        if report { AgentDiagnostics.record("report.reply.timeout", request: id) }
         throw MCPToolError("WorkTime did not take \(what) within \(Int(timeout)) seconds. Is the app running?")
     }
 

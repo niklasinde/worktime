@@ -56,7 +56,7 @@ private final class Inbox: @unchecked Sendable {
 }
 
 private func info(working: [AppInfo.Work] = [], queued: Int = 0, recording: Bool = false) -> AppInfo {
-    AppInfo(written: now, version: "0.3.0", build: "120", commit: "abc1234", buildDate: nil, pid: 4242, started: now.addingTimeInterval(-93_600), dataFolder: "/data",
+    AppInfo(written: now, version: "0.3.0", build: "120", commit: "abc1234", buildDate: nil, pid: 4242, started: now.addingTimeInterval(-93_600), dataFolder: "/data", diagnosticsFolder: "/data/Diagnostics",
             schemaVersion: MCPServer.schemaVersion, workspaces: [AppInfo.Workspace(id: "work", name: "Work", spaces: ["Review", "Verify"])], sidecar: "built and Node.js found",
             working: working, waiting: [], queuedPrompts: queued, recording: recording, plan: nil, planFetched: nil)
 }
@@ -382,7 +382,7 @@ let coordinatorTests: [(name: String, run: () throws -> Void)] = [
 
     ("app_info: version, commit, uptime, workspaces, sidecar and whether a restart would interrupt work", {
         let quiet = AppInfos.markdown(info(), now: now, alive: true, mcpSchema: MCPServer.schemaVersion)
-        check(quiet.contains("WorkTime 0.3.0 (build 120) \u{00B7} commit abc1234") && quiet.contains("pid 4242") && quiet.contains("up 1d 2h") && quiet.contains("data folder: /data"), quiet)
+        check(quiet.contains("WorkTime 0.3.0 (build 120) \u{00B7} commit abc1234") && quiet.contains("pid 4242") && quiet.contains("up 1d 2h") && quiet.contains("data folder: /data") && quiet.contains("performance diagnostics: /data/Diagnostics"), quiet)
         check(quiet.contains("workspaces: work (spaces: Review, Verify)") && quiet.contains("sidecar: built and Node.js found") && quiet.contains("would not interrupt"), quiet)
         let busy = AppInfos.markdown(info(working: [AppInfo.Work(kind: "ticket_session", title: "Verifier \u{00B7} ACME-1", session: sessionA, ticket: "ACME-1", since: now)], queued: 2, recording: true),
                                      now: now, alive: true, mcpSchema: MCPServer.schemaVersion)
@@ -396,6 +396,10 @@ let coordinatorTests: [(name: String, run: () throws -> Void)] = [
         let work = AppInfos.work([agent(status: .working), agent(key: "topic:2", session: sessionB, status: .waiting), agent(key: "topic:3", status: .idle)], routines: ["Morning"])
         check(work.working.map(\.title) == ["Verifier \u{00B7} ACME-1", "Morning"] && work.waiting.count == 1 && AppInfos.restartInterrupts(info(working: work.working)), "work")
         check(AppInfos.decode(AppInfos.encode(info())) == info(), "round trip")
+        var oldObject = try JSONSerialization.jsonObject(with: AppInfos.encode(info())) as! [String: Any]
+        oldObject.removeValue(forKey: "diagnosticsFolder")
+        let oldInfo = AppInfos.decode(try JSONSerialization.data(withJSONObject: oldObject))
+        check(oldInfo?.diagnosticsFolder == nil && oldInfo?.pid == 4242, "an older app file still decodes")
         let root = try folder()
         defer { try? FileManager.default.removeItem(at: root) }
         let s = sources(root)

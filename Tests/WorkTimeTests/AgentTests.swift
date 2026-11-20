@@ -135,6 +135,35 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
         check(AgentLogic.storedModel("claude-haiku-5-5") == "claude-haiku-5-5", "a saved choice")
         check(AgentLogic.modelName("claude-sonnet-5-5") == "Sonnet 5.5" && AgentLogic.modelName("other") == "other", "names")
         check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, model: "claude-haiku-5-5").line.contains(#""model":"claude-haiku-5-5""#), "sent")
+        check(AgentRequest.prompt(text: "x", cwd: "/", sessionID: nil, provider: .codex).line.contains(#""provider":"codex""#), "Codex is sent")
+        check(CodexSetup.status(cli: nil, output: nil) == .missing, "no CLI")
+        check(CodexSetup.status(cli: URL(fileURLWithPath: "/codex"), output: "Logged in using ChatGPT") == .signedIn("Logged in using ChatGPT"), "managed login")
+        let details = CodexSetup.details(from: [
+            ["id": 2, "result": ["account": ["email": "dev@example.com", "planType": "pro"]]],
+            ["id": 3, "result": ["data": [["id": "codex-fast", "displayName": "Codex Fast", "isDefault": true]]]],
+        ])
+        check(details == CodexSetup.Details(account: "dev@example.com · pro", models: [.init(id: "codex-fast", name: "Codex Fast", isDefault: true)]), "account and App Server models")
+        check(CodexSetup.details(from: []) == nil, "no App Server details")
+        let offered = [CodexSetup.Model(id: "gpt-6.2-sol", name: "Sol", isDefault: true)]
+        check(CodexSetup.models(offered, including: "gpt-6.2-astra").map(\.id) == ["gpt-6.2-sol", "gpt-6.2-astra"], "missing selection stays in the picker")
+        check(CodexSetup.models(offered, including: "gpt-6.2-sol") == offered, "an offered selection is not duplicated")
+        check(CodexSetup.models([], including: "").first?.name == "Codex default", "the default selection has a name")
+        let providerDefaults = UserDefaults(suiteName: "AgentProviderTests")!
+        providerDefaults.removePersistentDomain(forName: "AgentProviderTests")
+        check(AgentProvider.enabled(.claude, defaults: providerDefaults) && AgentProvider.enabled(.codex, defaults: providerDefaults), "providers start enabled")
+        providerDefaults.set(false, forKey: AgentProvider.codexEnabledKey)
+        check(!AgentProvider.enabled(.codex, defaults: providerDefaults) && AgentProvider.enabled(.claude, defaults: providerDefaults), "providers can be independently disabled")
+        check(AgentModelChoice(provider: .codex, model: "") != AgentModelChoice(provider: .claude, model: ""), "provider is part of model choice")
+        let codexModels = [
+            CodexSetup.Model(id: "gpt-6.2-astra", name: "Astra", isDefault: false),
+            CodexSetup.Model(id: "gpt-6.2-sol", name: "Sol", isDefault: true),
+            CodexSetup.Model(id: "gpt-6.1-luna", name: "Luna", isDefault: false),
+        ]
+        check(AgentLogic.equivalent(.init(provider: .claude, model: "claude-opus-5-5"), to: .codex, codexModels: codexModels)?.model == "gpt-6.2-astra", "Opus maps to Astra")
+        check(AgentLogic.equivalent(.init(provider: .claude, model: "claude-sonnet-5-5"), to: .codex, codexModels: codexModels)?.model == "gpt-6.2-sol", "Sonnet maps to Sol")
+        check(AgentLogic.equivalent(.init(provider: .codex, model: "gpt-6.1-luna"), to: .claude)?.model == "claude-haiku-5-5", "Luna maps to Haiku")
+        check(AgentLogic.equivalent(.init(provider: .codex, model: "gpt-6.2-sol"), to: .claude)?.model == "claude-sonnet-5-5", "Sol maps to Sonnet")
+        check(AgentLogic.equivalent(.init(provider: .claude, model: "claude-opus-5-5"), to: .codex, codexModels: [.init(id: "gpt-6.2-sol", name: "Sol", isDefault: true)]) == nil, "no weaker Codex fallback")
     }),
 
     ("agent: requests encode as single JSON lines", {
@@ -236,6 +265,7 @@ let agentTests: [(name: String, run: () throws -> Void)] = [
         AgentLogic.apply(.permissionRequest(id: "9", tool: "Edit", summary: "x", detail: ""), to: &items)
         let permission = items[1]
         check(AgentLogic.permissionID(of: permission.id) == "9", "permission id \(permission.id)")
+        check(AgentLogic.permissionID(of: "permission-codex-1-2") == "codex-1", "hyphenated App Server permission id")
         AgentLogic.answer(permission.id, allow: false, in: &items)
         check(items[1].kind == .permission(tool: "Edit", summary: "x", detail: "", allowed: false), "answered")
         AgentLogic.answer(permission.id, allow: true, in: &items)

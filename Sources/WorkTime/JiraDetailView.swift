@@ -7,6 +7,8 @@ struct JiraDetailView: View {
     let key: String
     @ObservedObject var model: JiraPageModel
     let back: (() -> Void)?
+    @ObservedObject private var agentStates = AgentStateWriter.shared
+    @ObservedObject private var linkStore = LinkStore.shared
 
     private static let gutter: CGFloat = 20
 
@@ -18,6 +20,7 @@ struct JiraDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(ticket: ticket, summary: issue?.summary ?? ticket?.summary)
                 actions(title: issue?.summary ?? ticket?.summary ?? key)
+                relatedAgents
                 switch state {
                 case .loading: skeleton
                 case .failed(let error): failure(error)
@@ -70,6 +73,34 @@ struct JiraDetailView: View {
         .popover(isPresented: Binding(get: { model.assignPicker == key }, set: { if !$0, model.assignPicker == key { model.assignPicker = nil } }),
                  arrowEdge: .bottom) {
             JiraPersonPicker(model: model, issueKey: key) { model.assign(key, to: $0) }
+        }
+    }
+
+    @ViewBuilder private var relatedAgents: some View {
+        let agents = JiraDetail.agents(for: key, from: agentStates.states(), links: linkStore.searchIndex)
+        if !agents.isEmpty {
+            section(agents.count == 1 ? "Agent" : "Agents (\(agents.count))") {
+                ForEach(agents, id: \.key) { state in
+                    Button { AgentHub.shared.show(state.key) } label: {
+                        HStack(spacing: 8) {
+                            let need = AgentOverview.need(state)
+                            Circle().fill(AgentList.color(need)).frame(width: 8, height: 8).help(need.label)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(TicketGrouping.label(state)).fontWeight(.medium)
+                                if state.title != TicketGrouping.label(state) {
+                                    Text(state.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            if state.archived == true { Text("Earlier").font(.caption).foregroundStyle(.tertiary) }
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(state.archived == true ? 0.7 : 1)
+                }
+            }
         }
     }
 

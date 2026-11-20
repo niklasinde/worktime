@@ -221,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         TerminationSignals.observe { NSApp.terminate(nil) }
+        PerformanceWatchdog.shared.start()
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.stopForSleep() }
         }
@@ -283,6 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        PerformanceWatchdog.shared.stop()
         recorder.releaseAudioDevices()
         EmbeddedTerminalModel.shared.terminateAll()
         PRAgents.shared.stopAll()

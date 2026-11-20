@@ -530,7 +530,7 @@ a fake key against a loopback stub. It refuses any other host.
 
 ## Agent (proof of concept)
 
-A coding agent in its own window, built on the Claude Agent SDK and run on your Claude Pro or Max plan, never on API credits.
+A coding agent in its own window. Choose **Claude** (the Claude Agent SDK, on your Claude Pro or Max plan) or **Codex** (the local Codex App Server and its existing ChatGPT/Codex sign-in) in Settings > Agent. Neither path uses an API key or API credits.
 Open it from **Agent…** in the
 menu bar menu or the **Agent** row in the main window's sidebar.
 
@@ -540,6 +540,9 @@ menu bar menu or the **Agent** row in the main window's sidebar.
   `error`, `idle` and `permission_request {id, tool, input}`. Model `claude-opus-5-5` (override with `WORKTIME_AGENT_MODEL`).
   Tools: Read, Grep and Glob run without asking; Edit, Write and Bash ask in the window first. Project settings (`CLAUDE.md`,
   `.claude/settings.json`) of the folder are loaded, user settings are not.
+- **Codex.** The same sidecar starts `codex app-server --stdio`, then maps its JSON-RPC threads, streamed items, command output and approval requests onto the same window protocol. WorkTime answers command and file-change approvals itself; Codex therefore keeps its normal workspace sandbox and never receives an OpenAI API key. It uses the local Codex sign-in. The sidecar configures the same read-only `WorkTime --mcp` server as Claude, including its workspace and agent environment. Set `WORKTIME_CODEX` to an explicit Codex executable when it is not on `PATH`.
+- **Setup.** Settings > Agent > Coding agent > Codex checks `codex login status`, then asks the local App Server for the active account, plan and available models. The selected Codex model is stored separately from Claude and sent when a new Codex thread starts; leaving it on **Codex default** lets the signed-in account choose. If it is signed out, copy `codex login`, run it in Terminal and sign in with ChatGPT; **Copy switch account command** copies `codex logout && codex login`. WorkTime can show only the account already authenticated locally—it never handles passwords, credentials or API keys. If the App Server cannot list models, it offers a small current-model fallback until the next check; if Codex is missing, the row offers the install command.
+- **Choose in an agent.** The model menu groups Claude and Codex models. Switching provider starts or resumes that provider's separate session, so a Claude session ID is never sent to Codex (or the reverse); it is disabled while a turn runs. Settings has separate default-on **Enable Claude** and **Enable Codex** switches, useful when a provider has reached its limit. Disabling the selected provider moves an idle agent (or one that just finished) only to the matching available tier on the other provider: Opus/Astra, Sonnet/Sol and Haiku/Luna. Both disabled—or a missing matching tier—leaves the conversation selected but explains how to re-enable it. Codex currently offers only Ask permissions, because its App Server approval requests are what WorkTime presents.
 - **Build.** `cd agent && npm ci && npm run build` writes `agent/dist/main.js`. `build.sh` runs it when `npm` is installed. The
   sidecar is not copied into the app bundle (its SDK carries a native binary that would need signing); the app finds it at
   `$WORKTIME_AGENT_DIR/dist/main.js`, then `Contents/Resources/agent/dist/main.js`, then `agent/dist/main.js` in the checkout it

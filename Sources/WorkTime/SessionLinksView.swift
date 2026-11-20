@@ -11,10 +11,11 @@ struct SessionLinksView: View {
     var body: some View {
         let refs = model.related.ordered(pinned: model.relatedPinned + branchRefs)
         let shown = SessionLinkRows.visible(refs, expanded: expanded)
-        Group {
-            if !refs.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    header(count: refs.count)
+        let visible = model.relatedState.visible
+        VStack(alignment: .leading, spacing: 0) {
+            header(count: refs.count)
+            if visible {
+                if !refs.isEmpty {
                     ScrollView {
                         VStack(spacing: 0) { ForEach(shown, id: \.id) { SessionLinkRow(ref: $0, model: model) } }
                     }
@@ -29,14 +30,21 @@ struct SessionLinksView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
                     }
-                    Divider().overlay(AgentWorkMap.line.opacity(0.2)).padding(.top, 4)
+                } else if !model.relatedState.loading {
+                    Text("No related work in the last " + String(SessionRelatedScan.limit) + " messages or calls.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                 }
-            } else {
-                Color.clear.frame(height: 0)
             }
+            Divider().overlay(AgentWorkMap.line.opacity(0.2)).padding(.top, visible ? 4 : 2)
         }
         .task(id: lookupKey) { await findBranch() }
-        .task(id: shown.map(\.cacheKey).joined(separator: ",")) { await SessionRefDirectory.shared.ensure(shown, skip: known(shown)) }
+        .task(id: visible ? shown.map(\.cacheKey).joined(separator: ",") : "") {
+            guard visible else { return }
+            await SessionRefDirectory.shared.ensure(shown, skip: known(shown))
+        }
     }
 
     /// The rows that need no lookup: the app already has the pull request or the ticket, or a tool told the transcript enough about it.
@@ -52,16 +60,31 @@ struct SessionLinksView: View {
     private var lookupKey: String { "\(model.folder)|\(model.busy)|\(github.prs.values.reduce(0) { $0 + $1.count })" }
 
     private func header(count: Int) -> some View {
-        HStack {
-            Text("Related")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text("\(count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
+        Button {
+            expanded = false
+            model.toggleRelated()
+        } label: {
+            HStack(spacing: 6) {
+                Text("Related")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                if model.relatedState.loading {
+                    ProgressView().controlSize(.mini)
+                }
+                Spacer()
+                if count > 0 {
+                    Text("\(count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
+                }
+                Image(systemName: model.relatedState.visible ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 2)
+        .padding(.vertical, 6)
+        .help(model.relatedState.visible ? "Hide related work" : "Scan recent messages and calls for related work")
     }
 
     /// The branch the session's folder is on: its ticket, and its pull request when the GitHub page has it.

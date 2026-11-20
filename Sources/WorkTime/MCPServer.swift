@@ -26,20 +26,21 @@ struct MCPToolError: LocalizedError {
 struct MCPServer {
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
     static let instructions = """
-        Access to WorkTime on this Mac. Reading: the user's meetings (summaries, action items, notes, transcripts with speakers), tracked \
-        activity (apps, repositories, branches, tickets, Claude Code sessions, hours), cached pull requests, the app's Claude agents, \
-        routines, automations and assistants, and Jira and Slack lookups with the tokens set up in WorkTime. Acting: send_to_agent hands a prompt to \
-        one of the app's agents (pr_urls: one agent for several pull requests that belong together; ticket: an assistant's own session for one Jira ticket, one call per ticket) and send_to_main reports back to a workspace's Main; notify shows the user a notification, now or at a set time; add_reminder and complete_reminder write to \
-        the user's WorkTime reminders; create_routine, update_routine, set_routine_enabled and delete_routine manage routines (a prompt \
-        that runs on a schedule in an agent of its own); analyze_routine and compile_routine turn the fixed parts of a routine's or automation's run into a read-only script, \
-        so the model only does the judgement; create_automation, update_automation and delete_automation manage automations (the same, \
-        started by a Slack message, a pull request or a Jira ticket event instead); create_assistant, update_assistant and delete_assistant manage the role agents \
-        under a workspace's Main. Call routines or assistants first to see what exists, and change an existing one instead of adding a \
-        second. send_to_agent, send_to_main, complete_reminder, compile_routine and every routine, automation, assistant and workspace change ask the user to approve, unless the user switched that tool to not ask. \
-        To coordinate WorkTime from outside it: send_to_agent with agent Main talks to a workspace's Main; async true returns a request_id for request_status and wait_for; \
-        pending_decisions lists what waits for the user (read-only: only the user answers those, in the app); ticket_timeline, outcomes, usage_summary, request_log, links, app_info and \
-        events_since read what the app publishes; workspaces with create_workspace, update_workspace, create_space, update_space, delete_space and tag_session configure workspaces; \
-        open_in_app brings the app to an item. After updating WorkTime, reconnect this MCP server (/mcp) to pick up new tools. schema_version: \(schemaVersion).
+        WorkTime on this Mac provides meetings, activity, tickets, pull requests, Slack lookups, and agents running Claude or Codex.
+        When the user asks to continue work in an existing WorkTime chat, find the destination with agents_overview and call send_to_agent yourself. \
+        For an existing topic or ticket session, pass its exact topic:<id> key as agent. Put the task, relevant context and next step in text. \
+        For a long transcript, include its absolute path on this Mac if the recipient can read it and ask the recipient to read it before continuing. \
+        This sends one prompt. Earlier messages stay in the source chat. open_in_app only navigates.
+        If send_to_agent returns a request_id, follow that same ID with request_status. Report the returned state. For a user decision, \
+        check pending_decisions for the matching request and give its link when available. Use wait_for to verify a result when needed. \
+        A blank chat or a pending request alone tells you neither that the transcript arrived nor that a choice is visible.
+        send_to_agent also delegates work to assistants and PR agents. To message a workspace's Main, use send_to_agent with agent Main. send_to_main reports an outcome. \
+        notify alerts the user now or later. add_reminder and complete_reminder manage reminders. \
+        Read routines, automations or assistants before creating or changing one. create_routine, update_routine, set_routine_enabled and delete_routine manage scheduled runs. \
+        create_automation, update_automation and delete_automation manage event-triggered runs. analyze_routine and compile_routine turn fixed steps into a read-only script. \
+        create_assistant, update_assistant and delete_assistant manage workspace roles. WorkTime applies the user's configured approvals.
+        ticket_timeline, outcomes, usage_summary, request_log, links, app_info and events_since read published state. workspaces, create_workspace, update_workspace, \
+        create_space, update_space, delete_space and tag_session manage workspaces and spaces. After updating WorkTime, reconnect this MCP server to refresh its tools. schema_version: \(schemaVersion).
         """
 
     let tools: [MCPTool]

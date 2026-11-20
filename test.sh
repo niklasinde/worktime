@@ -20,6 +20,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/TranscriptVersionLogic.swift \
     Sources/WorkTime/SQLiteDatabase.swift \
     Sources/WorkTime/MeetingStore.swift \
+    Sources/WorkTime/PerformanceWatchdog.swift \
     Sources/WorkTime/RecordingsMigration.swift \
     Sources/WorkTime/ActivityLogic.swift \
     Sources/WorkTime/ActivityLinks.swift \
@@ -35,6 +36,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Sources/WorkTime/ActivityStore.swift \
     Sources/WorkTime/ClaudeEvents.swift \
     Sources/WorkTime/ClaudePlugin.swift \
+    Sources/WorkTime/CodexSetup.swift \
     Sources/WorkTime/MCPServer.swift \
     Sources/WorkTime/MCPGitHub.swift \
     Sources/WorkTime/ChatLogic.swift \
@@ -270,6 +272,7 @@ swiftc -swift-version 5 -target "$(uname -m)-apple-macos26.0" \
     Tests/WorkTimeTests/CoordinatorTests.swift \
     Tests/WorkTimeTests/RequestLogTests.swift \
     Tests/WorkTimeTests/LinkTests.swift \
+    Tests/WorkTimeTests/PerformanceWatchdogTests.swift \
     Tests/Runner/main.swift \
     -o "$OUT"
 "$OUT"

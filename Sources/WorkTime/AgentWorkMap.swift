@@ -29,7 +29,7 @@ enum AgentWorkMap {
     }
 }
 
-/// Claude in the middle, the kinds of work around it, and what this session did newest first.
+/// The provider in the middle, the kinds of work around it, and what this session did newest first.
 struct AgentWorkMapView: View {
     @ObservedObject var model: AgentModel
 
@@ -37,10 +37,10 @@ struct AgentWorkMapView: View {
         let map = model.workMap
         VStack(spacing: 0) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                WorkMapDiagram(map: map, selected: model.model, now: timeline.date)
+                WorkMapDiagram(map: map, selected: model.modelChoice.model, provider: model.provider, now: timeline.date)
                     .frame(height: 318)
             }
-            Text(map.status(selected: model.model))
+            Text(map.status(selected: model.modelChoice.model))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -109,6 +109,7 @@ private struct WorkMapRow: View {
 private struct WorkMapDiagram: View {
     let map: WorkMap
     let selected: String
+    let provider: AgentProvider
     let now: Date
 
     private static let nodeSize: CGFloat = 38
@@ -145,7 +146,7 @@ private struct WorkMapDiagram: View {
         .clipped()
     }
 
-    /// The nodes sit either side of the top, so the context percent above Claude stays clear.
+    /// The nodes sit either side of the top, so the context usage above the provider stays clear.
     private func point(index: Int, of count: Int, centre: CGPoint, radius: CGFloat) -> CGPoint {
         let angle = (Double(index) + 0.5) / Double(count) * 2 * .pi - .pi / 2
         return CGPoint(x: centre.x + radius * cos(angle), y: centre.y + radius * sin(angle))
@@ -164,7 +165,7 @@ private struct WorkMapDiagram: View {
                 .rotationEffect(.degrees(-90))
                 .frame(width: Self.centreSize + 10, height: Self.centreSize + 10)
             VStack(spacing: 2) {
-                Text("CLAUDE").font(.system(size: 12, weight: .bold, design: .monospaced)).tracking(1.5)
+                Text(provider.title.uppercased()).font(.system(size: 12, weight: .bold, design: .monospaced)).tracking(1.5)
                 Text(map.modelLabel(selected: selected)).font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(width: Self.centreSize - 10)

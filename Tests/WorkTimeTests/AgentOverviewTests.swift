@@ -107,7 +107,9 @@ let agentOverviewTests: [(name: String, run: () throws -> Void)] = [
         defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appendingPathComponent("-Users-me-git-app--claude-x", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: folder.appendingPathComponent(session + ".jsonl"))
+        try Data(transcriptFixture.utf8).write(to: folder.appendingPathComponent(session + ".jsonl"))
+        let saved = AgentTranscript.savedItems(sessionID: session, folder: "/elsewhere", root: root)
+        check(saved.contains { if case .text(let reply) = $0.kind { return reply.contains("Looks good") }; return false }, "saved review is readable from a different active folder")
         check(ClaudeTranscripts.folderName(cwd: "/Users/me/git/app/.claude/x") == folder.lastPathComponent, "path scheme")
         check(AgentTranscript.url(sessionID: session, cwd: "/Users/me/git/app/.claude/x", root: root)?.lastPathComponent == session + ".jsonl", "by cwd")
         check(AgentTranscript.url(sessionID: session, cwd: "/elsewhere", root: root) != nil, "by scanning")
@@ -187,6 +189,8 @@ let agentOverviewTests: [(name: String, run: () throws -> Void)] = [
                    let data = try? Data(contentsOf: inbox.appendingPathComponent(name)),
                    let request = AgentInbox.decode(AgentInbox.Request.self, from: data) {
                     try? FileManager.default.removeItem(at: inbox.appendingPathComponent(name))
+                    if request.text == "Rebase it",
+                       Set(request.linkTargets) != Set([.jira("ACME-23"), LinkTargets.pullRequest(pull)!]) { return }
                     let reply = AgentInbox.Reply(id: request.id, status: request.text == "busy" ? .queued : .started, sessionID: session, message: "")
                     try? AgentInbox.encode(reply).write(to: inbox.appendingPathComponent(AgentInbox.replyName(request.id)))
                     if request.text == "busy" { return }
@@ -195,7 +199,7 @@ let agentOverviewTests: [(name: String, run: () throws -> Void)] = [
             }
         }
         app.start()
-        let sent = (try? run("send_to_agent", ["pr_url": pull, "text": "Rebase it"]).get()) ?? ""
+        let sent = (try? run("send_to_agent", ["pr_url": pull, "text": "Rebase it", "links": ["ACME-23", pull]]).get()) ?? ""
         check(sent.hasPrefix("Sent to the agent on acme/api#7") && sent.contains("Session: \(session)"), sent)
         let queued = (try? run("send_to_agent", ["pr_url": pull, "text": "busy"]).get()) ?? ""
         check(queued.hasPrefix("Queued for the agent on acme/api#7"), queued)

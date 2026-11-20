@@ -327,6 +327,23 @@ let jiraTests: [(name: String, run: () throws -> Void)] = [
         check(JiraDetail.needsFetch(fetchedAt: now, now: now, force: true), "retry")
     }),
 
+    ("the detail pane lists every agent about or linked to its ticket", {
+        var ticket = AgentState(key: "topic:ticket", title: "ACME-1 ticket", status: .idle)
+        ticket.jiraKey = "ACME-1"
+        var session = AgentState(key: "topic:session", title: "Developer · ACME-1", status: .working)
+        session.jiraKey = "ACME-1"
+        session.role = "Developer"
+        session.roleKey = "assistant:work:developer"
+        let url = "https://github.com/acme/api/pull/7"
+        let pull = AgentState(key: url, title: "Unrelated title", prURL: url, status: .idle)
+        let assistant = AgentState(key: "assistant:work:developer", title: "Developer", status: .idle, kind: "assistant")
+        let pr = LinkTargets.pullRequest("acme/api#7")!
+        var table = LinkTable()
+        table.ingest([LinkPair(.jira("ACME-1"), pr), LinkPair(pr, .agent(pull.key))], now: Date())
+        let found = JiraDetail.agents(for: "acme-1", from: [assistant, pull, session, ticket], links: AgentLinkIndex(table: table))
+        check(found.map(\.key) == [pull.key, session.key, ticket.key], "related agents in their existing order")
+    }),
+
     ("arrow keys step the selection within the list and stop at its ends", {
         let keys = ["A-1", "A-2", "A-3"]
         check(JiraDetail.step(from: nil, offset: 1, in: keys) == "A-1" && JiraDetail.step(from: nil, offset: -1, in: keys) == "A-3", "no selection")

@@ -91,7 +91,8 @@ final class NoticeCenter: ObservableObject {
             if let url = JiraModel.shared.site.flatMap({ JiraLogic.browseURL(site: $0, key: key) }) { NSWorkspace.shared.open(url) }
         case .web(let url)?: NSWorkspace.shared.open(url)
         case nil:
-            if let agent = notice.source.agent { AgentHub.shared.show(agent) } else { TodoModel.shared.reveal() }
+            if let source = notice.link.flatMap({ ReminderSource.parse($0) }) { TodoModel.shared.open(source) }
+            else if let agent = notice.source.agent { AgentHub.shared.show(agent) } else { TodoModel.shared.reveal() }
         }
     }
 
@@ -104,7 +105,7 @@ final class NoticeCenter: ObservableObject {
         RoutineStore.shared.record(AskAnswer(title: notice.title, yes: yes, date: Date()), routine: ask.routine)
         guard yes else { return }
         Task {
-            let reply = await AgentInboxWatcher.send(ask.prompt, to: ask.agent, pullRequests: ask.pullRequests, ticket: ask.ticket, pr: ask.pullRequest, origin: ask.origin)
+            let reply = await AgentInboxWatcher.send(ask.prompt, to: ask.agent, pullRequests: ask.pullRequests, ticket: ask.ticket, pr: ask.pullRequest, origin: ask.origin, links: ask.links)
             if reply.status == .rejected { Notifier.postAgentMessage(title: "Could not start: \(notice.title)", body: reply.message) }
         }
     }

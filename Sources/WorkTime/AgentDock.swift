@@ -18,9 +18,22 @@ final class PRAgents: ObservableObject {
     /// Shows the pull request's agent, made in its checkout with the review prompt waiting the first time. Without the
     /// embedded panes (the swiftc build) it shows on the Main page instead.
     func open(_ target: GitHubLink.Target) {
-        let topics = TopicAgentStore.shared.topics
-        if let set = PullRequestSets.set(containing: target.url, in: topics), !set.archived { return AgentHub.shared.show(set.key) }
-        guard EmbeddedTerminalModel.available else { return AgentHub.shared.show(target.url) }
+        let store = TopicAgentStore.shared, links = [LinkEntity.pullRequest(target)]
+        let existing = store.matches(links)
+        if !existing.isEmpty {
+            switch store.choose(links, matches: existing) {
+            case .existing(let key):
+                if key != target.url { return store.openExisting(key, links: links) }
+            case .create:
+                Task { @MainActor in
+                    let prs = await TopicAgentStore.withCheckouts([LinkedPR(target: target)])
+                    store.show(store.makeSet(prs, forceNew: true).key)
+                }
+                return
+            case .cancel: return
+            }
+        }
+        guard EmbeddedTerminalModel.available else { return AgentHub.shared.showExact(target.url) }
         let key = target.url
         if models[key] != nil { return show(key) }
         Task { @MainActor in
@@ -33,8 +46,13 @@ final class PRAgents: ObservableObject {
     func load(_ target: GitHubLink.Target) async -> AgentModel {
         if let model = models[target.url] { return model }
         let checkout = await Task.detached { GitHubClaude.checkout(for: target.repo, under: GitHubClaudeModel.repositoriesRoot) }.value
+        return load(target, checkout: checkout)
+    }
+
+    func load(_ target: GitHubLink.Target, checkout: URL?) -> AgentModel {
         if let model = models[target.url] { return model }
         let model = AgentModel()
+        LinkStore.shared.link(agent: target.url, to: [.pullRequest(target)])
         model.open(pr: target, checkout: checkout)
         models[target.url] = model
         return model
@@ -53,9 +71,11 @@ final class PRAgents: ObservableObject {
         switch model.deliver(fromMain: request.text, origin: request.origin) {
         case .reject(let why): return AgentInbox.Reply(id: request.id, status: .rejected, message: why)
         case .start, .queue:
+            LinkStore.shared.link(agent: request.agent, to: request.linkTargets)
             let queued = !model.queued.isEmpty
             Notifier.postAgentMessage(title: "Main \u{2192} \(title)", body: request.text, agent: model.attentionID)
             let slot = model.waitingForSlot ? TicketSessions.slotNote(limit: SessionSlots.limit(), roleLimit: model.slotRole?.limit) : nil
+            if let space = request.space { WorkspaceStore.shared.add(space: space, to: request.agent) }
             return AgentInbox.Reply(id: request.id, status: queued ? .queued : .started, sessionID: model.sessionID, message: queued ? "queued" : "started",
                                     note: slot)
         }
@@ -314,53 +334,49 @@ final class AgentInboxWatcher {
     /// An agent's send_to_main: checked against the limits, then handed to the Main it names, with a notification unless the user is looking at it.
     @MainActor static func report(_ request: ReportRequest, now: Date = Date(), hub: AgentHub? = nil) -> NoticeReply {
         let hub = hub ?? AgentHub.shared
-        func answer(ok: Bool, _ message: String) -> NoticeReply { NoticeReply(id: request.id, ok: ok, notice: nil, message: message) }
+        AgentDiagnostics.record("report.inbox.read", request: request.id)
+        func answer(ok: Bool, _ message: String, stage: String = "report.rejected") -> NoticeReply {
+            AgentDiagnostics.record(stage, request: request.id)
+            return NoticeReply(id: request.id, ok: ok, notice: nil, message: message)
+        }
         switch AgentReports.decide(request, workspaces: WorkspaceStore.shared.workspaces, titles: NoticeCenter.shared.titles(),
                                    queued: { hub.mains[$0]?.queued ?? [] }, ledger: reports, now: now) {
         case .reject(let why): return answer(ok: false, why)
-        case .duplicate: return answer(ok: true, AgentReports.duplicateText)
+        case .duplicate: return answer(ok: true, AgentReports.duplicateText, stage: "report.duplicate")
         case .deliver(let workspace, let name, let prompt):
             guard let main = hub.mains[workspace] else { return answer(ok: false, "WorkTime has no Main for the workspace \(workspace) yet; restart it to add one.") }
             let decision = main.deliver(report: prompt)
             if case .reject(let why) = decision { return answer(ok: false, why) }
             reports.record(caller: request.source.identity, text: request.text, now: now)
             if !main.isBeingWatched {
-                Notifier.postReport(title: "\(name) \u{2192} Main", body: request.text, agent: main.attentionID)
+                Notifier.postReport(title: "\(name) \u{2192} Main", body: request.text, agent: main.attentionID, request: request.id)
+            } else {
+                AgentDiagnostics.record("report.notification.skipped.main-visible", request: request.id)
             }
-            return answer(ok: true, AgentReports.replyText(decision, workspace: workspace))
+            return answer(ok: true, AgentReports.replyText(decision, workspace: workspace), stage: decision == .queue ? "report.queued" : "report.started")
         }
     }
 
     /// Hands the prompt to the agent it names: an assistant, a topic agent or a pull request's.
     static func route(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
-        let reply = await deliver(request)
-        if reply.status != .rejected, let space = request.space, request.ticket == nil, request.pr == nil, !Assistants.isKey(request.agent) {
-            WorkspaceStore.shared.add(space: space, to: PullRequestSets.set(containing: request.agent, in: TopicAgentStore.shared.topics)?.key ?? request.agent)
-        }
-        return reply
+        await deliver(request)
     }
 
     private static func deliver(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
         if let problem = AgentInbox.problem(request, now: Date()) {
             return AgentInbox.Reply(id: request.id, status: .rejected, message: problem.message)
         }
-        if let urls = request.prs, urls.count > 1 { return await TopicAgentStore.shared.deliverSet(request) }
-        if let set = PullRequestSets.set(containing: request.agent, in: TopicAgentStore.shared.topics), !set.archived {
-            var forSet = request
-            forSet.agent = set.key
-            return TopicAgentStore.shared.deliver(forSet)
-        }
         if TopicAgents.isKey(request.agent) { return TopicAgentStore.shared.deliver(request) }
         if request.ticket != nil || request.pr != nil, Assistants.isKey(request.agent) { return await TopicAgentStore.shared.deliver(roleSession: request) }
         if Assistants.isKey(request.agent) { return AssistantStore.shared.deliver(request) }
-        return await PRAgents.shared.deliver(request)
+        return await TopicAgentStore.shared.deliverPullRequests(request)
     }
 
     /// A prompt the user chose to send, from a notification's button: the same path as Main's send_to_agent, which asks first.
     static func send(_ text: String, to agent: String, pullRequests: [String]? = nil, ticket: String? = nil, pr: String? = nil, origin: String? = nil,
-                     space: String? = nil) async -> AgentInbox.Reply {
+                     space: String? = nil, links: [LinkEntity]? = nil) async -> AgentInbox.Reply {
         await route(AgentInbox.Request(id: UUID().uuidString, agent: agent, text: String(text.prefix(AgentInbox.textLimit)), created: Date(), prs: pullRequests,
-                                       ticket: ticket, pr: pr, origin: origin, space: space))
+                                       ticket: ticket, pr: pr, origin: origin, space: space, links: links))
     }
 
     /// Takes the inbox's requests of one kind off the folder, dropping any that cannot be read.
@@ -374,7 +390,7 @@ final class AgentInboxWatcher {
         }
     }
 
-    private func answer<Reply: Encodable>(_ reply: Reply, to id: String) {
+    func answer<Reply: Encodable>(_ reply: Reply, to id: String) {
         try? AgentInbox.encode(reply).write(to: folder.appendingPathComponent(AgentInbox.replyName(id)), options: .atomic)
     }
 }

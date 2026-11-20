@@ -118,7 +118,8 @@ final class StatePublisher {
         let info = AppInfo(written: now, version: bundle["CFBundleShortVersionString"] as? String ?? "1.0", build: bundle["CFBundleVersion"] as? String,
                            commit: (bundle[Self.commitKey] as? String).flatMap { $0.isEmpty ? nil : $0 },
                            buildDate: (bundle[Self.buildDateKey] as? String).flatMap { ISO8601DateFormatter().date(from: $0) } ?? executable,
-                           pid: ProcessInfo.processInfo.processIdentifier, started: started, dataFolder: AppPaths.support.path, schemaVersion: MCPServer.schemaVersion,
+                           pid: ProcessInfo.processInfo.processIdentifier, started: started, dataFolder: AppPaths.support.path,
+                           diagnosticsFolder: AppPaths.diagnostics.path, schemaVersion: MCPServer.schemaVersion,
                            workspaces: WorkspaceStore.shared.workspaces.map { AppInfo.Workspace(id: $0.id, name: $0.name, spaces: $0.spaces.map(\.name)) },
                            sidecar: sidecar, working: work.working, waiting: work.waiting, queuedPrompts: states.reduce(0) { $0 + $1.queued },
                            recording: recording(), plan: plan, planFetched: UsagePlanModel.shared.fetched)

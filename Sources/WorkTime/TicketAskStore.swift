@@ -9,7 +9,7 @@ final class TicketAskStore: ObservableObject {
     nonisolated static let agentKey = "ticket-ask"
 
     @Published private(set) var pending: [TicketAsk]
-    private var waiters: [String: CheckedContinuation<TicketSessions.Answer?, Never>] = [:]
+    private var waiters: [String: CheckedContinuation<(TicketAsk, TicketSessions.Answer)?, Never>] = [:]
     private var timers: [String: Task<Void, Never>] = [:]
     private let defaults: UserDefaults
 
@@ -33,7 +33,7 @@ final class TicketAskStore: ObservableObject {
     }
 
     /// Puts the question to the user and waits for the answer; nil when the time ran out.
-    func ask(_ ask: TicketAsk) async -> TicketSessions.Answer? {
+    func ask(_ ask: TicketAsk) async -> (TicketAsk, TicketSessions.Answer)? {
         pending.append(ask)
         save()
         announce(ask)
@@ -45,19 +45,30 @@ final class TicketAskStore: ObservableObject {
 
     /// An answer from the card, the notch or the notification. A question that outlived a restart has nobody waiting for it any more; its
     /// prompt is sent all the same.
-    func respond(_ id: String, _ answer: TicketSessions.Answer) {
-        guard let ask = pending.first(where: { $0.id == id }) else { return }
+    func respond(_ id: String, _ answer: TicketSessions.Answer, key: String? = nil) {
+        guard var ask = pending.first(where: { $0.id == id }) else { return }
+        if key == nil, (ask.candidates?.count ?? 0) > 1, answer == .reuse || answer == .alwaysReuse {
+            AgentHub.shared.show(Workspaces.mainKey(ask.workspace))
+            return
+        }
+        if let key {
+            guard let choice = ask.candidates?.first(where: { $0.key == key }) else { return }
+            ask.existing = choice
+        }
         remove(id)
         timers.removeValue(forKey: id)?.cancel()
-        if let waiter = waiters.removeValue(forKey: id) { waiter.resume(returning: answer) } else {
-            Task { @MainActor in _ = await TopicAgentStore.shared.finish(ask: ask, answer: answer) }
+        if let waiter = waiters.removeValue(forKey: id) { waiter.resume(returning: (ask, answer)) } else {
+            Task { @MainActor in
+                let reply = await TopicAgentStore.shared.finish(ask: ask, answer: answer)
+                AgentInboxWatcher.shared.answer(reply, to: ask.id)
+            }
         }
     }
 
     /// Opens the session the question is about.
     func open(_ id: String) {
         guard let ask = pending.first(where: { $0.id == id }) else { return }
-        AgentHub.shared.show(ask.existing.key)
+        AgentHub.shared.showExact(ask.existing.key)
     }
 
     private func arm(_ ask: TicketAsk) {

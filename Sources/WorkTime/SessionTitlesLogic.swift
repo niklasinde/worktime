@@ -5,6 +5,10 @@ enum SessionTitles {
     static let titleLimit = 140
     static let lineLimit = 600
     static let resultLimit = 60_000
+    private static let ticketLine = #/^\s*(?:#{1,3}\s+|[-*]\s+)((?:[a-z][a-z ]{0,28}[a-z]\s+)?)([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,6})\s+(\S.*)$/#
+    private static let pullRequestLine = #/^\s*(?:#{1,3}\s+|[-*]\s+)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#([1-9][0-9]{0,6})\s+(\S.*)$/#
+    private static let pullRequestStateLine = #/^\s*-\s*State:\s*(open|merged|closed)(,\s*draft)?/#
+    private static let titleHint = #/(?:^|[^A-Za-z0-9_])([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,6})(?::[ \t]+|[ \t]+[-\u{2013}\u{2014}\u{00B7}][ \t]+)([^\n]{8,300})/#
 
     /// What a tool's answer says about the tickets and pull requests it names: in WorkTime's own Markdown (`jira_issue`, `jira_search`,
     /// `github_pr`, `github_prs`) and in the JSON of `gh` and Jira. `call` is what the tool was asked, which says which pull request
@@ -22,7 +26,7 @@ enum SessionTitles {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).prefix(lineLimit).map(String.init)
         var found: [SessionRef: SessionRefInfo] = [:]
         for (index, line) in lines.enumerated() {
-            if let match = line.firstMatch(of: #/^\s*(?:#{1,3}\s+|[-*]\s+)((?:[a-z][a-z ]{0,28}[a-z]\s+)?)([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,6})\s+(\S.*)$/#),
+            if let match = line.firstMatch(of: ticketLine),
                projects.contains(String(match.2)) {
                 let relation = !match.1.isEmpty
                 var rest = String(match.4)
@@ -38,7 +42,7 @@ enum SessionTitles {
                 if !title.isEmpty {
                     found[.jira("\(match.2)-\(match.3)")] = SessionRefInfo(title: title, status: status?.isEmpty == true ? nil : status)
                 }
-            } else if let match = line.firstMatch(of: #/^\s*(?:#{1,3}\s+|[-*]\s+)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([1-9][0-9]{0,6})\s+(\S.*)$/#) {
+            } else if let match = line.firstMatch(of: pullRequestLine) {
                 let title = clean(String(match.3), limit: titleLimit)
                 guard !title.isEmpty, let number = Int(match.2) else { continue }
                 var info = SessionRefInfo(title: title)
@@ -54,7 +58,7 @@ enum SessionTitles {
     private static func pullRequestState(after lines: ArraySlice<String>) -> (state: String?, isDraft: Bool) {
         let lines = Array(lines)
         for line in lines {
-            if let match = line.firstMatch(of: #/^\s*-\s*State:\s*(open|merged|closed)(,\s*draft)?/#) { return (String(match.1), match.2 != nil) }
+            if let match = line.firstMatch(of: pullRequestStateLine) { return (String(match.1), match.2 != nil) }
         }
         guard lines.count >= 2, lines[0].trimmingCharacters(in: .whitespaces).hasPrefix("https://") else { return (nil, false) }
         let facts = lines[1].components(separatedBy: " \u{00B7} ").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -134,7 +138,7 @@ enum SessionTitles {
         guard !projects.isEmpty else { return [:] }
         let text = text.utf8.count > SessionLinks.textLimit ? String(text.prefix(SessionLinks.textLimit)) : text
         var found: [SessionRef: String] = [:]
-        for match in text.matches(of: #/(?:^|[^A-Za-z0-9_])([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,6})(?::[ \t]+|[ \t]+[-\u{2013}\u{2014}\u{00B7}][ \t]+)([^\n]{8,300})/#)
+        for match in text.matches(of: titleHint)
         where projects.contains(String(match.1)) {
             let ref = SessionRef.jira("\(match.1)-\(match.2)")
             let title = clean(String(match.3), limit: titleLimit)

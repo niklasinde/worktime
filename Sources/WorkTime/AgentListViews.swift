@@ -15,6 +15,7 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
     /// A ticket's sessions gathered under one row.
     @ViewBuilder let group: (TicketGroup) -> TicketRow
     @AppStorage(AgentListFilter.collapsedKey) private var collapsed = ""
+    @State private var folded: Set<String> = []
     @AppStorage(AgentListFilter.storageKey) private var chosen = AgentListFilter.all.rawValue
     @AppStorage(AgentListFilter.showDoneKey) private var showDone = false
     @AppStorage(AgentListFilter.olderOpenKey) private var olderOpen = false
@@ -39,14 +40,46 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         if !isCollapsed {
             let chips = searching ? [] : AgentListFilter.chips(counts: counts)
             if !searching, !chips.isEmpty || hidden > 0 || showDone { chipRow(chips, counts: counts, selected: filter, hidden: hidden) }
-            let rows = TicketGrouping.rows(AgentListFilter.shown(scoped, filter: filter), projects: projects, titles: titles)
+            let groups = Dictionary(grouping: AgentListFilter.shown(scoped, filter: filter), by: AgentListFilter.sidebarRole)
+            ForEach(groups.keys.sorted(), id: \.self) { role in
+                roleGroup(role, members: groups[role] ?? [], projects: projects, searching: searching)
+            }
+        }
+    }
+
+    @ViewBuilder private func roleGroup(_ role: String, members: [AgentState], projects: Set<String>, searching: Bool) -> some View {
+        let id = workspace.id + "/" + role
+        let closed = folded.contains(id) && !searching
+        sectionToggle(role, count: members.filter { $0.archived != true }.count, collapsed: closed) { toggle(id) }
+            .padding(.leading, 32)
+        if !closed {
+            let rows = AgentListFilter.ticketRows(members, projects: projects, titles: titles, links: linkStore.searchIndex)
             ForEach(AgentListFilter.entries(rows, olderOpen: olderOpen || searching, now: Date())) { entry in
                 switch entry {
-                case .row(let row): rowView(row)
+                case .row(.group(let ticket)):
+                    let ticketID = id + "/" + ticket.id
+                    let ticketClosed = folded.contains(ticketID) && !searching
+                    if let key = ticket.ticket {
+                        sectionToggle(key, count: ticket.members.count, collapsed: ticketClosed) { toggle(ticketID) }
+                            .padding(.leading, 42)
+                            .contextMenu {
+                                if ticket.members.contains(where: { TicketGrouping.subject(of: $0, projects: projects, titles: titles) == ticket.subject }) {
+                                    Button("Open Ticket Timeline") { AgentHub.shared.show(ticket.id) }
+                                }
+                            }
+                        if !ticketClosed {
+                            ForEach(ticket.members, id: \.key) { state in row(state).padding(.leading, 18) }
+                        }
+                    } else { group(ticket) }
+                case .row(let value): rowView(value)
                 case .olderHeader(let count, let isOpen): olderHeader(count: count, isOpen: isOpen)
                 }
             }
         }
+    }
+
+    private func toggle(_ key: String) {
+        if !folded.insert(key).inserted { folded.remove(key) }
     }
 
     @ViewBuilder private func rowView(_ entry: WorkTime.TicketRow) -> some View {
@@ -79,16 +112,9 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
 
     private func header(isCollapsed: Bool, count: Int) -> some View {
         HStack(spacing: 4) {
-            Button { collapsed = AgentListFilter.toggling(workspace.id, in: collapsed) } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                    Text("Agents").font(.caption2.weight(.semibold))
-                    Text("\(count)").font(.caption2).foregroundStyle(.tertiary)
-                }
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
+            sectionToggle("Agents", count: count, collapsed: isCollapsed) {
+                collapsed = AgentListFilter.toggling(workspace.id, in: collapsed)
             }
-            .buttonStyle(.plain)
             .help(isCollapsed ? "Show the agents of \(workspace.name)" : "Hide the agents of \(workspace.name)")
             Spacer()
             Button { showLinks = true } label: { Image(systemName: "link").font(.caption) }
@@ -102,6 +128,19 @@ struct AgentsSection<Row: View, TicketRow: View>: View {
         .padding(.leading, 26)
         .padding(.trailing, 8)
         .padding(.top, 2)
+    }
+
+    private func sectionToggle(_ title: String, count: Int, collapsed: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(collapsed ? 0 : 90))
+                Text(title).font(.caption2.weight(.semibold))
+                Text("\(count)").font(.caption2).foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func chipRow(_ chips: [AgentListFilter], counts: [AgentListFilter: Int], selected: AgentListFilter, hidden: Int) -> some View {

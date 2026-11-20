@@ -37,28 +37,35 @@ struct SessionLinks: Equatable, Sendable {
     private var scanned: [String: Int] = [:]
     private var counter = 0
 
-    /// Reads the items that are new or changed since the last call; true when it found anything to reorder.
+    /// Reads the items that are new or changed since the last call; true when its state changed.
     @discardableResult
     mutating func update(_ items: [AgentItem], projects: Set<String>) -> Bool {
+        update(items.compactMap(SessionLinkScanItem.init), projects: projects)
+    }
+
+    @discardableResult
+    mutating func update(_ items: [SessionLinkScanItem], projects: Set<String>) -> Bool {
         var changed = false
-        for item in items where !item.streaming {
-            let texts = Self.texts(of: item)
+        var scannedNewItem = false
+        for item in items {
+            let texts = item.texts
             let signature = texts.reduce(texts.count) { $0 &+ $1.utf8.count }
             guard scanned[item.id] != signature else { continue }
             scanned[item.id] = signature
+            scannedNewItem = true
             var seen = Set<SessionRef>()
             let refs = texts.flatMap { Self.references(in: $0, projects: projects) }.filter { seen.insert($0).inserted }
             changed = note(refs) || changed
             changed = learn(from: item, texts: texts, projects: projects) || changed
         }
-        return changed
+        return changed || scannedNewItem
     }
 
     /// The titles an item gives: what a tool answered about the tickets and pull requests it named, and titles in any text.
-    private mutating func learn(from item: AgentItem, texts: [String], projects: Set<String>) -> Bool {
+    private mutating func learn(from item: SessionLinkScanItem, texts: [String], projects: Set<String>) -> Bool {
         var changed = false
-        if case .tool(_, let summary, let detail, let result?, _, _, _) = item.kind {
-            for (ref, info) in SessionTitles.structured(call: summary + "\n" + detail, result: result, projects: projects) {
+        if let call = item.toolCall, let result = item.toolResult {
+            for (ref, info) in SessionTitles.structured(call: call, result: result, projects: projects) {
                 let merged = titles[ref]?.overlaid(by: info) ?? info
                 if titles[ref] != merged { titles[ref] = merged; changed = true }
             }
@@ -121,6 +128,82 @@ struct SessionLinks: Equatable, Sendable {
 
     /// Every ref there is, for a count that goes past the cap.
     func total(pinned: [SessionRef]) -> Int { Set(pinned + recency.keys).count }
+}
+
+struct SessionLinkScanItem: Equatable, Sendable {
+    let id: String
+    let texts: [String]
+    let toolCall: String?
+    let toolResult: String?
+
+    init?(_ item: AgentItem) {
+        guard !item.streaming else { return nil }
+        id = item.id
+        texts = SessionLinks.texts(of: item)
+        switch item.kind {
+        case .user, .text:
+            toolCall = nil
+            toolResult = nil
+        case .tool(_, let summary, let detail, let result, _, _, _):
+            toolCall = summary + "\n" + detail
+            toolResult = result
+        default:
+            return nil
+        }
+    }
+}
+
+enum SessionRelatedScan {
+    static let limit = 20
+
+    static func inputs(from items: [AgentItem], limit: Int = limit) -> [SessionLinkScanItem] {
+        guard limit > 0 else { return [] }
+        var selected: [SessionLinkScanItem] = []
+        selected.reserveCapacity(min(limit, items.count))
+        for item in items.reversed() {
+            guard let input = SessionLinkScanItem(item) else { continue }
+            selected.append(input)
+            if selected.count == limit { break }
+        }
+        return Array(selected.reversed())
+    }
+
+    static func links(from inputs: [SessionLinkScanItem], projects: Set<String>) -> SessionLinks {
+        var links = SessionLinks()
+        links.update(inputs, projects: projects)
+        return links
+    }
+}
+
+struct SessionRelatedState: Equatable, Sendable {
+    private(set) var visible = false
+    private(set) var loading = false
+    private(set) var generation = 0
+
+    mutating func open() -> Int {
+        visible = true
+        loading = true
+        generation += 1
+        return generation
+    }
+
+    mutating func close() {
+        visible = false
+        loading = false
+        generation += 1
+    }
+
+    mutating func reset() {
+        visible = false
+        loading = false
+        generation += 1
+    }
+
+    mutating func finish(_ generation: Int) -> Bool {
+        guard visible, self.generation == generation else { return false }
+        loading = false
+        return true
+    }
 }
 
 /// The Jira projects a session's tickets may belong to: the configured ones, and the prefix of the session's own ticket.

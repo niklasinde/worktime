@@ -48,6 +48,7 @@ enum AppPaths {
     static var jiraTickets: URL { support.appendingPathComponent("jira-tickets.json") }
     /// What each call to Claude used, one JSON line per call, kept for half a year.
     static var usageLog: URL { support.appendingPathComponent("usage.jsonl") }
+    static var diagnostics: URL { support.appendingPathComponent("Diagnostics", isDirectory: true) }
 
     /// What waits for the user, the sessions' timelines, the app's own facts and the feed of events, written by the app for the MCP server.
     static var decisionState: URL { support.appendingPathComponent(PendingDecisions.fileName) }

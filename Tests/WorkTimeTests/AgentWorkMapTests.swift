@@ -81,7 +81,8 @@ let agentWorkMapTests: [(name: String, run: () throws -> Void)] = [
         map.receive(["type": "idle"], cwd: "/repo", at: at(4.1))
         check(map.active == nil && map.events.count == 4, "nothing runs after the turn")
         check(map.counts == [.you: 1, .model: 2, .network: 1], "\(map.counts)")
-        check(map.status() == "Model: opus 5.5 \u{00B7} step 2 \u{00B7} context 10%", map.status())
+        check(map.contextMax == 200_000 && map.contextText == "20k / 200k \u{00B7} 10%", map.contextText ?? "nil")
+        check(map.status() == "Model: opus 5.5 \u{00B7} step 2 \u{00B7} context 20k / 200k \u{00B7} 10%", map.status())
     }),
     ("work map: streamed text keeps the model running and adds no step until the complete text", {
         var map = WorkMap()
@@ -123,6 +124,9 @@ let agentWorkMapTests: [(name: String, run: () throws -> Void)] = [
         check(map.events.last?.durationText == "50 ms" && map.counts[.hooks] == 1, "hook ended")
         map.receive(["type": "context", "tokens": 48_200], cwd: "/repo", at: at(1))
         check(map.contextText == "48k" && map.contextPercent == nil, map.contextText ?? "nil")
+        var percentOnly = WorkMap()
+        percentOnly.receive(["type": "context", "percent": 24], cwd: "/repo", at: at(1))
+        check(percentOnly.contextText == "24%", percentOnly.contextText ?? "nil")
     }),
     ("work map: a node is warm while it runs and fades after its last event", {
         var map = WorkMap()

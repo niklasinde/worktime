@@ -24,6 +24,46 @@ private func set(_ urls: [String]) -> AgentState {
 }
 
 let agentListTests: [(name: String, run: () throws -> Void)] = [
+    ("sidebar finds a reviewer by linked ticket and groups each matching PR session under it", {
+        var first = pullRequest()
+        first.lastPrompt = "Review the changes"
+        var second = pullRequest("https://github.com/acme-com/api/pull/2")
+        second.role = "Reviewer"
+        var table = LinkTable()
+        for agent in [first, second] {
+            let pr = LinkTargets.pullRequest(agent.key)!
+            table.ingest([LinkPair(.agent(agent.key), pr), LinkPair(pr, .jira("ACME-42"))], now: Date())
+        }
+        let index = AgentLinkIndex(table: table)
+        let found = AgentSearch.filter([first, second, ticket()], query: "reviewer acme-42", links: index)
+        check(found.map(\.key) == [first.key, second.key], "role and linked ticket matched together")
+        let rows = AgentListFilter.ticketRows(found, projects: ["ACME"], titles: [:], links: index)
+        check(rows == [.group(TicketGroup(subject: .ticket("ACME-42"), members: [first, second]))], "both sessions grouped even while idle")
+    }),
+    ("reviews sidebar groups pending review work and respects explicit space tags", {
+        var review = pullRequest()
+        review.lastPrompt = AgentInbox.prompt("Review request from Slack", origin: "Slack channel message in #review-request")
+        review.status = .working
+        let spaces = [Space(id: "review", name: "Review")]
+        check(AgentListFilter.isCurrentReview(review), "working review")
+        check(Spaces.spaces(of: review, in: spaces, tags: [:], assistantSpaces: { _ in [] }) == ["review"], "untagged review is in Review")
+        check(Spaces.spaces(of: review, in: spaces, tags: [review.key: []], assistantSpaces: { _ in [] }) == nil, "explicit tags win")
+        review.status = .idle
+        review.lastResult = "Review ready"
+        review.seen = false
+        check(AgentListFilter.isCurrentReview(review), "unread result")
+        review.seen = true
+        check(!AgentListFilter.isCurrentReview(review), "finished and read")
+        review.status = .working
+        review.lastPrompt = "Implement a fix"
+        check(!AgentListFilter.isCurrentReview(review), "development work on a PR")
+        var queued = ticket()
+        queued.roleKey = "assistant:work:reviewer"
+        queued.slotWait = true
+        check(AgentListFilter.isCurrentReview(queued), "queued reviewer")
+        queued.archived = true
+        check(!AgentListFilter.isCurrentReview(queued), "archived reviewer")
+    }),
     ("agent list: a pull request, a ticket, a support case and a set each get their kind", {
         check(AgentListFilter.kind(of: pullRequest()) == .pullRequests, "pull request")
         check(AgentListFilter.kind(of: ticket()) == .tickets, "ticket")

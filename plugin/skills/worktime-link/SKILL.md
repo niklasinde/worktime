@@ -1,6 +1,6 @@
 ---
 name: worktime-link
-description: Drive and observe WorkTime from a Claude Code session as the user's coordinator, with the worktime MCP tools. Use when the user asks what waits for them in WorkTime, to hand work to an agent or to a workspace's Main, to wait for an agent to finish, to see a ticket's timeline or latest verdicts, what the agents cost, which version of WorkTime runs, to change workspaces and spaces, or to open something in the app.
+description: Drive and observe WorkTime from Claude Code or Codex as the user's coordinator, with the worktime MCP tools. Use when the user asks what waits for them in WorkTime, to hand work to an agent or to a workspace's Main, to wait for an agent to finish, to see a ticket's timeline or latest verdicts, what the agents cost, which version of WorkTime runs, to change workspaces and spaces, or to open something in the app.
 ---
 
 WorkTime's MCP server `worktime` is the link between this session and the running app. Observe with the read tools, act with the
@@ -13,7 +13,7 @@ instructions it started with, and `app_info` says when its schema is older than 
 ## Observe
 
 - `pending_decisions`: everything waiting for the user, with ids and `worktime://` links: permission prompts, reuse-or-new questions, missing-tool requests, blocked turns, review drafts, automation asks. Read-only.
-- `agents_overview`: every agent by urgency; filters kind, ticket, space, status, needs_me, query and since. `agent_session` reads one session's transcript.
+- `agents_overview`: every agent by urgency; filters kind, ticket, space, status, needs_me, query and since. `agent_session` reads a Claude Code transcript. For a Codex session, inspect its latest prompt, result and state in the overview.
 - `attention`: what needs the user across pull requests, agents, Slack, notifications and meetings. Start here for "what do I need to look at".
 - `ticket_timeline`: one ticket's or pull request's timeline across its sessions: triggers, prompts from Main, verdicts, reviews drafted and posted, answers, times.
 - `outcomes`: the latest verdict (PASS, FAIL, BLOCKED, Recommendation) per ticket as a table; filters ticket, space, since.
@@ -30,7 +30,7 @@ instructions it started with, and `app_info` says when its schema is older than 
 
 ## Act
 
-- `send_to_agent`: a prompt to an agent. `agent: "Main"` (with `workspace`) talks to a workspace's Main, arriving as "From Claude Code · <folder>"; `async: true` returns a `request_id` at once instead of waiting for the user's reuse-or-new answer.
+- `send_to_agent`: a prompt to an agent. When asked to hand off context, locate the intended agent and send the next task with its context in `text`. For a longer transcript include a path the recipient can read. Follow the returned request ID and report the actual outcome. `agent: "Main"` (with `workspace`) talks to a workspace's Main, arriving as "From Claude Code · <folder>". Main returns a direct acknowledgement. For other agents, `async: true` returns a `request_id` while WorkTime handles delivery and any reuse decision.
 - `send_to_main`: an agent's report to its Main.
 - `open_in_app`: bring WorkTime to the front on a session, ticket, pull request or page. Only navigates and asks nothing.
 - `notify`, `cancel_notification`: a notification now or later; `add_reminder`, `complete_reminder`: reminders.
@@ -39,7 +39,7 @@ instructions it started with, and `app_info` says when its schema is older than 
 - `create_routine`, `update_routine`, `set_routine_enabled`, `delete_routine`, `analyze_routine`, `compile_routine`: scheduled prompts and their fixed parts.
 - `create_automation`, `update_automation`, `delete_automation`: prompts that start on a Slack, GitHub or Jira event.
 
-Every write except the reading ones and `open_in_app` asks the user to approve, unless they switched that tool to not ask. Only act when the user asks for it.
+Act on the user’s request. Surface any approval or reuse decision that WorkTime actually reports.
 
 ## Meetings, activity, GitHub, Jira, Slack
 

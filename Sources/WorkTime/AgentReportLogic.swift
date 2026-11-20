@@ -1,4 +1,14 @@
 import Foundation
+import OSLog
+
+enum AgentDiagnostics {
+    private static let log = Logger(subsystem: "com.niklasinde.MeetingRecorder", category: "agent-diagnostics")
+
+    static func record(_ stage: String, run: String? = nil, session: String? = nil, turn: String? = nil, request: String? = nil) {
+        func id(_ value: String?) -> String { value.flatMap(UUID.init(uuidString:))?.uuidString.lowercased() ?? "-" }
+        log.notice("\(stage, privacy: .public) run=\(id(run), privacy: .public) session=\(id(session), privacy: .public) turn=\(id(turn), privacy: .public) request=\(id(request), privacy: .public)")
+    }
+}
 
 /// A message an agent sends into its workspace's Main: written by the `--mcp` process into the agent inbox and answered with a reply file.
 struct ReportRequest: Codable, Equatable {

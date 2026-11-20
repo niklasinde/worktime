@@ -51,7 +51,7 @@ let automationAskTests: [(name: String, run: () throws -> Void)] = [
         kept?.eventText = nil
         check(kept == NoticeAsk(routine: "A1", yes: "Review it", no: "Skip", agent: "assistant:work:reviewer",
                                 prompt: "Review \(pull) by Katia. Advice: small\nLooks safe.", reminder: "r1", event: event().id,
-                                ticket: nil, pullRequest: pull, origin: "Review requested in acme-com/orbit.api"), "\(String(describing: notice))")
+                                ticket: nil, pullRequest: pull, origin: "Review requested in acme-com/orbit.api", links: [LinkTargets.pullRequest(pull)!]), "\(String(describing: notice))")
         check(notice?.eventText?.contains(event().text) == true, "the event's text is kept for the row")
         var own = ask
         own.agent = ""

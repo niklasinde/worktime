@@ -4,8 +4,8 @@ import Foundation
 /// outcomes, the app's own facts, usage, the event feed and navigating the app. They read files the app writes; the only write is open_in_app,
 /// which only shows something. Nothing here answers a decision.
 extension MCPServer {
-    /// Bumped whenever a tool is added, removed or changes its arguments, so a client can tell its connection is out of date.
-    static let schemaVersion = 5
+    /// Identifies the tool contract and client instructions exposed by this connection.
+    static let schemaVersion = 7
 
     struct CoordinatorSources {
         var agentState = AppPaths.agentState
@@ -57,9 +57,10 @@ extension MCPServer {
                 return FilterLogic.header(FilterLogic.applied(["kind": kind?.rawValue])) + PendingDecisions.markdown(file, now: now(), kind: kind)
             },
             MCPTool(name: "request_status",
-                    description: "How a send_to_agent call made with async true went: pending (the app has not taken it, or the user has not answered the reuse-or-new question), answered "
-                        + "(the user answered and the prompt is being delivered), created (a new session was made for it), started (the prompt started or queued in an existing session), "
-                        + "timed_out (nobody answered in time; nothing was sent) or refused. With the session id and the resolved ticket or session once known. Read-only.",
+                    description: "Checks the request_id from an async send_to_agent. While pending or answered, keep following the same ID. "
+                        + "Only direct the user to a reuse decision when pending_decisions shows the matching request. "
+                        + "For created or started, read the message to distinguish queued from started. For refused or timed_out, report the reason. "
+                        + "To confirm the agent finished the task or read a transcript, use wait_for and check the resulting reply.",
                     properties: ["request_id": ["type": "string", "description": "The request_id send_to_agent returned."]], required: ["request_id"]) { args in
                 let id = try uuid(args, "request_id")
                 guard let status = sources.requestStatus(id, now: now()) else { throw MCPToolError("No request \(id). It may be older than a day, or never reached WorkTime.") }

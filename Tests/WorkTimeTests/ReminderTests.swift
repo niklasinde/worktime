@@ -38,6 +38,14 @@ private func temporaryFolder() throws -> URL {
 }
 
 let reminderTests: [(name: String, run: () throws -> Void)] = [
+    ("agent reminders without dates become source-linked notifications", {
+        let send = request(.add, draft: ReminderDraft(title: "Review this", notes: "Ready", link: "acme/api#7"))
+        let notice = ReminderLogic.immediateNotice(for: send)
+        check(notice?.notice?.link == "https://github.com/acme/api/pull/7" && notice?.source == reviewer, "linked to the PR and agent")
+        check(notice?.notice?.body == "Ready" && notice?.id == send.id, "preserves content and request identity")
+        let later = request(.add, draft: ReminderDraft(title: "Tomorrow", due: ReminderDue(date: now, allDay: true)))
+        check(ReminderLogic.immediateNotice(for: later) == nil && ReminderLogic.immediateNotice(for: request(.list)) == nil, "scheduled and listing keep their reminder semantics")
+    }),
     ("reminders: due is read as notify's at, and a date alone is an all-day due date from today on", {
         func due(_ text: String) -> Result<ReminderDue, NoticeError> { ReminderLogic.due(text, now: now, timeZone: stockholm) }
         check((try? due("13:15").get()) == ReminderDue(date: utc("2026-11-12T12:15:00Z")), "HH:mm today with a time")

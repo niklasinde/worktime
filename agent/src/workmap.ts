@@ -12,7 +12,7 @@ export function hookMessage(message: any): Record<string, unknown> | undefined {
   };
 }
 
-function contextMessage(tokens: number, max: number | undefined) {
+export function contextMessage(tokens: number, max: number | undefined) {
   return { type: "context", tokens, ...(max && max > 0 ? { max, percent: Math.min(100, Math.round((tokens / max) * 100)) } : {}) };
 }
 

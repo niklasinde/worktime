@@ -34,9 +34,13 @@ final class AgentClient: @unchecked Sendable {
 
     var isRunning: Bool { process.isRunning }
 
-    func send(_ request: AgentRequest) {
-        guard process.isRunning else { return }
-        try? input.fileHandleForWriting.write(contentsOf: Data(request.line.utf8))
+    @discardableResult
+    func send(_ request: AgentRequest) -> Bool {
+        guard process.isRunning else { return false }
+        do {
+            try input.fileHandleForWriting.write(contentsOf: Data(request.line.utf8))
+            return true
+        } catch { return false }
     }
 
     func terminate() {
@@ -49,24 +53,21 @@ final class AgentClient: @unchecked Sendable {
 @MainActor
 final class AgentModel: ObservableObject {
     @Published private(set) var items: [AgentItem] = [] {
-        didSet {
-            touch()
-            refreshRelated()
-        }
+        didSet { touch() }
     }
     @Published private(set) var busy = false {
         didSet { touch() }
     }
     @Published private(set) var sessionID: String? {
         didSet {
-            if let agentKey, let sessionID { Self.savedSessions[agentKey] = sessionID }
-            if let workspace, prURL == nil { WorkspaceDefaults.setSession(sessionID, for: workspace) }
-            if let sessionID, oldValue != sessionID { remember(sessionID) }
+            saveSession(sessionID)
+            if provider == .claude, let sessionID, oldValue != sessionID { remember(sessionID) }
             touch()
         }
     }
     /// This agent's earlier sessions, newest first; New Session keeps the current one here.
     @Published private(set) var history: [AgentSessionEntry] = []
+    @Published var viewingHistory: AgentSessionEntry?
     private var restoring: String?
     @Published private(set) var prURL: String?
     /// The topic this agent is for, when it is a topic agent.
@@ -109,6 +110,7 @@ final class AgentModel: ObservableObject {
             else if assistant != nil || topic?.assistant != nil { saveAssistantModel() } else { Self.defaults.set(model, forKey: AgentLogic.modelKey) }
         }
     }
+    @Published private(set) var provider = AgentProvider.current
     /// How this agent's calls are approved, saved per agent; a change reaches a turn already running too.
     @Published var permissionMode = AgentPermissionMode.ask {
         didSet {
@@ -143,6 +145,7 @@ final class AgentModel: ObservableObject {
     @Published private(set) var workMap = WorkMap()
     /// The tickets and pull requests the transcript mentions, for the list under the work map.
     @Published private(set) var related = SessionLinks()
+    @Published private(set) var relatedState = SessionRelatedState()
     @Published private(set) var problem: String?
     @Published private(set) var files: [String] = []
     @Published var folder: String
@@ -155,8 +158,10 @@ final class AgentModel: ObservableObject {
     var reveal: ((String) -> Bool)?
     private var client: AgentClient?
     private var lastModel: String?
+    private var providerItems: [AgentProvider: [AgentItem]] = [:]
     private var rulesChanged: AnyCancellable?
     private var chromeSitesChanged: AnyCancellable?
+    private var providerChanged: AnyCancellable?
 
     /// Replaced by the debug preview, so it never writes the app's own settings.
     static var defaults = UserDefaults.standard
@@ -171,15 +176,100 @@ final class AgentModel: ObservableObject {
         loadMode()
         rulesChanged = AgentRuleStore.shared.$rules.dropFirst().sink { [weak self] in self?.sendRules($0) }
         chromeSitesChanged = AgentChromeSiteStore.shared.$hosts.dropFirst().sink { [weak self] in self?.client?.send(.chromeHosts($0)) }
-        if let main, let session = WorkspaceDefaults.session(main.id) {
+        providerChanged = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: defaults).sink { [weak self] _ in self?.switchDisabledProvider() }
+        if let session = savedSession() {
             sessionID = session
-            remember(session)
-            restore()
+            if provider == .claude {
+                remember(session)
+                restore()
+            }
         }
     }
 
     /// The pull request url, topic key or assistant key the agent is saved under; nil for Main and a plain folder.
     var agentKey: String? { prURL ?? topic?.key ?? assistant?.key ?? routine?.key }
+
+    private var providerSessionKey: String? { agentKey ?? workspace.map { "main:\($0)" } }
+    private static let codexSessionsKey = "agentCodexSessions"
+    private static var codexSessions: [String: String] {
+        get { defaults.dictionary(forKey: codexSessionsKey) as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: codexSessionsKey) }
+    }
+
+    private func savedSession() -> String? {
+        if provider == .claude {
+            if let key = agentKey { return Self.savedSessions[key] }
+            return workspace.flatMap(WorkspaceDefaults.session)
+        }
+        return providerSessionKey.flatMap { Self.codexSessions[$0] }
+    }
+
+    private func saveSession(_ session: String?) {
+        if provider == .claude {
+            if let agentKey { Self.savedSessions[agentKey] = session }
+            if let workspace, prURL == nil { WorkspaceDefaults.setSession(session, for: workspace) }
+        } else if let key = providerSessionKey {
+            var sessions = Self.codexSessions
+            sessions[key] = session
+            Self.codexSessions = sessions
+        }
+    }
+
+    var modelChoice: AgentModelChoice {
+        AgentModelChoice(provider: provider, model: provider == .claude ? model : (Self.defaults.string(forKey: AgentProvider.codexModelKey) ?? ""))
+    }
+
+    func chooseModel(_ choice: AgentModelChoice) {
+        guard !busy, AgentProvider.enabled(choice.provider, defaults: Self.defaults) else { return }
+        if choice.provider != provider {
+            handOff(to: choice.provider)
+            providerItems[provider] = items
+            provider = choice.provider
+            lastModel = nil
+            sessionID = savedSession()
+            queued = []
+            problem = nil
+            restoring = nil
+            if let previous = providerItems[provider] { replaceItems(previous) }
+            else if provider == .claude, sessionID != nil { restore() }
+            else { replaceItems([]) }
+        }
+        if provider == .claude { model = choice.model }
+        else { Self.defaults.set(choice.model, forKey: AgentProvider.codexModelKey) }
+        Self.defaults.set(provider.rawValue, forKey: AgentProvider.key)
+    }
+
+    private static let handoffsKey = "agentProviderHandoffs"
+    private var unsavedHandoffs: [String: String] = [:]
+
+    private func handoffValue(_ field: String) -> String? {
+        guard let key = providerSessionKey else { return unsavedHandoffs[field] }
+        return (Self.defaults.dictionary(forKey: Self.handoffsKey) as? [String: String])?["\(key)|\(field)"]
+    }
+
+    private func setHandoffValue(_ value: String?, field: String) {
+        guard let key = providerSessionKey else { return unsavedHandoffs[field] = value }
+        var values = Self.defaults.dictionary(forKey: Self.handoffsKey) as? [String: String] ?? [:]
+        values["\(key)|\(field)"] = value
+        Self.defaults.set(values, forKey: Self.handoffsKey)
+    }
+
+    private func handoff(for provider: AgentProvider) -> String? { handoffValue("pending.\(provider.rawValue)") }
+
+    /// Queues what the current provider did since it took over for `next`, which has not seen it.
+    private func handOff(to next: AgentProvider) {
+        let since = handoffValue("since.\(provider.rawValue)").flatMap(Double.init).map(Date.init(timeIntervalSince1970:)) ?? .distantPast
+        let digest = AgentHandoff.digest(items: items, since: since, from: provider)
+        if !digest.isEmpty { setHandoffValue(AgentHandoff.merge(handoff(for: next), digest), field: "pending.\(next.rawValue)") }
+        setHandoffValue(String(Date().timeIntervalSince1970), field: "since.\(next.rawValue)")
+    }
+
+    private func switchDisabledProvider() {
+        guard !busy, !AgentProvider.enabled(provider, defaults: Self.defaults) else { return }
+        guard let alternative = AgentProvider.allCases.first(where: { $0 != provider && AgentProvider.enabled($0, defaults: Self.defaults) }) else { return }
+        guard let choice = AgentLogic.equivalent(modelChoice, to: alternative) else { return }
+        chooseModel(choice)
+    }
 
     /// The assistant whose instructions, tools and permissions this agent follows: its own, or the one its routine runs as.
     private var actingAs: AssistantEntry? {
@@ -233,6 +323,7 @@ final class AgentModel: ObservableObject {
 
     /// Whether the prompt now running started a session rather than continued one, so what Claude Code counts for it is all this turn's own.
     private var turnStartsSession = true
+    private var stopRequested = false
 
     /// Who a call is charged to on the usage page.
     private var usageSource: (kind: UsageKind, key: String?, name: String, workspace: String?) {
@@ -418,7 +509,7 @@ final class AgentModel: ObservableObject {
     /// Starts afresh; the session so far stays in the history, so it can be picked again.
     func newSession() {
         if busy { stop() }
-        if let agentKey { Self.savedSessions[agentKey] = nil }
+        saveSession(nil)
         sessionID = nil
         lastModel = nil
         restoring = nil
@@ -432,10 +523,10 @@ final class AgentModel: ObservableObject {
 
     private func replaceItems(_ new: [AgentItem]) {
         related = SessionLinks()
+        relatedState.reset()
         items = new
         transcriptRevision += 1
         workMap = WorkMap()
-        refreshRelated(all: true)
     }
 
     /// What this session was made for: its pull request, its ticket and the pull requests linked to it.
@@ -450,14 +541,24 @@ final class AgentModel: ObservableObject {
         SessionProjects.set(configured: WorkspaceStore.shared.workspaces.flatMap(\.jiraProjects), pinned: relatedPinned)
     }
 
-    /// Reads the newest items, or all of them after the transcript was replaced; the older ones were read when they came.
-    private func refreshRelated(all: Bool = false) {
-        var next = related
-        let recent = all || items.count <= Self.relatedWindow ? items : Array(items.suffix(Self.relatedWindow))
-        if next.update(recent, projects: relatedProjects) { related = next }
-    }
+    func toggleRelated() {
+        if relatedState.visible {
+            relatedState.close()
+            return
+        }
 
-    private static let relatedWindow = 60
+        let generation = relatedState.open()
+        related = SessionLinks()
+        let inputs = SessionRelatedScan.inputs(from: items)
+        let projects = relatedProjects
+        Task { @MainActor [weak self] in
+            let links = await Task.detached(priority: .utility) {
+                SessionRelatedScan.links(from: inputs, projects: projects)
+            }.value
+            guard let self, relatedState.finish(generation) else { return }
+            related = links
+        }
+    }
 
     #if DEBUG
     func preview(workMap: WorkMap) { self.workMap = workMap }
@@ -466,12 +567,16 @@ final class AgentModel: ObservableObject {
         var links = SessionLinks()
         links.update(items, projects: projects)
         related = links
+        let generation = relatedState.open()
+        _ = relatedState.finish(generation)
     }
     #endif
 
     /// Continues an earlier session: its folder, and its transcript read back from Claude Code's file.
     func switchTo(_ entry: AgentSessionEntry) {
-        guard !busy, entry.id != sessionID else { return }
+        guard !busy, provider != .claude || entry.id != sessionID else { return }
+        chooseModel(AgentModelChoice(provider: .claude, model: AgentSessions.model(for: entry, fallback: model)))
+        guard provider == .claude else { return }
         history = AgentSessionStore.update(historyKey) { AgentSessions.record(entry, in: $0) }
         if entry.folder != folder {
             folder = entry.folder
@@ -487,12 +592,13 @@ final class AgentModel: ObservableObject {
 
     /// Continues a Claude Code session brought in from outside; while a turn runs it only joins the list.
     func continueImported(_ entry: AgentSessionEntry) {
+        guard provider == .claude else { return }
         guard busy else { return switchTo(entry) }
         history = AgentSessionStore.update(historyKey) { AgentSessions.record(entry, in: $0) }
     }
 
     func forget(_ id: String) {
-        guard id != sessionID else { return }
+        guard provider != .claude || id != sessionID else { return }
         history = AgentSessionStore.update(historyKey) { AgentSessions.removing(id, from: $0) }
     }
 
@@ -595,8 +701,8 @@ final class AgentModel: ObservableObject {
         history = AgentSessionStore.list(for: historyKey)
         restoring = nil
         replaceItems([])
-        sessionID = agentKey.flatMap { Self.savedSessions[$0] }
-        restore()
+        sessionID = savedSession()
+        if provider == .claude { restore() }
         loadMode()
         loadFiles()
     }
@@ -729,26 +835,30 @@ final class AgentModel: ObservableObject {
         restoring == nil && send(text)
     }
 
-    /// A message for the turn that is running: it waits above the prompt, and can be taken back, until the agent is about to call
-    /// the model again and then continues the same turn.
     private func sendWhileWorking(_ text: String, images: [AgentImage]) -> Bool {
         guard let client, client.isRunning else { return false }
         let prompt = AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images)
         let send = AgentPendingSend(id: UUID().uuidString, text: text, prompt: prompt, images: images)
+        if provider == .claude, !client.send(.message(id: send.id, text: prompt, images: images)) { return false }
         pending.append(send)
-        client.send(.message(id: send.id, text: prompt, images: images))
         return true
     }
 
     func cancelPending(_ send: AgentPendingSend) {
-        client?.send(.cancelMessage(id: send.id))
+        if provider == .codex { restore(AgentPending.take([send.id], from: &pending)) }
+        else { client?.send(.cancelMessage(id: send.id)) }
     }
 
     /// Puts messages that never reached the agent back in the prompt.
     private func restore(_ sends: [AgentPendingSend]) {
         guard !sends.isEmpty else { return }
         draft = AgentPending.restored(sends, draft: draft)
-        images = Array((sends.flatMap(\.images) + images).prefix(AgentImages.maxCount))
+        images = sends.flatMap(\.images) + images
+    }
+
+    private func restorePending() {
+        restore(pending)
+        pending.removeAll()
     }
 
     func attach(_ sources: [AgentImageSource]) {
@@ -857,29 +967,43 @@ final class AgentModel: ObservableObject {
 
     @discardableResult
     private func start(_ text: String, images: [AgentImage] = []) -> Bool {
+        guard AgentProvider.enabled(provider, defaults: Self.defaults) else {
+            problem = "\(provider.title) is disabled in Settings > Agent. Enable it to start a new turn."
+            AgentLogic.apply(.error(problem ?? "Provider is disabled."), to: &items)
+            return false
+        }
         guard FileManager.default.fileExists(atPath: folder) else {
             AgentLogic.apply(.missingFolder(folder), to: &items)
             return false
         }
         guard refreshAssistant(), let client = runningClient() else { return false }
-        if followsDefaultModel { followDefaultModel() }
+        if provider == .claude, followsDefaultModel { followDefaultModel() }
         problem = nil
         clearBlocked()
         withdrawAttention()
-        items.append(AgentItem(id: "user-\(items.count)", kind: .user(text), images: images.map(\.path)))
-        workMap.prompt(model: model, at: Date())
-        let prompt = AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images)
-        busy = true
+        let selectedModel = provider == .claude ? model : (Self.defaults.string(forKey: AgentProvider.codexModelKey) ?? "")
+        let pendingHandoff = handoff(for: provider), previous = AgentProvider.allCases.first { $0 != provider } ?? provider
+        let prompt = AgentHandoff.prompt(AgentImages.promptText(AgentLogic.expandMentions(text, cwd: folder) { FileManager.default.fileExists(atPath: $0) }, images: images),
+                                         digest: pendingHandoff, from: previous)
         let system = systemPrompt, allowedTools = actingAs.map { Assistants.allowedTools($0.role) }, delegateFrom = isMain ? workspace : nil
-        lastModel = model
+        lastModel = selectedModel
         turnStartsSession = sessionID == nil
-        client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: model,
-                            appendSystemPrompt: system, mode: permissionMode, chrome: chrome,
+        let selectedMode = provider == .codex && permissionMode != .auto ? .ask : permissionMode
+        guard client.send(.prompt(text: prompt, cwd: folder, sessionID: sessionID, model: selectedModel.isEmpty ? nil : selectedModel, provider: provider,
+                            appendSystemPrompt: system, mode: selectedMode, chrome: chrome,
                             allowAllChrome: Self.defaults.bool(forKey: AgentLogic.chromeAllowAllKey),
                             allowedChromeHosts: AgentChromeSiteStore.shared.hosts,
                             fork: ClaudeImport.shouldFork(sessionID, records: Self.importRecords), allowedTools: allowedTools,
                             delegateFrom: delegateFrom, images: images, instructions: PromptTemplates.agentInstructions(workspace: promptWorkspace, locations: locations),
-                            roleWaitSeconds: routine != nil ? RoleTools.waitSeconds() : nil))
+                            roleWaitSeconds: routine != nil ? RoleTools.waitSeconds() : nil)) else {
+            problem = "The agent disconnected before the message could be sent."
+            return false
+        }
+        if pendingHandoff != nil { setHandoffValue(nil, field: "pending.\(provider.rawValue)") }
+        items.append(AgentItem(id: "user-\(items.count)", kind: .user(text), images: images.map(\.path)))
+        workMap.prompt(model: selectedModel, at: Date())
+        stopRequested = false
+        busy = true
         return true
     }
 
@@ -993,8 +1117,11 @@ final class AgentModel: ObservableObject {
         if busy { queued.append(text) } else { _ = start(text) }
     }
 
-    func stop() {
+    func stop(caller: StaticString = #function, file: StaticString = #fileID, line: Int = #line) {
+        AgentDiagnostics.record("interrupt.requested \(file):\(line) \(caller)", session: sessionID)
         withdrawAttention()
+        stopRequested = true
+        if provider == .codex { restorePending() }
         client?.send(.interrupt)
     }
 
@@ -1010,7 +1137,8 @@ final class AgentModel: ObservableObject {
         return false
     }
 
-    func stopClient() {
+    func stopClient(caller: StaticString = #function, file: StaticString = #fileID, line: Int = #line) {
+        if busy { AgentDiagnostics.record("client.terminate \(file):\(line) \(caller)", session: sessionID) }
         client?.terminate()
         client = nil
         busy = false
@@ -1065,9 +1193,13 @@ final class AgentModel: ObservableObject {
             problem = "The agent sidecar is not built. Run `npm ci && npm run build` in the agent folder of the WorkTime checkout."
             return nil
         }
-        let childEnvironment = AgentLogic.childEnvironment(environment, nodeFolder: node.deletingLastPathComponent().path,
+        var childEnvironment = AgentLogic.childEnvironment(environment, nodeFolder: node.deletingLastPathComponent().path,
                                                            mcpCommand: Bundle.main.executablePath, workspace: workspace ?? assistant?.workspace ?? routine?.workspace,
                                                            agent: isMain ? workspace.map(Workspaces.mainKey) : agentKey)
+        if childEnvironment["WORKTIME_CODEX"] == nil,
+           let codex = CodexSetup.findCLI(environment: childEnvironment) {
+            childEnvironment["WORKTIME_CODEX"] = codex.path
+        }
         do {
             let client = try AgentClient(node: node, script: script, environment: childEnvironment, onLine: { [weak self] line in
                 Task { @MainActor [weak self] in self?.receive(line) }
@@ -1085,6 +1217,14 @@ final class AgentModel: ObservableObject {
 
     private func receive(_ line: String) {
         let object = AgentDelegation.object(line)
+        if object?["type"] as? String == "codex_diagnostic" {
+            if let stage = object?["stage"] as? String,
+               ["turn.started", "interrupt.forwarded", "interrupt.no_turn", "turn.completed", "turn.failed", "turn.interrupted", "turn.unknown",
+                "report.tool.started", "report.tool.completed", "report.tool.failed", "approval.elicitation.received", "server.exited"].contains(stage) {
+                AgentDiagnostics.record(stage, run: object?["run"] as? String, session: object?["session"] as? String, turn: object?["turn"] as? String)
+            }
+            return
+        }
         if object?["type"] as? String == "resolve_target", let workspace {
             let key = AgentDelegation.target(object?["input"] as? [String: Any] ?? [:], workspace: workspace)?.key
             client?.send(.target(id: object?["id"] as? String ?? "", key: key))
@@ -1119,24 +1259,31 @@ final class AgentModel: ObservableObject {
                 if routine != nil, let asked = items.last { answer(asked, allow: false) }
             }
         }
-        if case .idle = event { finishTurn() }
+        if case .idle = event { finishTurn(completed: object?["completed"] as? Bool == true) }
     }
 
     /// The session the sidecar reports; a fork of an imported original replaces it in the list.
     private func adopt(_ session: String) {
         let previous = sessionID
         sessionID = session
+        guard provider == .claude else { return }
         guard let previous, previous != session, ClaudeImport.shouldFork(previous, records: Self.importRecords) else { return }
         Self.importRecords = ClaudeImport.forked(previous, into: session, in: Self.importRecords)
         forget(previous)
     }
 
-    private func finishTurn() {
+    private func finishTurn(completed: Bool) {
         busy = false
         defer { if slotRole != nil { AssistantSlots.shared.changed() } }
-        restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
-        if let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
+        if provider == .codex, completed, !stopRequested, sessionID != nil, AgentProvider.enabled(.codex, defaults: Self.defaults),
+           let next = pending.first, start(next.text, images: next.images) {
+            pending.removeFirst()
+            return
+        }
+        restorePending()
+        if provider == .claude, let sessionID { history = AgentSessionStore.update(historyKey) { AgentSessions.touch(sessionID, at: Date(), model: lastModel, in: $0) } }
         resultSeen = visiblePanes > 0
+        switchDisabledProvider()
         withdrawAttention()
         blocked = routine == nil ? Blocked.calls(in: items, chromeOn: chrome, assistant: actingAs?.role.name) : []
         if let routine {
@@ -1149,7 +1296,7 @@ final class AgentModel: ObservableObject {
     private func exited(status: Int32, errors: String) {
         client = nil
         sessionAllowed = []
-        restore(AgentPending.take(Set(pending.map(\.id)), from: &pending))
+        restorePending()
         guard busy else { return }
         busy = false
         if slotRole != nil { AssistantSlots.shared.changed() }
@@ -1157,9 +1304,14 @@ final class AgentModel: ObservableObject {
         AgentLogic.settleStreaming(in: &items)
         workMap.finish(at: Date())
         resultSeen = visiblePanes > 0
-        if AgentLogic.needsSignIn(errors) { return AgentLogic.appendSignIn(to: &items) }
+        if AgentLogic.needsSignIn(errors) {
+            AgentLogic.appendSignIn(to: &items)
+            switchDisabledProvider()
+            return
+        }
         let tail = errors.split(whereSeparator: \.isNewline).suffix(3).joined(separator: "\n")
         items.append(AgentItem(id: "error-\(items.count)", kind: .error("The agent stopped (exit \(status)). \(tail)")))
+        switchDisabledProvider()
     }
 }
 

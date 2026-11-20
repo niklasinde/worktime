@@ -74,6 +74,14 @@ enum ReminderLogic {
     static let morningHour = 9
     static let userInfoKey = "reminder"
 
+    static func immediateNotice(for request: ReminderRequest) -> NoticeRequest? {
+        guard request.action == .add, let draft = request.draft, draft.due == nil else { return nil }
+        let link = draft.link.flatMap { GitHubLink.pasted($0)?.url ?? $0 }
+        let notice = AgentNotice(id: request.id, title: draft.title, body: draft.notes, link: link,
+                                 source: request.source, created: request.created)
+        return NoticeRequest(id: request.id, action: .notify, notice: notice, source: request.source, created: request.created)
+    }
+
     static func requestName(_ id: String) -> String { "\(id).reminder.json" }
 
     static func isRequest(_ name: String) -> Bool { name.hasSuffix(".reminder.json") }

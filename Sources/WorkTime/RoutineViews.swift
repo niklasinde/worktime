@@ -275,8 +275,8 @@ struct RoutineEditorSheet: View {
     private var followUpFields: some View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle("Notify me with the answer", isOn: followUp.notify)
-            Toggle("Remind me to follow up", isOn: followUp.remind)
-                .help("A reminder linked to the pull request, the ticket or the message, made when the run finishes. With a question it stays until you answer.")
+            Toggle("Notify me to follow up", isOn: followUp.remind)
+                .help("Shows a notification linked to the pull request, ticket or message when the run finishes.")
             Toggle("Ask me what to do next", isOn: asking)
                 .help("The notification carries two buttons. The first starts an agent, the second skips, and both work without opening the app.")
             if routine.followUp?.ask != nil { askFields }

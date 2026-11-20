@@ -39,6 +39,7 @@ struct NoticeAsk: Codable, Equatable, Sendable {
     var pullRequest: String?
     /// What the event was, like `Review requested in #review-request`, shown in the session's timeline.
     var origin: String?
+    var links: [LinkEntity]?
 }
 
 /// The user's last answer to an automation's question, for its row.
@@ -138,9 +139,11 @@ enum AutomationAsks {
         text = text.replacingOccurrences(of: "{answer}", with: String(answer(run.summary).prefix(answerLimit)))
         let forAssistant = Assistants.isKey(agent)
         let ticket = forAssistant ? event.fields["ticket"].flatMap(JiraLogic.issueKey) : nil
+        let links = [event.link.flatMap(LinkTargets.entity), event.fields["ticket"].flatMap(LinkTargets.jira), event.pullRequest.flatMap(LinkTargets.pullRequest)].compactMap { $0 }
+            + (event.pullRequests ?? []).compactMap(LinkTargets.pullRequest)
         return NoticeAsk(routine: routine.id, yes: ask.yes, no: ask.no, agent: agent, prompt: String(text.prefix(AgentInbox.textLimit)), reminder: reminder,
                          pullRequests: several, event: event.id, eventText: [event.title, event.text].filter { !$0.isEmpty }.joined(separator: "\n"),
-                         ticket: ticket, pullRequest: forAssistant && ticket == nil ? event.pullRequest : nil, origin: origin(of: event))
+                         ticket: ticket, pullRequest: forAssistant && ticket == nil ? event.pullRequest : nil, origin: origin(of: event), links: Array(Set(links)).sorted())
     }
 
     /// What started the run: the kind of event and where it happened.

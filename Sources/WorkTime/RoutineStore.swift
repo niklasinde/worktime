@@ -432,11 +432,7 @@ final class RoutineStore: ObservableObject {
         let event = starting.removeValue(forKey: routine.id)
         if info?.sampled == true, run.status == .done { verify(routine, event: event) }
         if run.status == .done, info?.mode == .ai, routine.determinism == nil, routine.analyzed == nil, Determinism.autoAnalyze() { analyze(key, automatic: true) }
-        var reminder: String?
-        if let event, run.status == .done, routine.followUp?.remind == true, let made = Automations.reminder(for: event) {
-            reminder = TodoModel.shared.remind(title: made.title, source: made.source, preset: .noDate)
-        }
-        notify(routine, run: run, event: event, reminder: reminder)
+        notify(routine, run: run, event: event)
         if automationsEnabled(), let next = automationState.queued[routine.id]?.first {
             automationState.queued[routine.id]?.removeFirst()
             saveState()
@@ -455,12 +451,13 @@ final class RoutineStore: ObservableObject {
     }
 
     /// The notification of a run. An automation that asks makes it carry the question and its two buttons; the others carry the answer.
-    private func notify(_ routine: Routine, run: RoutineRun, event: AutomationEvent?, reminder: String? = nil) {
+    private func notify(_ routine: Routine, run: RoutineRun, event: AutomationEvent?) {
         var question: NoticeAsk?
         if let event, run.status == .done, let ask = routine.followUp?.ask {
-            question = AutomationAsks.notice(for: routine, event: event, run: run, ask: ask, reminder: reminder)
+            question = AutomationAsks.notice(for: routine, event: event, run: run, ask: ask, reminder: nil)
         }
-        if event != nil, question == nil, routine.followUp?.notify == false { return }
+        let followUp = run.status == .done && routine.followUp?.remind == true
+        if event != nil, question == nil, routine.followUp?.notify == false, !followUp { return }
         let text = event.map { event in
             question == nil ? Automations.notification(for: routine, event: event, run: run)
                 : AutomationAsks.notification(for: routine, event: event, run: run, ask: routine.followUp?.ask ?? AutomationAsk())

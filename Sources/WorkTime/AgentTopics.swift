@@ -24,13 +24,49 @@ final class TopicAgentStore: ObservableObject {
 
     func topic(_ key: String) -> TopicAgent? { topics.first { $0.key == key } }
 
+    enum LinkChoice { case existing(String), create, cancel }
+
+    func matches(_ links: [LinkEntity], workspace: String? = nil) -> [AgentState] {
+        guard !links.isEmpty else { return [] }
+        return TopicAgents.matching(links: links, states: AgentStateWriter.shared.states(), table: LinkStore.shared.table, workspace: workspace)
+    }
+
+    func choose(_ links: [LinkEntity], matches found: [AgentState]? = nil) -> LinkChoice {
+        let agents = found ?? matches(links)
+        guard !agents.isEmpty else { return .create }
+        let alert = NSAlert()
+        alert.messageText = "An agent is already linked"
+        alert.informativeText = "Continue with a linked agent or create a new one for " + links.map(\.id).joined(separator: ", ") + "?"
+        let picker = NSPopUpButton()
+        for agent in agents {
+            let detail = agent.lastPrompt.map { " · " + String($0.prefix(48)) } ?? ""
+            picker.addItem(withTitle: agent.title + detail + " (" + String(agent.key.suffix(8)) + ")")
+        }
+        picker.sizeToFit()
+        alert.accessoryView = picker
+        alert.addButton(withTitle: "Continue Existing")
+        alert.addButton(withTitle: "Create New")
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .existing(agents[picker.indexOfSelectedItem].key)
+        case .alertSecondButtonReturn: return .create
+        default: return .cancel
+        }
+    }
+
+    func openExisting(_ key: String, links: [LinkEntity]) {
+        LinkStore.shared.link(agent: key, to: links)
+        AgentHub.shared.showExact(key)
+    }
+
     /// Makes the topic and its folder, or says what is wrong with what was typed.
-    func make(name: String, jira: String, slack: String, folder: URL? = nil) -> Result<TopicAgent, TopicAgentError> {
+    func make(name: String, jira: String, slack: String, folder: URL? = nil, links: [LinkEntity] = []) -> Result<TopicAgent, TopicAgentError> {
         let folders = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         let taken = Set(topics.map { URL(fileURLWithPath: $0.folder).lastPathComponent } + folders)
         let made = TopicAgents.make(name: name, jira: jira, slack: slack, root: root, taken: taken, folder: folder?.path, now: Date())
         if case .success(let topic) = made {
             if folder == nil { try? FileManager.default.createDirectory(atPath: topic.folder, withIntermediateDirectories: true) }
+            LinkStore.shared.link(agent: topic.key, to: topic.linkTargets + links)
             topics.append(topic)
             save()
         }
@@ -50,13 +86,17 @@ final class TopicAgentStore: ObservableObject {
     /// Open in Agent on a Jira ticket: its topic agent, made the first time with the prompt to read the ticket waiting, in
     /// `folder` when given instead of a folder of its own. `isNew` says whether it was made now.
     @discardableResult
-    func open(ticket: JiraTicket, folder: URL? = nil) -> (topic: TopicAgent, isNew: Bool)? {
-        if let topic = TopicAgents.existing(jiraKey: ticket.key, in: topics) {
-            reopen(topic)
-            return (topic, false)
+    func open(ticket: JiraTicket, folder: URL? = nil, links: [LinkEntity] = []) -> (topic: TopicAgent, isNew: Bool)? {
+        let targets = [LinkEntity.jira(ticket.key)] + links
+        switch choose(targets) {
+        case .existing(let key):
+            openExisting(key, links: targets)
+            return topic(key).map { ($0, false) }
+        case .cancel: return nil
+        case .create: break
         }
         guard case .success(let topic) = make(name: TopicAgents.name(ticket: ticket.key, summary: ticket.summary), jira: ticket.key, slack: "",
-                                               folder: folder) else { return nil }
+                                               folder: folder, links: links) else { return nil }
         show(topic.key)
         return (topic, true)
     }
@@ -64,7 +104,12 @@ final class TopicAgentStore: ObservableObject {
     /// Open in Agent on a Slack message: the topic agent for its thread, made the first time.
     func open(slack message: SlackMessage, link: URL?) {
         let thread = link.flatMap { SlackLogic.threadLink($0.absoluteString) }
-        if let thread, let topic = TopicAgents.existing(slack: thread, in: topics) { return reopen(topic) }
+        let links = thread.map { [LinkEntity.slack($0.url)] } ?? []
+        switch choose(links) {
+        case .existing(let key): return openExisting(key, links: links)
+        case .cancel: return
+        case .create: break
+        }
         if case .success(let topic) = make(name: TopicAgents.name(slackPlace: message.place, author: message.author), jira: "", slack: thread?.url ?? "") {
             if thread == nil { load(topic).draft = "Help me with this Slack message from \(message.author ?? message.place): \(message.text)" }
             show(topic.key)
@@ -72,10 +117,10 @@ final class TopicAgentStore: ObservableObject {
     }
 
     /// The agent working on these pull requests together: the one already on all of them, else a new one with a folder of its own
-    /// (or the repository's checkout they share). A pull request is in one set only, so they leave any other.
+    /// (or the repository's checkout they share).
     @discardableResult
-    func makeSet(_ prs: [LinkedPR]) -> TopicAgent {
-        if let existing = PullRequestSets.set(coveringAll: prs.map(\.url), in: topics) {
+    func makeSet(_ prs: [LinkedPR], forceNew: Bool = false) -> TopicAgent {
+        if !forceNew, let existing = PullRequestSets.set(coveringAll: prs.map(\.url), in: topics) {
             add(prs, to: existing.key)
             return topic(existing.key) ?? existing
         }
@@ -86,15 +131,22 @@ final class TopicAgentStore: ObservableObject {
         let folder = PullRequestSets.workingFolder(prs, own: own)
         let set = TopicAgent(id: UUID().uuidString, name: name, folder: folder, created: Date(), pullRequests: prs)
         if folder == own { try? FileManager.default.createDirectory(atPath: own, withIntermediateDirectories: true) }
-        apply(PullRequestSets.assigning(prs.map(\.url), to: set.key, in: topics) + [set])
+        apply(topics + [set])
         return set
     }
 
     /// Makes the set for these pull requests, with their checkouts looked up, and shows it.
     func openSet(_ prs: [LinkedPR]) {
         Task { @MainActor in
-            let set = makeSet(await Self.withCheckouts(prs))
-            reopen(set)
+            let prs = await Self.withCheckouts(prs)
+            let links = prs.map { LinkEntity.pullRequest($0.target) }
+            switch choose(links) {
+            case .existing(let key):
+                if topic(key) != nil { add(prs, to: key) }
+                openExisting(key, links: links)
+            case .create: reopen(makeSet(prs, forceNew: true))
+            case .cancel: break
+            }
         }
     }
 
@@ -111,9 +163,9 @@ final class TopicAgentStore: ObservableObject {
         }
     }
 
-    /// Adds pull requests to an agent (a set or any other topic); they leave the set they were in.
+    /// Adds pull requests to an agent (a set or any other topic).
     func add(_ prs: [LinkedPR], to key: String) {
-        var updated = PullRequestSets.assigning(prs.map(\.url), to: key, in: topics)
+        var updated = topics
         guard let index = updated.firstIndex(where: { $0.key == key }) else { return }
         updated[index].pullRequests = PullRequestSets.adding(prs, to: updated[index].linked)
         apply(updated)
@@ -132,7 +184,13 @@ final class TopicAgentStore: ObservableObject {
     private func apply(_ updated: [TopicAgent]) {
         let before = Dictionary(uniqueKeysWithValues: topics.map { ($0.key, $0.linked) })
         topics = updated
-        for topic in topics where before[topic.key] != topic.linked { models[topic.key]?.open(topic: topic) }
+        for topic in topics where before[topic.key] != topic.linked {
+            let previous = Set((before[topic.key] ?? []).compactMap { LinkTargets.pullRequest($0.url) })
+            let current = Set(topic.linked.compactMap { LinkTargets.pullRequest($0.url) })
+            LinkStore.shared.link(agent: topic.key, to: Array(current.subtracting(previous)))
+            for removed in previous.subtracting(current) { LinkStore.shared.remove(LinkPair(.agent(topic.key), removed)) }
+            models[topic.key]?.open(topic: topic)
+        }
         save()
     }
 
@@ -183,16 +241,50 @@ final class TopicAgentStore: ObservableObject {
         save()
     }
 
-    /// A prompt for several pull requests at once: the set agent for them, made when there is none.
-    func deliverSet(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
-        guard case .success(let prs) = PullRequestSets.linked(request.prs ?? [request.agent]), prs.count > 1 else {
-            return AgentInbox.Reply(id: request.id, status: .rejected, message: AgentSetError.needTwo.message)
+    func deliverPullRequests(_ request: AgentInbox.Request) async -> AgentInbox.Reply {
+        guard case .success(let prs) = PullRequestSets.linked(request.prs ?? [request.agent]), let first = prs.first else {
+            return AgentInbox.Reply(id: request.id, status: .rejected, message: "A pull request is required.")
         }
-        let set = makeSet(await Self.withCheckouts(prs))
-        var forSet = request
-        forSet.agent = set.key
-        forSet.prs = nil
-        return deliver(forSet)
+        let prepared = await Self.withCheckouts(prs)
+        let workspace = WorkspaceStore.shared.assigned(AgentState(key: first.url, title: first.label, prURL: first.url, status: .idle))
+        let candidates = matches(request.linkTargets, workspace: workspace)
+        if !candidates.isEmpty {
+            return await ask(request, candidates: candidates, workspace: workspace, subject: .pullRequest(first.url), role: "Pull request")
+        }
+        if prs.count == 1 {
+            let model = PRAgents.shared.load(first.target, checkout: prepared.first?.checkout.map { URL(fileURLWithPath: $0) })
+            return PRAgents.deliver(request, to: model, title: AgentOverview.prTitle(first.url))
+        }
+        return createPRSession(request, prs: prepared, workspace: workspace)
+    }
+
+    private func createPRSession(_ request: AgentInbox.Request, prs: [LinkedPR], workspace: String) -> AgentInbox.Reply {
+        let set = makeSet(prs, forceNew: true)
+        WorkspaceStore.shared.move(set.key, to: workspace)
+        return send(request, to: set, note: TicketSessions.createdNote(name: set.name), created: true)
+    }
+
+    private func ask(_ request: AgentInbox.Request, candidates: [AgentState], workspace: String, subject: SessionSubject, role: String) async -> AgentInbox.Reply {
+        let previews = candidates.map { state in
+            TicketSessions.Preview(key: state.key, title: state.title, state: TicketSessions.stateText(state), updated: state.updatedAt,
+                                   excerpt: TicketSessions.clip(state.lastResult ?? state.lastPrompt ?? ""))
+        }
+        let now = Date(), seconds = RoleTools.waitSeconds()
+        let ask = TicketAsk(id: request.id, workspace: workspace, assistant: request.agent, assistantName: role, ticket: subject.ticket,
+                            pullRequest: subject.pullRequest, existing: previews[0], text: request.text, created: now,
+                            deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin, space: request.space, links: request.linkTargets,
+                            candidates: previews, request: request)
+        return await waitForAnswer(ask)
+    }
+
+    private func waitForAnswer(_ ask: TicketAsk) async -> AgentInbox.Reply {
+        guard TicketAsks.pending(assistant: ask.assistant, subject: ask.subject, in: TicketAskStore.shared.pending) == nil else {
+            return AgentInbox.Reply(id: ask.id, status: .rejected, message: "A choice for this agent and subject is already waiting.")
+        }
+        guard let (chosen, answer) = await TicketAskStore.shared.ask(ask) else {
+            return AgentInbox.Reply(id: ask.id, status: .rejected, message: "The linked agent choice expired. Nothing was sent.", timedOut: true)
+        }
+        return await finish(ask: chosen, answer: answer)
     }
 
     func deliver(_ request: AgentInbox.Request) -> AgentInbox.Reply {
@@ -206,10 +298,11 @@ final class TopicAgentStore: ObservableObject {
 
     /// Makes the assistant's session for the ticket or pull request, working in the assistant's own folder, without showing it.
     @discardableResult
-    func makeSession(_ entry: AssistantEntry, subject: SessionSubject) -> TopicAgent {
+    func makeSession(_ entry: AssistantEntry, subject: SessionSubject, links: [LinkEntity] = []) -> TopicAgent {
         let folder = AssistantStore.shared.folder(entry)
         if entry.role.folder == Assistants.ownFolder { try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true) }
         let topic = TicketSessions.make(entry: entry, subject: subject, folder: folder, now: Date())
+        LinkStore.shared.link(agent: topic.key, to: topic.linkTargets + links)
         topics.append(topic)
         save()
         return topic
@@ -234,51 +327,73 @@ final class TopicAgentStore: ObservableObject {
         guard entry.role.isUsable else { return reject(AssistantError.broken(entry.role.name, entry.role.problems.first?.text ?? "").message) }
         guard let subject = subject(of: request, entry: entry) else { return reject("A ticket or a pull request is needed.") }
         let existing = TicketSessions.existing(assistant: entry.key, subject: subject, in: topics)
+        let subjectLinks = [subject.ticket.map(LinkEntity.jira), subject.pullRequest.flatMap(LinkTargets.pullRequest)].compactMap { $0 }
+        if request.newSession != true {
+            let candidates = matches(request.linkTargets + subjectLinks, workspace: entry.workspace)
+            if candidates.contains(where: { $0.key != existing?.key }),
+               existing == nil || (TicketSessions.policy() == .ask && !TicketSessions.alwaysReuse().contains(entry.key)) {
+                return await ask(request, candidates: candidates, workspace: entry.workspace, subject: subject, role: entry.role.name)
+            }
+        }
         switch TicketSessions.resolve(existing: existing, forceNew: request.newSession == true, policy: TicketSessions.policy(),
                                       alwaysReuse: TicketSessions.alwaysReuse().contains(entry.key)) {
         case .create:
-            let topic = makeSession(entry, subject: subject)
+            let topic = makeSession(entry, subject: subject, links: request.linkTargets)
             return send(request, to: topic, note: TicketSessions.createdNote(name: topic.name), created: true)
         case .reuse(let topic):
             return send(request, to: topic, note: TicketSessions.reusedNote(name: topic.name, preview: nil, now: Date()))
         case .ask(let topic):
-            if TicketAsks.pending(assistant: entry.key, subject: subject, in: TicketAskStore.shared.pending) != nil {
-                return reject("A question about reusing the \(entry.role.name) session for \(subject.label) is already waiting for the user's answer; send again once they have answered.")
-            }
             let now = Date(), seconds = RoleTools.waitSeconds()
             let state = AgentStateWriter.shared.states().first { $0.key == topic.key }
             let ask = TicketAsk(id: request.id, workspace: entry.workspace, assistant: entry.key, assistantName: entry.role.name, ticket: subject.ticket,
                                 pullRequest: subject.pullRequest, existing: TicketSessions.preview(of: topic, state: state), text: request.text, created: now,
-                                deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin, space: request.space)
-            guard let answer = await TicketAskStore.shared.ask(ask) else {
-                var timedOut = reject(TicketSessions.timeoutMessage(role: entry.role.name, subject: subject.label, minutes: max(1, seconds / 60)))
-                timedOut.timedOut = true
-                return timedOut
-            }
-            return await finish(ask: ask, answer: answer, request: request)
+                                deadline: now.addingTimeInterval(TimeInterval(seconds)), origin: request.origin, space: request.space, links: request.linkTargets)
+            return await waitForAnswer(ask)
         }
     }
 
-    /// Does what the user chose for a waiting question: the prompt goes to the session it was about, or to a new one. When that session
-    /// is gone meanwhile, a new one is made.
+    /// Delivers the pending prompt to the selected agent or a newly created session.
     func finish(ask: TicketAsk, answer: TicketSessions.Answer, request: AgentInbox.Request? = nil) async -> AgentInbox.Reply {
-        let request = request ?? AgentInbox.Request(id: ask.id, agent: ask.assistant, text: ask.text, created: Date(), ticket: ask.ticket, pr: ask.pullRequest,
-                                                    origin: ask.origin, space: ask.space)
+        let request = request ?? ask.request ?? AgentInbox.Request(id: ask.id, agent: ask.assistant, text: ask.text, created: Date(), ticket: ask.ticket, pr: ask.pullRequest,
+                                                    origin: ask.origin, space: ask.space, links: ask.links)
+        if answer == .cancel { return AgentInbox.Reply(id: ask.id, status: .rejected, message: "Cancelled. Nothing was sent.") }
+        if ask.candidates != nil {
+            if answer != .startNew {
+                let key = ask.existing.key
+                if let topic = topic(key), !topic.archived {
+                    return send(request, to: topic, note: TicketSessions.chosenNote(.reuse, name: topic.name))
+                }
+                if let target = GitHubLink.pullRequest(at: key) {
+                    var exact = request
+                    exact.links = request.linkTargets
+                    exact.agent = target.url
+                    var reply = await PRAgents.shared.deliver(exact)
+                    reply.note = TicketSessions.chosenNote(.reuse, name: ask.existing.title)
+                    return reply
+                }
+                return AgentInbox.Reply(id: ask.id, status: .rejected, message: "The selected agent is no longer available.")
+            }
+            if !Assistants.isKey(request.agent), case .success(let prs) = PullRequestSets.linked(request.prs ?? [request.agent]) {
+                return createPRSession(request, prs: await Self.withCheckouts(prs), workspace: ask.workspace)
+            }
+        }
         guard let entry = AssistantStore.shared.entry(ask.assistant), entry.role.isUsable else {
             return AgentInbox.Reply(id: request.id, status: .rejected, message: "The assistant \(ask.assistantName) is gone; nothing was sent.")
         }
-        if answer == .alwaysReuse { TicketSessions.setAlwaysReuse(ask.assistant) }
-        if answer != .startNew, let topic = topic(ask.existing.key), !topic.archived {
+        if answer != .startNew {
+            guard let topic = topic(ask.existing.key), !topic.archived else {
+                return AgentInbox.Reply(id: ask.id, status: .rejected, message: "The selected agent is no longer available.")
+            }
+            if answer == .alwaysReuse { TicketSessions.setAlwaysReuse(ask.assistant) }
             return send(request, to: topic, note: TicketSessions.chosenNote(answer, name: topic.name))
         }
-        let topic = makeSession(entry, subject: ask.subject)
+        let topic = makeSession(entry, subject: ask.subject, links: request.linkTargets)
         return send(request, to: topic, note: TicketSessions.chosenNote(.startNew, name: topic.name), created: true)
     }
 
     private func send(_ request: AgentInbox.Request, to topic: TopicAgent, note: String, created: Bool = false) -> AgentInbox.Reply {
-        if let space = request.space { WorkspaceStore.shared.add(space: space, to: topic.key) }
         var forTopic = request
-        forTopic.space = nil
+        forTopic.links = request.linkTargets
         forTopic.agent = topic.key
         forTopic.ticket = nil
         forTopic.pr = nil
@@ -423,6 +538,24 @@ struct NewTopicAgentSheet: View {
     }
 
     private func create() {
+        guard jira.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || LinkTargets.jira(jira) != nil else {
+            problem = TopicAgentError.badJiraKey(jira).message
+            return
+        }
+        let thread = SlackLogic.threadLink(slack)
+        guard slack.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || thread != nil else {
+            problem = TopicAgentError.badSlackLink(slack).message
+            return
+        }
+        let links = [LinkTargets.jira(jira), thread.map { LinkEntity.slack($0.url) }].compactMap { $0 }
+        switch store.choose(links) {
+        case .existing(let key):
+            done(nil)
+            store.openExisting(key, links: links)
+            return
+        case .cancel: return
+        case .create: break
+        }
         switch store.make(name: name, jira: jira, slack: slack) {
         case .success(let topic): done(topic)
         case .failure(let error): problem = error.message

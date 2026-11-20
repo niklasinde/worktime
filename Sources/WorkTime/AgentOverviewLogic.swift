@@ -223,6 +223,12 @@ enum AgentOverview {
 
 /// A Claude Code session transcript (`~/.claude/projects/<folder>/<id>.jsonl`) cut down to prompts, replies and tool calls.
 enum AgentTranscript {
+    static func savedItems(sessionID: String, folder: String, root: URL = ClaudeTranscripts.projectsFolder) -> [AgentItem] {
+        guard let url = url(sessionID: sessionID, cwd: folder, root: root),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return items(jsonl: text, cwd: folder)
+    }
+
     static let defaultLimit = 12_000
     static let entryLimit = 3000
 
@@ -320,7 +326,7 @@ enum AgentTranscript {
             let before = items.count
             defer { if let when { for index in before..<items.count { items[index].date = when } } }
             switch line {
-            case .user(let text): items.append(AgentItem(id: "user-\(items.count)", kind: .user(text)))
+            case .user(let text): items.append(AgentItem(id: "user-\(items.count)", kind: .user(AgentHandoff.strip(text))))
             case .assistant(let text): AgentLogic.apply(.text(text), to: &items)
             case .toolUse(let id, let tool, let input, let lineCwd):
                 AgentLogic.apply(.toolUse(id: id, tool: tool, summary: AgentLogic.summary(tool: tool, input: input, cwd: lineCwd.isEmpty ? cwd : lineCwd),
@@ -374,6 +380,12 @@ enum AgentInbox {
         var origin: String?
         /// A space id to add to the session the prompt goes to, or to the agent.
         var space: String?
+        var links: [LinkEntity]?
+
+        var linkTargets: [LinkEntity] {
+            (links ?? []) + [ticket.map(LinkEntity.jira), pr.flatMap(LinkTargets.pullRequest), LinkTargets.pullRequest(agent)].compactMap { $0 }
+                + (prs ?? []).compactMap(LinkTargets.pullRequest)
+        }
     }
 
     struct Reply: Codable, Equatable {
@@ -411,9 +423,9 @@ enum AgentInbox {
 
     /// A request for an agent (a pull request url or a topic key) and some text, or why there can be none.
     static func request(agent: String, text: String, now: Date, id: String = UUID().uuidString, prs: [String]? = nil, ticket: String? = nil,
-                        newSession: Bool? = nil, pr: String? = nil, origin: String? = nil, space: String? = nil) -> Result<Request, AgentInboxError> {
+                        newSession: Bool? = nil, pr: String? = nil, origin: String? = nil, space: String? = nil, links: [LinkEntity]? = nil) -> Result<Request, AgentInboxError> {
         let request = Request(id: id, agent: agent.trimmingCharacters(in: .whitespaces), text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                              created: now, prs: prs, ticket: ticket, newSession: newSession, pr: pr, origin: origin, space: space)
+                              created: now, prs: prs, ticket: ticket, newSession: newSession, pr: pr, origin: origin, space: space, links: links)
         return problem(request, now: now).map { .failure($0) } ?? .success(request)
     }
 
@@ -504,7 +516,7 @@ enum AgentInbox {
         }
         if reply.status != .rejected, let note = reply.note { lines.append(note) }
         if reply.status != .rejected {
-            lines.append(reply.sessionID.map { "Session: \($0) \u{2014} read the outcome later with agent_session." }
+            lines.append(reply.sessionID.map { "Session: \($0) \u{2014} use wait_for to check the outcome." }
                          ?? "It starts a new session; its id shows in agents_overview once it has begun.")
         }
         return lines.joined(separator: "\n") + "\n"

@@ -42,7 +42,11 @@ final class AgentHub: ObservableObject {
     var currentMainKey: String { isMainSelected ? selected : UserDefaults.standard.string(forKey: Self.lastMainKey) ?? Workspaces.mainKey(Workspaces.defaultID) }
 
     func show(_ key: String? = nil) {
-        selected = key.map { PullRequestSets.route($0, in: TopicAgentStore.shared.topics) } ?? currentMainKey
+        showExact(key.map { PullRequestSets.route($0, in: TopicAgentStore.shared.topics) } ?? currentMainKey)
+    }
+
+    func showExact(_ key: String) {
+        selected = key
         showPage?()
     }
 
@@ -124,6 +128,7 @@ struct AgentsPage: View {
 /// The agents by workspace, each group with its Main first, then the pull requests' and topics' agents, the ones that need you first.
 struct AgentList: View {
     @ObservedObject var hub: AgentHub
+    @ObservedObject private var linkStore = LinkStore.shared
     let groups: [Workspaces.Group]
     @Binding var search: AgentSearchField
     @FocusState private var searchFocused: Bool
@@ -451,7 +456,7 @@ struct AgentList: View {
                         Text(GitHubLogic.updatedText(updated, now: now)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                Text(isMain ? "Overview of \(workspaces.workspace(state.workspace)?.name ?? "everything")" : Self.title(state)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(isMain ? "Overview of \(workspaces.workspace(state.workspace)?.name ?? "everything")" : title(state)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 if need != .idle {
                     Text(state.status == .signedOut ? "Signed out of Claude" : need.label).font(.caption2).foregroundStyle(Self.color(need))
                 }
@@ -478,9 +483,20 @@ struct AgentList: View {
         state.prURL.map(AgentSessions.shortReference) ?? state.title
     }
 
-    private static func title(_ state: AgentState) -> String {
+    private func title(_ state: AgentState) -> String {
         if state.isTopic {
-            let links = [state.jiraKey, state.slackURL.map { _ in "Slack thread" }].compactMap { $0 }
+            let agent = LinkEntity.agent(state.key)
+            let legacy = topics.topic(state.key)?.linkTargets ?? []
+            let pending = legacy.filter { linkStore.table.link(LinkPair(agent, $0)) == nil }
+            let targets = Set(linkStore.table.neighbors(of: agent) + pending).sorted()
+            let links = targets.compactMap { target -> String? in
+                switch target.kind {
+                case .jira: return target.id
+                case .githubPR: return AgentOverview.prTitle(LinkTargets.pullRequestURL(target.id) ?? target.id)
+                case .slackThread: return "Slack thread"
+                default: return nil
+                }
+            }
             return links.isEmpty ? "Topic agent" : links.joined(separator: " \u{00B7} ")
         }
         let reference = state.prURL.map { AgentOverview.prTitle($0) } ?? state.title
@@ -613,6 +629,7 @@ struct AgentSessionsButton: View {
 
 struct AgentSessionList: View {
     @ObservedObject var model: AgentModel
+    @AppStorage(AgentProvider.claudeEnabledKey) private var claudeEnabled = true
     var done: () -> Void = {}
     @State var others: [AgentSessionEntry]?
     @State var showsOthers = false
@@ -625,9 +642,9 @@ struct AgentSessionList: View {
                     row(title: "New session", detail: "Not started yet", current: true) {}
                 }
                 ForEach(model.history) { entry in
-                    row(title: entry.title, detail: detail(entry, now: now), current: entry.id == model.sessionID) { pick(entry) }
+                    row(title: entry.title, detail: detail(entry, now: now), current: model.provider == .claude && entry.id == model.sessionID) { pick(entry) }
                         .contextMenu {
-                            Button("Remove from List") { model.forget(entry.id) }.disabled(entry.id == model.sessionID)
+                            Button("Remove from List") { model.forget(entry.id) }.disabled(model.provider == .claude && entry.id == model.sessionID)
                         }
                 }
                 Divider().padding(.vertical, 4)
@@ -652,6 +669,7 @@ struct AgentSessionList: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
+                    .help("Find Claude sessions in this folder")
                 }
             }
             .padding(8)
@@ -662,8 +680,8 @@ struct AgentSessionList: View {
     }
 
     private func pick(_ entry: AgentSessionEntry) {
-        model.switchTo(entry)
         done()
+        if claudeEnabled { model.switchTo(entry) } else { model.viewingHistory = entry }
     }
 
     private func detail(_ entry: AgentSessionEntry, now: Date) -> String {
@@ -688,19 +706,81 @@ struct AgentSessionList: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(claudeEnabled ? "Open this session" : "View the saved transcript")
+    }
+}
+
+private struct AgentHistoryReader: View {
+    let entry: AgentSessionEntry
+    @Environment(\.dismiss) private var dismiss
+    @State private var items: [AgentItem]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(entry.title).font(.headline).lineLimit(2)
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            if let model = entry.model { Text(AgentLogic.modelName(model)).foregroundStyle(.secondary) }
+            Divider()
+            if let items {
+                if items.isEmpty { Text("No saved messages were found for this session.").foregroundStyle(.secondary) }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                            AgentItemRow(item: item, folder: entry.folder, answer: { _, _, _ in }, move: { _ in })
+                        }
+                    }
+                }
+            } else { ProgressView("Loading saved transcript…") }
+        }
+        .padding(20)
+        .frame(minWidth: 520, idealWidth: 700, minHeight: 380, idealHeight: 550, alignment: .topLeading)
+        .task(id: entry.id) {
+            let entry = entry
+            let loaded = await Task.detached(priority: .userInitiated) {
+                AgentTranscript.savedItems(sessionID: entry.id, folder: entry.folder)
+            }.value
+            if !Task.isCancelled { items = loaded }
+        }
     }
 }
 
 struct AgentModelPicker: View {
     @ObservedObject var model: AgentModel
+    @StateObject private var codexSetup = CodexSetupModel()
+    @AppStorage(AgentProvider.claudeEnabledKey) private var claudeEnabled = true
+    @AppStorage(AgentProvider.codexEnabledKey) private var codexEnabled = true
 
     var body: some View {
-        Picker("Model", selection: $model.model) {
-            ForEach(AgentLogic.models, id: \.id) { Text($0.name).tag($0.id) }
+        let selected = model.modelChoice
+        let codexModels = CodexSetup.models(codexSetup.models, including: selected.provider == .codex ? selected.model : nil)
+        Picker("Model", selection: Binding(get: { model.modelChoice }, set: model.chooseModel)) {
+            if claudeEnabled {
+                Section("Claude") {
+                    ForEach(AgentLogic.models, id: \.id) { claude in
+                        Text(claude.name).tag(AgentModelChoice(provider: .claude, model: claude.id))
+                    }
+                }
+            } else if selected.provider == .claude {
+                Text(selected.model + " (disabled)").tag(selected)
+            }
+            if codexEnabled {
+                Section("Codex") {
+                    ForEach(codexModels) { codex in
+                        Text(codex.name + (codex.isDefault ? " (default)" : "")).tag(AgentModelChoice(provider: .codex, model: codex.id))
+                    }
+                }
+            } else if selected.provider == .codex {
+                Text((selected.model.isEmpty ? "Codex default" : selected.model) + " (disabled)").tag(selected)
+            }
         }
         .labelsHidden()
         .fixedSize()
-        .help("The Claude model for the next prompt.")
+        .disabled(model.busy || (!claudeEnabled && !codexEnabled))
+        .task { codexSetup.refresh() }
+        .help("Choose the provider and model for the next prompt. Switching provider starts its separate session.")
     }
 }
 
@@ -708,12 +788,16 @@ struct AgentPermissionPicker: View {
     @ObservedObject var model: AgentModel
 
     var body: some View {
-        Picker("Permissions", selection: $model.permissionMode) {
-            ForEach(AgentPermissionMode.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+        Picker("Permissions", selection: Binding(get: { selectedMode }, set: { model.permissionMode = $0 })) {
+            ForEach(AgentPermissionMode.allCases.filter { model.provider == .claude || $0 == .ask || $0 == .auto }) { Label($0.title, systemImage: $0.symbol).tag($0) }
         }
         .labelsHidden()
         .fixedSize()
-        .help("Permissions: \(model.permissionMode.help)")
+        .help("Permissions: \(selectedMode.help)")
+    }
+
+    private var selectedMode: AgentPermissionMode {
+        model.provider == .codex && model.permissionMode != .auto ? .ask : model.permissionMode
     }
 }
 
@@ -787,6 +871,7 @@ struct AgentPanel: View {
             composer
         }
         .environment(\.openURL, OpenURLAction { model.open($0) })
+        .sheet(item: $model.viewingHistory) { AgentHistoryReader(entry: $0) }
         .onAppear { model.setVisible(true) }
         .onDisappear { model.setVisible(false) }
     }
@@ -805,6 +890,11 @@ struct AgentPanel: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if model.items.isEmpty {
+                        if let latest = model.history.first {
+                            Button { model.viewingHistory = latest } label: {
+                                Label("View latest session: \(latest.title)", systemImage: "clock.arrow.circlepath")
+                            }
+                        }
                         Text(isMain ? "Main keeps an eye on everything: pull requests, the agents beside them, Slack and meeting action items. "
                                 + "Ask what needs you, or have it hand a prompt to a pull request\u{2019}s agent. It only reads unless you ask for more."
                              : model.assistant != nil ? "\(model.assistant?.role.summary ?? "") It follows the instructions in its Markdown file "
@@ -941,7 +1031,7 @@ struct AgentPanel: View {
             AgentPendingList(model: model).transcriptTypography()
             AgentImageChips(model: model)
             HStack(alignment: .bottom, spacing: 10) {
-                ChatComposer(text: $model.draft, height: $height, placeholder: model.busy ? "Add a message \u{2014} it reaches the agent at its next step" : "Ask the agent \u{2014} @ to reference a file or paste an image",
+                ChatComposer(text: $model.draft, height: $height, placeholder: model.busy ? "Queue a follow-up message" : "Ask the agent \u{2014} @ to reference a file or paste an image",
                              attach: model.attach, problem: model.imageProblem) { model.submit() }
                     .transcriptTypography()
                     .frame(height: height)
@@ -958,7 +1048,7 @@ struct AgentPanel: View {
                             .foregroundStyle(hasContent ? Color.accentColor : .secondary.opacity(0.5))
                     }
                     .buttonStyle(.plain)
-                    .help(model.busy ? "Send to the running agent (Return)" : "Send (Return)")
+                    .help(model.busy ? "Queue message (Return)" : "Send (Return)")
                 }
             }
             .padding(.horizontal, 14)
@@ -1209,6 +1299,10 @@ struct AgentSettingsSection: View {
     @ObservedObject var store: AgentRuleStore
     @AppStorage(AgentPermissionMode.defaultKey) private var defaultMode = AgentPermissionMode.ask
     @AppStorage(AgentLogic.defaultModelKey) private var defaultModel = AgentLogic.builtInModel
+    @AppStorage(AgentProvider.key) private var provider = AgentProvider.claude
+    @AppStorage(AgentProvider.codexModelKey) private var codexModel = ""
+    @AppStorage(AgentProvider.claudeEnabledKey) private var claudeEnabled = true
+    @AppStorage(AgentProvider.codexEnabledKey) private var codexEnabled = true
     @AppStorage(AgentLogic.chromeDefaultKey) private var chromeByDefault = false
     @AppStorage(AgentLogic.chromeAllowAllKey) private var chromeAllowAll = false
     @AppStorage(AgentAttention.settingKey) private var notifyAttention = true
@@ -1218,6 +1312,7 @@ struct AgentSettingsSection: View {
     @State private var alertWarning: String?
     @AppStorage(Automations.enabledKey) private var automationsOn = true
     @State private var confirming: String?
+    @StateObject private var codexSetup = CodexSetupModel()
     @AppStorage(Determinism.autoAnalyzeKey) private var autoAnalyze = true
     @AppStorage(Determinism.fullRunEveryKey) private var fullRunEvery = Determinism.defaultFullRunEvery
     @AppStorage(TranscriptTypography.faceKey) private var transcriptFace = TranscriptTypography.standard.face.rawValue
@@ -1234,11 +1329,22 @@ struct AgentSettingsSection: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await refreshAlertStyle() }
         }
+        .onChange(of: claudeEnabled) { _, _ in moveDefaultProvider() }
+        .onChange(of: codexEnabled) { _, _ in moveDefaultProvider() }
     }
 
     private func refreshAlertStyle() async {
         let current = await Permissions.notificationAlert
         alertWarning = Decisions.styleWarning(current.style, authorized: current.authorized)
+    }
+
+    private func moveDefaultProvider() {
+        guard !AgentProvider.enabled(provider) else { return }
+        guard let next = AgentProvider.allCases.first(where: { AgentProvider.enabled($0) }) else { return }
+        let selected = AgentModelChoice(provider: provider, model: provider == .claude ? defaultModel : codexModel)
+        guard let equivalent = AgentLogic.equivalent(selected, to: next) else { return }
+        provider = next
+        if next == .claude { defaultModel = equivalent.model } else { codexModel = equivalent.model }
     }
 
     private var transcriptTypography: TranscriptTypography {
@@ -1298,6 +1404,43 @@ struct AgentSettingsSection: View {
     @ViewBuilder private var sections: some View {
         AssistantSessionSettings()
         SettingsSection("Model", footer: nil) {
+            SettingsRow("Enable Claude", detail: "Uses the Claude Agent SDK and your Claude sign-in.") {
+                Toggle("Enable Claude", isOn: $claudeEnabled).labelsHidden()
+            }
+            Divider().padding(.leading, 14)
+            SettingsRow("Enable Codex", detail: "Uses local Codex App Server and your ChatGPT/Codex sign-in.") {
+                Toggle("Enable Codex", isOn: $codexEnabled).labelsHidden()
+            }
+            if !claudeEnabled && !codexEnabled {
+                Divider().padding(.leading, 14)
+                SettingsRow("No coding agents enabled", detail: "Enable Claude or Codex above before starting an agent.") {}
+            }
+            Divider().padding(.leading, 14)
+            SettingsRow("Coding agent", detail: provider.help) {
+                Picker("Coding agent", selection: $provider) {
+                    ForEach(AgentProvider.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden().fixedSize()
+            }
+            if provider == .codex {
+                Divider().padding(.leading, 14)
+                SettingsRow("Codex", detail: codexDetail) {
+                    Button("Check again", action: codexSetup.refresh).disabled(codexSetup.checking)
+                    if case .missing = codexSetup.status { Button("Copy install command", action: codexSetup.copyInstallCommand) }
+                    if case .signedOut = codexSetup.status { Button("Copy login command", action: codexSetup.copyLoginCommand) }
+                    if case .signedIn = codexSetup.status { Button("Copy switch account command", action: codexSetup.copySwitchAccountCommand) }
+                }
+                .onAppear(perform: codexSetup.refresh)
+                Divider().padding(.leading, 14)
+                SettingsRow("Codex model", detail: "Available from the active account. WorkTime uses Codex's default when unset.") {
+                    Picker("Codex model", selection: $codexModel) {
+                        ForEach(CodexSetup.models(codexSetup.models, including: codexModel)) { model in
+                            Text(model.name + (model.isDefault ? " (default)" : "")).tag(model.id)
+                        }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+            }
             SettingsRow("Default model", detail: "Used by agents and roles that do not set their own model.") {
                 Picker("Default model", selection: Binding(get: { AgentLogic.savedDefaultModel(defaultModel) }, set: { defaultModel = $0 })) {
                     ForEach(AgentLogic.models, id: \.id) { Text($0.name).tag($0.id) }
@@ -1404,6 +1547,14 @@ struct AgentSettingsSection: View {
             } else {
                 SettingsRow("Not found", detail: "Build the agent sidecar (npm run build in agent) to see the list") {}
             }
+        }
+    }
+
+    private var codexDetail: String {
+        switch codexSetup.status {
+        case .missing: return "Codex CLI not found. Install Codex, then choose it here."
+        case .signedIn(let text): return codexSetup.account ?? text
+        case .signedOut(let text): return text + " Copy `codex login`, run it in Terminal and sign in with ChatGPT."
         }
     }
 

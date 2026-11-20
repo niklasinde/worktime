@@ -129,9 +129,62 @@ enum AgentPermissionMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum AgentProvider: String, CaseIterable, Identifiable {
+    case claude, codex
+
+    static let key = "agentProvider"
+    static let codexModelKey = "agentCodexModel"
+    static let claudeEnabledKey = "agentClaudeEnabled"
+    static let codexEnabledKey = "agentCodexEnabled"
+    var id: String { rawValue }
+    var title: String { self == .claude ? "Claude" : "Codex" }
+    var help: String { self == .claude ? "Claude Agent SDK" : "Codex App Server, using your local Codex sign-in" }
+    static var current: AgentProvider { UserDefaults.standard.string(forKey: key).flatMap(AgentProvider.init(rawValue:)) ?? .claude }
+    static func enabled(_ provider: AgentProvider, defaults: UserDefaults = .standard) -> Bool {
+        let key = provider == .claude ? claudeEnabledKey : codexEnabledKey
+        return defaults.object(forKey: key) as? Bool ?? true
+    }
+}
+
+struct AgentModelChoice: Hashable {
+    let provider: AgentProvider
+    let model: String
+}
+
+enum AgentCapability: Int {
+    case light, general, strongest
+}
+
+extension AgentLogic {
+    static func capability(provider: AgentProvider, model: String) -> AgentCapability {
+        let value = model.lowercased()
+        if value.contains("opus") || value.contains("astra") { return .strongest }
+        if value.contains("haiku") || value.contains("luna") || value.contains("mini") { return .light }
+        return .general
+    }
+
+    static func equivalent(_ choice: AgentModelChoice, to provider: AgentProvider, codexModels: [CodexSetup.Model] = CodexSetup.availableModels()) -> AgentModelChoice? {
+        guard choice.provider != provider else { return choice }
+        let target = capability(provider: choice.provider, model: choice.model)
+        if provider == .claude {
+            let model = models.min { candidate, next in
+                let first = abs(capability(provider: .claude, model: candidate.id).rawValue - target.rawValue)
+                let second = abs(capability(provider: .claude, model: next.id).rawValue - target.rawValue)
+                return first == second ? candidate.id < next.id : first < second
+            }
+            return model.map { AgentModelChoice(provider: .claude, model: $0.id) }
+        }
+        let model = codexModels.filter { capability(provider: .codex, model: $0.id) == target }.min { candidate, next in
+            if candidate.isDefault != next.isDefault { return !candidate.isDefault }
+            return candidate.id < next.id
+        }
+        return model.map { AgentModelChoice(provider: .codex, model: $0.id) }
+    }
+}
+
 /// What the window sends the sidecar, one JSON object per line.
 enum AgentRequest {
-    case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
+    case prompt(text: String, cwd: String, sessionID: String?, model: String? = nil, provider: AgentProvider = .claude, appendSystemPrompt: String? = nil, mode: AgentPermissionMode = .ask,
                 chrome: Bool = false, allowAllChrome: Bool = false, allowedChromeHosts: [String] = [], fork: Bool = false, allowedTools: [String]? = nil, delegateFrom: String? = nil, images: [AgentImage] = [],
                 instructions: [String: String]? = nil, roleWaitSeconds: Int? = nil)
     /// A message for the turn that is running; the sidecar holds it until the agent is about to call the model again.
@@ -155,8 +208,9 @@ enum AgentRequest {
     var line: String {
         var object: [String: Any]
         switch self {
-        case .prompt(let text, let cwd, let sessionID, let model, let appendSystemPrompt, let mode, let chrome, let allowAllChrome, let allowedChromeHosts, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
+        case .prompt(let text, let cwd, let sessionID, let model, let provider, let appendSystemPrompt, let mode, let chrome, let allowAllChrome, let allowedChromeHosts, let fork, let allowedTools, let delegateFrom, let images, let instructions, let roleWaitSeconds):
             object = ["type": "prompt", "text": text, "cwd": cwd, "permissionMode": mode.rawValue]
+            if provider == .codex { object["provider"] = provider.rawValue }
             if let roleWaitSeconds { object["roleWaitSeconds"] = roleWaitSeconds }
             if let allowedTools { object["allowedMcpTools"] = allowedTools }
             if let delegateFrom { object["delegateFrom"] = delegateFrom }
@@ -361,8 +415,11 @@ enum AgentLogic {
 
     /// The sidecar's id for a permission prompt item (`permission-<id>-<n>`).
     static func permissionID(of itemID: String) -> String? {
-        let parts = itemID.split(separator: "-")
-        return parts.count == 3 && parts[0] == "permission" ? String(parts[1]) : nil
+        let prefix = "permission-"
+        guard itemID.hasPrefix(prefix), let end = itemID.lastIndex(of: "-") else { return nil }
+        let start = itemID.index(itemID.startIndex, offsetBy: prefix.count)
+        guard start < end else { return nil }
+        return String(itemID[start..<end])
     }
 
     static func resultLine(turns: Int?, model: String? = nil, mode: AgentPermissionMode? = nil, usage: UsageTotals? = nil,
@@ -698,7 +755,7 @@ enum AgentLogic {
         \(TicketSessions.mainNote)
         \(AgentReports.mainNote)
         Use notify when something needs the user and they may not be watching; with at, it reminds them later.
-        Use add_reminder for something the user should do later; it goes to their WorkTime reminders, and a link to the pull request, ticket, Slack message or meeting it is about lets them open it from there.
+        Use add_reminder with a due date for something the user should do later. Without a due date it shows a notification now. Include a link to the pull request, ticket, Slack message or meeting.
         A routine is a prompt that runs on a schedule in an agent of its own (only while WorkTime is open). When the user asks for something \
         to happen regularly, call routines first, then create_routine (name, prompt, schedule, and an assistant when one fits), or \
         update_routine, set_routine_enabled and delete_routine for one that exists. The prompt must stand alone: a run cannot ask questions.

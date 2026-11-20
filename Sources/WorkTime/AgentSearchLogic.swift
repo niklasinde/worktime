@@ -22,7 +22,7 @@ enum AgentSearch {
 
     static func fields(of state: AgentState, titles: [String: String] = [:]) -> [String?] {
         let urls = [state.prURL, state.sessionPR] + (state.pullRequests ?? []).map(Optional.some)
-        return [state.title, state.jiraKey, state.role, state.lastPrompt, state.lastResult]
+        return [state.title, state.jiraKey, AgentListFilter.sidebarRole(state), state.lastPrompt, state.lastResult]
             + urls.flatMap { pullRequestFields($0, titles: titles) }
     }
 
@@ -30,8 +30,13 @@ enum AgentSearch {
 
     static func filter(_ states: [AgentState], query: String, titles: [String: String] = [:], links: AgentLinkIndex = .empty) -> [AgentState] {
         guard isActive(query) else { return states }
-        let linked = linkedKeys(query: query, agents: states, links: links, titles: titles)
-        return states.filter { linked.contains($0.key) || matches(query, in: fields(of: $0, titles: titles)) }
+        let words = terms(query)
+        let linked = words.map { links.agentKeys(named: $0) }
+        return states.filter { state in
+            let fields = fields(of: state, titles: titles) + [links.text(ofAgent: state.key, titles: titles)]
+            let haystack = fields.compactMap { $0 }.joined(separator: "\n").lowercased()
+            return words.indices.allSatisfy { haystack.contains(words[$0]) || linked[$0].contains(state.key) }
+        }
     }
 
     /// The agents the link table ties to what the query says: a ticket, pull request or branch it names reaches the agents linked to it or
@@ -83,6 +88,16 @@ struct AgentLinkIndex: Sendable {
     }
 
     var isEmpty: Bool { table.entities.isEmpty }
+
+    func ticketKeys(for state: AgentState) -> [String] {
+        var tickets = table.neighbors(of: .agent(state.key)).filter { $0.kind == .jira }
+        let linked = table.neighbors(of: .agent(state.key)).filter { $0.kind == .githubPR || $0.kind == .branch }
+        let urls = [state.prURL, state.sessionPR].compactMap { $0 } + (state.pullRequests ?? [])
+        for entity in Set(linked + urls.compactMap(LinkTargets.pullRequest)) {
+            tickets += table.neighbors(of: entity).filter { $0.kind == .jira }
+        }
+        return Set(tickets.map(\.id) + [state.jiraKey].compactMap { $0?.uppercased() }).sorted()
+    }
 
     private static func branchName(_ ref: String) -> String? { ref.firstIndex(of: ":").map { String(ref[ref.index(after: $0)...]) } }
 

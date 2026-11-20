@@ -49,6 +49,45 @@ enum AgentListFilter: String, CaseIterable, Identifiable, Sendable {
 
     static func shown(_ states: [AgentState], filter: AgentListFilter) -> [AgentState] { states.filter(filter.includes) }
 
+    static func ticketRows(_ states: [AgentState], projects: Set<String>, titles: [String: String], links: AgentLinkIndex) -> [TicketRow] {
+        var order: [TicketRow] = []
+        var positions: [String: Int] = [:]
+        for state in states {
+            var keys = links.ticketKeys(for: state)
+            if let ticket = TicketGrouping.subject(of: state, projects: projects, titles: titles)?.ticket, !keys.contains(ticket) {
+                keys.append(ticket)
+            }
+            if keys.isEmpty, state.archived != true { order.append(.agent(state)) }
+            for key in keys {
+                if let index = positions[key], case .group(var group) = order[index] {
+                    group.members.append(state)
+                    order[index] = .group(group)
+                } else {
+                    positions[key] = order.count
+                    order.append(.group(TicketGroup(subject: .ticket(key), members: [state])))
+                }
+            }
+        }
+        return order
+    }
+
+    static func isCurrentReview(_ state: AgentState) -> Bool {
+        guard state.archived != true,
+              AgentOverview.need(state) != .idle || state.slotWait == true || state.queued > 0 else { return false }
+        return sidebarRole(state).caseInsensitiveCompare("Reviewer") == .orderedSame
+    }
+
+    static func sidebarRole(_ state: AgentState) -> String {
+        if let role = state.role ?? state.roleKey.flatMap(Assistants.parse(key:))?.slug.capitalized { return role }
+        guard state.prURL != nil || state.sessionPR != nil || state.pullRequests?.isEmpty == false else { return "Other" }
+        let text = state.lastPrompt ?? ""
+        let prompt = (AgentInbox.fromMain(text) ?? text).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let review = prompt.hasPrefix("review ") || prompt.hasPrefix("please review ") || prompt.hasPrefix("code review")
+            || AgentInbox.origin(of: text)?.lowercased().contains("review-request") == true
+            || state.pullRequests?.isEmpty == false && state.title.hasPrefix("Review:")
+        return review ? "Reviewer" : "Other"
+    }
+
     /// The ticket or pull request an agent is about, for the lookup of its status.
     static func ref(of state: AgentState, projects: Set<String>, titles: [String: String]) -> SessionRef? {
         switch TicketGrouping.subject(of: state, projects: projects, titles: titles) {
